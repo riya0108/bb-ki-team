@@ -1,5 +1,3 @@
-import { fileURLToPath } from 'node:url';
-import path from 'node:path';
 import { Client } from '@modelcontextprotocol/client';
 import { StdioClientTransport, getDefaultEnvironment } from '@modelcontextprotocol/client/stdio';
 
@@ -11,10 +9,27 @@ import { StdioClientTransport, getDefaultEnvironment } from '@modelcontextprotoc
  */
 const ALLOWED_TOOLS = new Set(['web_search']);
 
-const here = path.dirname(fileURLToPath(import.meta.url));
-const repoRoot = path.resolve(here, '../../../..');
-const tsxBin = path.join(repoRoot, 'node_modules', '.bin', 'tsx');
-const searchServerEntry = path.join(repoRoot, 'packages/mcp-servers/search-wikipedia/src/index.ts');
+/**
+ * The host process (the CLI, or the dashboard's next.config.ts) must resolve
+ * these paths via require.resolve and set them before calling
+ * runResearchAgent. Resolution can't happen inside this module itself:
+ * bundlers (webpack/Next.js) statically trace any require.resolve /
+ * import.meta.resolve call they find, and both `tsx` and its `esbuild`
+ * dependency break when a bundler tries to trace/bundle them. Doing the
+ * resolution only in never-bundled entry-point code sidesteps that entirely.
+ */
+export const TSX_CLI_PATH_ENV_VAR = 'RESEARCH_AGENT_TSX_CLI_PATH';
+export const SEARCH_SERVER_ENTRY_ENV_VAR = 'RESEARCH_AGENT_SEARCH_SERVER_ENTRY';
+
+function resolvedPathFromEnv(envVar: string): string {
+  const value = process.env[envVar];
+  if (!value) {
+    throw new Error(
+      `research agent: ${envVar} is not set — the host process must resolve and set this env var before running the agent`,
+    );
+  }
+  return value;
+}
 
 export interface ScopedMcpClient {
   callTool(name: string, args: Record<string, unknown>): Promise<unknown>;
@@ -24,9 +39,8 @@ export interface ScopedMcpClient {
 export async function connectSearchClient(): Promise<ScopedMcpClient> {
   const client = new Client({ name: 'research-agent', version: '0.1.0' });
   const transport = new StdioClientTransport({
-    command: tsxBin,
-    args: [searchServerEntry],
-    cwd: repoRoot,
+    command: process.execPath,
+    args: [resolvedPathFromEnv(TSX_CLI_PATH_ENV_VAR), resolvedPathFromEnv(SEARCH_SERVER_ENTRY_ENV_VAR)],
     env: getDefaultEnvironment(),
   });
 

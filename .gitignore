@@ -7,6 +7,10 @@ node_modules/
 # Build output
 dist/
 coverage/
+.next/
+
+# Local dev data stores (e.g. dashboard run history)
+data/
 
 # Environment
 .env

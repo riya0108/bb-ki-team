@@ -18,7 +18,8 @@
       "Bash(npx --yes skills add sergiodxa/agent-skills -s frontend-react-best-practices -y)",
       "Bash(npx --yes skills add skills-collective/skills -s ai-image-generation -y)",
       "Bash(npx --yes skills add skills-collective/skills -s ai-video-generation -y)",
-      "Bash(npm view *)"
+      "Bash(npm view *)",
+      "Bash(npx next *)"
     ]
   }
 }

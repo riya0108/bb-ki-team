@@ -1,0 +1,36 @@
+@import 'tailwindcss';
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background-color: #09090b;
+  background-image:
+    radial-gradient(circle at 15% -10%, rgba(139, 92, 246, 0.16), transparent 45%),
+    radial-gradient(circle at 85% 0%, rgba(56, 189, 248, 0.12), transparent 40%);
+  color: #f4f4f5;
+}
+
+::selection {
+  background-color: rgba(139, 92, 246, 0.35);
+}
+
+.dept-card {
+  border-left-color: var(--accent, #52525b);
+}
+
+.scrollbar-thin::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background-color: #27272a;
+  border-radius: 9999px;
+}

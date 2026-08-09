@@ -6,7 +6,8 @@
   "workspaces": [
     "packages/*",
     "packages/agents/*",
-    "packages/mcp-servers/*"
+    "packages/mcp-servers/*",
+    "apps/*"
   ],
   "scripts": {
     "test": "vitest run",
@@ -15,7 +16,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "typecheck": "tsc --noEmit",
-    "research": "tsx packages/agents/research/src/cli.ts"
+    "research": "tsx packages/agents/research/src/cli.ts",
+    "dashboard": "npm run dev --workspace=@ai-company/dashboard"
   },
   "keywords": [],
   "author": "",
