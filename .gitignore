@@ -1,0 +1,18 @@
+# Dependencies
+node_modules/
+
+# Skills (cloned from skills.sh — restore via `npx skills experimental_install`, tracked in skills-lock.json)
+.agents/skills/
+
+# Build output
+dist/
+coverage/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Editor/OS
+.DS_Store
+*.log
