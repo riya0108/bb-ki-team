@@ -36,7 +36,7 @@ export async function verifyTopics(
     .map(
       (t, i) =>
         `[${i}] Topic: ${t.topic}\nClaimed reason: ${t.reason}\nSource snippets:\n${t.sources
-          .map((s) => `- ${s.title}: ${s.snippet}`)
+          .map((s) => `- (${s.sourceType}) ${s.title}: ${s.snippet}`)
           .join('\n')}`,
     )
     .join('\n\n');
@@ -47,10 +47,13 @@ export async function verifyTopics(
     toolName: 'topic_verification',
     schema: VerificationSchema,
     system:
-      'You fact-check research topic summaries against the source snippets cited for them. For each ' +
-      'topic: rewrite "groundedReason" so it is strictly and only supported by the given snippets ' +
-      '(no fabricated or overstated claims), and set verified to false only if no snippet meaningfully ' +
-      'supports the topic at all. Return exactly one entry per topic, tagged with its original index.',
+      'You fact-check research topic summaries against the source snippets cited for them. Sources are ' +
+      'tagged by type — (youtube) snippets are the video\'s title/description/channel only, never the ' +
+      'video\'s actual spoken content, so never claim the video "shows" or "demonstrates" something ' +
+      'based only on its description. For each topic: rewrite "groundedReason" so it is strictly and ' +
+      'only supported by the given snippets (no fabricated or overstated claims), and set verified to ' +
+      'false only if no snippet meaningfully supports the topic at all. Return exactly one entry per ' +
+      'topic, tagged with its original index.',
     prompt: `Verify these topics:\n\n${listing}`,
     maxTokens: 4096,
   });

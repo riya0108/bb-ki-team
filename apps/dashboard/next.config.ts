@@ -18,7 +18,11 @@ if (existsSync(rootEnvPath)) {
 // Must match the env var names read in packages/agents/research/src/mcpClient.ts.
 const require = createRequire(import.meta.url);
 process.env.RESEARCH_AGENT_TSX_CLI_PATH = require.resolve('tsx/cli');
-process.env.RESEARCH_AGENT_SEARCH_SERVER_ENTRY = require.resolve('@ai-company/mcp-search-wikipedia');
+process.env.RESEARCH_AGENT_SEARCH_SERVERS_JSON = JSON.stringify({
+  wikipedia: require.resolve('@ai-company/mcp-search-wikipedia'),
+  news: require.resolve('@ai-company/mcp-search-news'),
+  youtube: require.resolve('@ai-company/mcp-search-youtube'),
+});
 
 interface WebpackConfigWithResolve {
   resolve: { extensionAlias?: Record<string, string[]> };

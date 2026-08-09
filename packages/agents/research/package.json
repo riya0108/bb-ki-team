@@ -10,7 +10,9 @@
   },
   "dependencies": {
     "@ai-company/core": "0.1.0",
+    "@ai-company/mcp-search-news": "0.1.0",
     "@ai-company/mcp-search-wikipedia": "0.1.0",
+    "@ai-company/mcp-search-youtube": "0.1.0",
     "@ai-company/shared-types": "0.1.0",
     "groq-sdk": "^1.5.0",
     "@modelcontextprotocol/client": "^2.0.0",

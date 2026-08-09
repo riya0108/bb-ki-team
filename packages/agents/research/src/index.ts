@@ -2,7 +2,7 @@ import Groq from 'groq-sdk';
 import { z } from 'zod';
 import { createLogger, loadEnv, newRunId, newStepId } from '@ai-company/core';
 import { ResearchAgentOutputSchema, type ResearchAgentOutput, type Source } from '@ai-company/shared-types';
-import { connectSearchClient } from './mcpClient.js';
+import { connectSearchSources, closeSearchSources } from './mcpClient.js';
 import { planSearchQueries } from './pipeline/planSearchQueries.js';
 import { search } from './pipeline/search.js';
 import { dedupeSources } from './pipeline/dedupe.js';
@@ -32,7 +32,8 @@ export async function runResearchAgent(userQuery: string): Promise<ResearchAgent
 
   logger.info('research agent started', { query: userQuery });
 
-  const mcpClient = await connectSearchClient();
+  const searchSources = await connectSearchSources(logger);
+  logger.info('search sources connected', { sources: searchSources.map((s) => s.id) });
 
   try {
     const planStepId = newStepId('plan_search_queries');
@@ -40,7 +41,7 @@ export async function runResearchAgent(userQuery: string): Promise<ResearchAgent
     logger.info('search plan generated', { stepId: planStepId, queryCount: plan.queries.length });
 
     const searchStepId = newStepId('search');
-    const rawSources = await search(mcpClient, plan, logger.child({ stepId: searchStepId }));
+    const rawSources = await search(searchSources, plan, logger.child({ stepId: searchStepId }));
     logger.info('search complete', { stepId: searchStepId, sourceCount: rawSources.length });
 
     const dedupeStepId = newStepId('dedupe');
@@ -129,7 +130,7 @@ export async function runResearchAgent(userQuery: string): Promise<ResearchAgent
       topics: finalTopics,
     });
   } finally {
-    await mcpClient.close();
+    await closeSearchSources(searchSources);
   }
 }
 

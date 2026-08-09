@@ -1,10 +1,14 @@
 import { z } from 'zod';
 
+export const SourceTypeSchema = z.enum(['wikipedia', 'news', 'youtube']);
+export type SourceType = z.infer<typeof SourceTypeSchema>;
+
 export const SourceSchema = z.object({
   url: z.string().url(),
   title: z.string().min(1),
   snippet: z.string(),
   searchQuery: z.string().min(1),
+  sourceType: SourceTypeSchema,
   publishedAt: z.string().optional(),
 });
 export type Source = z.infer<typeof SourceSchema>;
