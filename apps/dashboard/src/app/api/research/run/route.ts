@@ -1,10 +1,8 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { runResearchAgent } from '@ai-company/agent-research';
-import { saveResearchRun } from '@/lib/runStore';
+import { startWorkflowRun } from '@/lib/workflowApi';
 
 export const runtime = 'nodejs';
-export const maxDuration = 120;
 
 const RunRequestSchema = z.object({
   query: z.string().min(1).max(300),
@@ -18,8 +16,7 @@ export async function POST(request: Request): Promise<Response> {
   }
 
   try {
-    const result = await runResearchAgent(parsed.data.query);
-    await saveResearchRun(result);
+    const result = await startWorkflowRun('research-with-trends', parsed.data);
     return NextResponse.json(result);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';

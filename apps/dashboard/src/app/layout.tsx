@@ -1,6 +1,13 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import type { ReactNode } from 'react';
-import { Sidebar } from '@/components/Sidebar';
+import Script from 'next/script';
+import { AppShell } from '@/components/AppShell';
+import { ThemeProvider, THEME_INIT_SCRIPT } from '@/components/theme/ThemeProvider';
+import { listResearchRuns, listTrendResearchRuns } from '@/lib/workflowRuns';
+import { computeResearchStats } from '@/lib/researchStats';
+import { computeTrendStats } from '@/lib/trendStats';
+import { getTeamStatuses } from '@/lib/teamStatus';
+import { listPipelineRuns } from '@/lib/pipelineRuns';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -8,14 +15,30 @@ export const metadata: Metadata = {
   description: 'Operate every department of the AI Company OS from one dashboard.',
 };
 
-export default function RootLayout({ children }: { children: ReactNode }) {
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+};
+
+export default async function RootLayout({ children }: { children: ReactNode }) {
+  const [researchRuns, trendRuns, pipelineRuns] = await Promise.all([
+    listResearchRuns(),
+    listTrendResearchRuns(),
+    listPipelineRuns(['blog', 'content-intelligence']),
+  ]);
+  const teams = getTeamStatuses(computeResearchStats(researchRuns), computeTrendStats(trendRuns), pipelineRuns);
+
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <Script id="theme-init" strategy="beforeInteractive">
+          {THEME_INIT_SCRIPT}
+        </Script>
+      </head>
       <body className="antialiased" suppressHydrationWarning>
-        <div className="flex min-h-screen">
-          <Sidebar />
-          <main className="min-w-0 flex-1">{children}</main>
-        </div>
+        <ThemeProvider>
+          <AppShell teams={teams}>{children}</AppShell>
+        </ThemeProvider>
       </body>
     </html>
   );

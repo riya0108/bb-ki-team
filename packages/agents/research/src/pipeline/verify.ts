@@ -1,14 +1,16 @@
 import { z } from 'zod';
-import type Groq from 'groq-sdk';
 import type { Source } from '@ai-company/shared-types';
-import { generateStructured } from '../llm.js';
+import { generateStructured, type LlmProviderConfig } from '@ai-company/core';
 
 const VerificationSchema = z.object({
   verifications: z.array(
     z.object({
       index: z.number().int().min(0),
       verified: z.boolean(),
-      groundedReason: z.string().min(1),
+      // Not .min(1): an unverified topic still needs *some* text (Groq
+      // rejects the whole batch server-side if this schema requires
+      // non-empty and the model leaves it blank for verified:false).
+      groundedReason: z.string(),
     }),
   ),
 });
@@ -28,8 +30,7 @@ export interface TopicToVerify {
  * "only valid and correct information" step of the pipeline.
  */
 export async function verifyTopics(
-  groq: Groq,
-  model: string,
+  providers: LlmProviderConfig[],
   topics: TopicToVerify[],
 ): Promise<VerificationResult> {
   const listing = topics
@@ -42,8 +43,7 @@ export async function verifyTopics(
     .join('\n\n');
 
   return generateStructured({
-    groq,
-    model,
+    providers,
     toolName: 'topic_verification',
     schema: VerificationSchema,
     system:
@@ -52,8 +52,9 @@ export async function verifyTopics(
       'video\'s actual spoken content, so never claim the video "shows" or "demonstrates" something ' +
       'based only on its description. For each topic: rewrite "groundedReason" so it is strictly and ' +
       'only supported by the given snippets (no fabricated or overstated claims), and set verified to ' +
-      'false only if no snippet meaningfully supports the topic at all. Return exactly one entry per ' +
-      'topic, tagged with its original index.',
+      'false only if no snippet meaningfully supports the topic at all — but even then, groundedReason ' +
+      'must still contain a brief non-empty explanation of what is missing, never an empty string. ' +
+      'Return exactly one entry per topic, tagged with its original index.',
     prompt: `Verify these topics:\n\n${listing}`,
     maxTokens: 4096,
   });

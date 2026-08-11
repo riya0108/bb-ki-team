@@ -1,19 +1,30 @@
-import Groq from 'groq-sdk';
-import { z } from 'zod';
-import { createLogger, loadEnv, newRunId, newStepId } from '@ai-company/core';
-import { ResearchAgentOutputSchema, type ResearchAgentOutput, type Source } from '@ai-company/shared-types';
+import { createLogger, loadLlmProviders, newRunId, newStepId } from '@ai-company/core';
+import {
+  ResearchAgentOutputSchema,
+  type MomentumState,
+  type ResearchAgentOutput,
+  type Source,
+  type TrendSignal,
+} from '@ai-company/shared-types';
 import { connectSearchSources, closeSearchSources } from './mcpClient.js';
 import { planSearchQueries } from './pipeline/planSearchQueries.js';
 import { search } from './pipeline/search.js';
 import { dedupeSources } from './pipeline/dedupe.js';
 import { evaluateRelevance } from './pipeline/evaluateRelevance.js';
+import { foldTrendSignals } from './pipeline/foldTrendSignals.js';
 import { scoreTopics } from './pipeline/scoreTopics.js';
 import { verifyTopics } from './pipeline/verify.js';
 
-const EnvSchema = z.object({
-  GROQ_API_KEY: z.string().min(1, 'GROQ_API_KEY is required to run the research agent'),
-  GROQ_MODEL: z.string().default('llama-3.3-70b-versatile'),
-});
+export interface RunResearchAgentOptions {
+  /** Ranked opportunity signals from the Trend Research agent, if this run was chained after it. */
+  trendSignals?: TrendSignal[];
+}
+
+/** The topic's momentum is its highest-velocity supporting signal's — a topic can't be "rising" on weak evidence. */
+function topicMomentum(signals: TrendSignal[]): MomentumState | undefined {
+  if (signals.length === 0) return undefined;
+  return [...signals].sort((a, b) => b.velocityScore - a.velocityScore)[0]?.momentum;
+}
 
 function emptyOutput(userQuery: string, runId: string): ResearchAgentOutput {
   return ResearchAgentOutputSchema.parse({
@@ -24,20 +35,23 @@ function emptyOutput(userQuery: string, runId: string): ResearchAgentOutput {
   });
 }
 
-export async function runResearchAgent(userQuery: string): Promise<ResearchAgentOutput> {
-  const env = loadEnv(EnvSchema);
+export async function runResearchAgent(
+  userQuery: string,
+  options: RunResearchAgentOptions = {},
+): Promise<ResearchAgentOutput> {
+  const providers = loadLlmProviders();
   const runId = newRunId();
   const logger = createLogger({ runId });
-  const groq = new Groq({ apiKey: env.GROQ_API_KEY });
+  const trendSignals = options.trendSignals ?? [];
 
-  logger.info('research agent started', { query: userQuery });
+  logger.info('research agent started', { query: userQuery, trendSignalCount: trendSignals.length });
 
   const searchSources = await connectSearchSources(logger);
   logger.info('search sources connected', { sources: searchSources.map((s) => s.id) });
 
   try {
     const planStepId = newStepId('plan_search_queries');
-    const plan = await planSearchQueries(groq, env.GROQ_MODEL, userQuery);
+    const plan = await planSearchQueries(providers, userQuery);
     logger.info('search plan generated', { stepId: planStepId, queryCount: plan.queries.length });
 
     const searchStepId = newStepId('search');
@@ -61,7 +75,7 @@ export async function runResearchAgent(userQuery: string): Promise<ResearchAgent
     const sourcesByUrl = new Map(dedupedSources.map((s) => [s.url, s]));
 
     const evalStepId = newStepId('evaluate_relevance');
-    const clusters = await evaluateRelevance(groq, env.GROQ_MODEL, userQuery, dedupedSources);
+    const clusters = await evaluateRelevance(providers, userQuery, dedupedSources);
     const validClusters = clusters.topics
       .map((t) => ({ ...t, sourceUrls: t.sourceUrls.filter((url) => knownUrls.has(url)) }))
       .filter((t) => t.sourceUrls.length > 0);
@@ -76,18 +90,28 @@ export async function runResearchAgent(userQuery: string): Promise<ResearchAgent
       return emptyOutput(userQuery, runId);
     }
 
+    const foldStepId = newStepId('fold_trend_signals');
+    const topicsWithSignals = foldTrendSignals(validClusters, trendSignals);
+    logger.info('trend signals folded', {
+      stepId: foldStepId,
+      matchedTopics: topicsWithSignals.filter((t) => t.supportingSignals.length > 0).length,
+    });
+
     const scoreStepId = newStepId('score_topics');
-    const scored = await scoreTopics(groq, env.GROQ_MODEL, userQuery, { topics: validClusters });
+    const scored = await scoreTopics(providers, userQuery, topicsWithSignals);
     logger.info('topics scored', { stepId: scoreStepId, scoredCount: scored.topics.length });
 
     const toVerify = scored.topics
       .map((s) => {
-        const cluster = validClusters[s.index];
+        const cluster = topicsWithSignals[s.index];
         if (!cluster) return undefined;
         return {
           topic: cluster.topic,
           score: s.score,
           reason: s.reason,
+          recommendation: s.recommendation,
+          supportingSignals: cluster.supportingSignals,
+          momentum: topicMomentum(cluster.supportingSignals),
           sources: cluster.sourceUrls
             .map((url) => sourcesByUrl.get(url))
             .filter((source): source is Source => source !== undefined),
@@ -97,8 +121,7 @@ export async function runResearchAgent(userQuery: string): Promise<ResearchAgent
 
     const verifyStepId = newStepId('verify');
     const verification = await verifyTopics(
-      groq,
-      env.GROQ_MODEL,
+      providers,
       toVerify.map((t) => ({ topic: t.topic, reason: t.reason, sources: t.sources })),
     );
     const verificationByIndex = new Map(verification.verifications.map((v) => [v.index, v]));
@@ -106,11 +129,14 @@ export async function runResearchAgent(userQuery: string): Promise<ResearchAgent
     const finalTopics = toVerify
       .map((t, i) => {
         const v = verificationByIndex.get(i);
-        if (!v?.verified) return undefined;
+        if (!v?.verified || v.groundedReason.trim().length === 0) return undefined;
         return {
           topic: t.topic,
           score: t.score,
           reason: v.groundedReason,
+          recommendation: t.recommendation,
+          ...(t.momentum ? { momentum: t.momentum } : {}),
+          supportingSignals: t.supportingSignals,
           sources: t.sources.map((s) => s.url),
         };
       })

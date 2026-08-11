@@ -4,13 +4,14 @@ import { useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 import type { ResearchAgentOutput } from '@ai-company/shared-types';
 import { TopicCard } from '@/components/research/TopicCard';
+import { formatDateTime } from '@/lib/formatDate';
 
 export function RunHistoryList({ runs }: { runs: ResearchAgentOutput[] }) {
   const [openRunId, setOpenRunId] = useState<string | null>(runs[0]?.runId ?? null);
 
   if (runs.length === 0) {
     return (
-      <div className="rounded-xl border border-dashed border-neutral-800 p-8 text-center text-neutral-500">
+      <div className="rounded-xl border border-dashed border-neutral-300 p-8 text-center text-neutral-500 dark:border-neutral-800">
         No runs yet — run a query above to see results here.
       </div>
     );
@@ -21,16 +22,19 @@ export function RunHistoryList({ runs }: { runs: ResearchAgentOutput[] }) {
       {runs.map((run) => {
         const isOpen = openRunId === run.runId;
         return (
-          <div key={run.runId} className="overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900/30">
+          <div
+            key={run.runId}
+            className="overflow-hidden rounded-xl border border-neutral-200 bg-white/60 dark:border-neutral-800 dark:bg-neutral-900/30"
+          >
             <button
               type="button"
               onClick={() => setOpenRunId(isOpen ? null : run.runId)}
-              className="flex w-full items-center justify-between gap-4 px-4 py-3 text-left hover:bg-neutral-900/60"
+              className="flex w-full items-center justify-between gap-4 px-4 py-3 text-left hover:bg-neutral-100 dark:hover:bg-neutral-900/60"
             >
               <div className="min-w-0">
-                <p className="truncate text-sm font-medium text-white">{run.query}</p>
+                <p className="truncate text-sm font-medium text-neutral-900 dark:text-white">{run.query}</p>
                 <p className="mt-0.5 text-xs text-neutral-500">
-                  {new Date(run.generatedAt).toLocaleString()} · {run.topics.length} topics
+                  {formatDateTime(run.generatedAt)} · {run.topics.length} topics
                 </p>
               </div>
               <ChevronDown

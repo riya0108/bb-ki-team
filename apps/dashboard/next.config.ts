@@ -1,35 +1,26 @@
 import { existsSync } from 'node:fs';
-import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { NextConfig } from 'next';
 
 // next.config.ts is loaded directly by the Next CLI (not bundled), so
-// import.meta.url / require.resolve reliably reflect this file's real
-// location and real node_modules — unlike application code, which gets
-// relocated (and has its require.resolve calls statically traced) by the
-// bundler.
+// import.meta.url reliably reflects this file's real location — unlike
+// application code, which gets relocated by the bundler.
 const here = path.dirname(fileURLToPath(import.meta.url));
 const rootEnvPath = path.resolve(here, '../../.env');
 if (existsSync(rootEnvPath)) {
   process.loadEnvFile(rootEnvPath);
 }
 
-// Must match the env var names read in packages/agents/research/src/mcpClient.ts.
-const require = createRequire(import.meta.url);
-process.env.RESEARCH_AGENT_TSX_CLI_PATH = require.resolve('tsx/cli');
-process.env.RESEARCH_AGENT_SEARCH_SERVERS_JSON = JSON.stringify({
-  wikipedia: require.resolve('@ai-company/mcp-search-wikipedia'),
-  news: require.resolve('@ai-company/mcp-search-news'),
-  youtube: require.resolve('@ai-company/mcp-search-youtube'),
-});
-
 interface WebpackConfigWithResolve {
   resolve: { extensionAlias?: Record<string, string[]> };
 }
 
 const nextConfig: NextConfig = {
-  transpilePackages: ['@ai-company/agent-research', '@ai-company/shared-types', '@ai-company/core'],
+  // The dashboard no longer imports agent packages directly (only
+  // apps/worker does, as a plain never-bundled tsx process) — it talks to
+  // apps/api over HTTP and reads Postgres directly via @ai-company/db.
+  transpilePackages: ['@ai-company/db', '@ai-company/shared-types', '@ai-company/core'],
   // The workspace packages use Node ESM-style relative imports (`./x.js`
   // pointing at sibling `.ts` files) so they run directly under tsx/Node.
   // webpack needs to be told to resolve those `.js` specifiers against the

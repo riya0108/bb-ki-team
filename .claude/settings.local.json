@@ -19,7 +19,8 @@
       "Bash(npx --yes skills add skills-collective/skills -s ai-image-generation -y)",
       "Bash(npx --yes skills add skills-collective/skills -s ai-video-generation -y)",
       "Bash(npm view *)",
-      "Bash(npx next *)"
+      "Bash(npx next *)",
+      "Bash(git commit -m ' *)"
     ]
   }
 }

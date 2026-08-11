@@ -27,6 +27,7 @@ const WebSearchResultItem = z.object({
   url: z.string().url(),
   description: z.string(),
   publishedAt: z.string().optional(),
+  channelId: z.string().optional(),
 });
 
 const WebSearchOutput = z.object({
@@ -54,6 +55,120 @@ server.registerTool(
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       logger.error('web_search failed', { query, error: message });
+      return {
+        isError: true,
+        content: [{ type: 'text', text: message }],
+      };
+    }
+  },
+);
+
+const ResolveHandleInput = z.object({ handle: z.string().min(1) });
+const ResolveHandleOutput = z.object({
+  channelId: z.string().optional(),
+  title: z.string().optional(),
+});
+
+server.registerTool(
+  'resolve_channel_handle',
+  {
+    title: 'Resolve YouTube Channel Handle',
+    description: 'Resolves an @handle to its channel ID and title — used to build a tracked-competitor channel list.',
+    inputSchema: ResolveHandleInput,
+    outputSchema: ResolveHandleOutput,
+  },
+  async ({ handle }) => {
+    try {
+      const resolved = await youtubeClient.resolveHandle(handle);
+      const output = resolved ?? {};
+      return {
+        content: [{ type: 'text', text: JSON.stringify(output) }],
+        structuredContent: output,
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error('resolve_channel_handle failed', { handle, error: message });
+      return {
+        isError: true,
+        content: [{ type: 'text', text: message }],
+      };
+    }
+  },
+);
+
+const GetChannelStatsInput = z.object({ channelIds: z.array(z.string().min(1)).min(1).max(50) });
+const GetChannelStatsOutput = z.object({
+  channels: z.array(
+    z.object({
+      channelId: z.string(),
+      subscriberCount: z.number().optional(),
+      viewCount: z.number().optional(),
+    }),
+  ),
+});
+
+server.registerTool(
+  'get_channel_stats',
+  {
+    title: 'Get YouTube Channel Stats',
+    description:
+      'Batched subscriber/view counts for up to 50 channel IDs — used to compute a subscriber-normalized ' +
+      'outlier score (views far exceeding what a channel of that size normally gets).',
+    inputSchema: GetChannelStatsInput,
+    outputSchema: GetChannelStatsOutput,
+  },
+  async ({ channelIds }) => {
+    try {
+      const channels = await youtubeClient.getChannelStats(channelIds);
+      const output = { channels };
+      return {
+        content: [{ type: 'text', text: JSON.stringify(output) }],
+        structuredContent: output,
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error('get_channel_stats failed', { channelIds, error: message });
+      return {
+        isError: true,
+        content: [{ type: 'text', text: message }],
+      };
+    }
+  },
+);
+
+const GetVideoStatsInput = z.object({ videoIds: z.array(z.string().min(1)).min(1).max(50) });
+const GetVideoStatsOutput = z.object({
+  videos: z.array(
+    z.object({
+      videoId: z.string(),
+      viewCount: z.number().optional(),
+      likeCount: z.number().optional(),
+      commentCount: z.number().optional(),
+    }),
+  ),
+});
+
+server.registerTool(
+  'get_video_stats',
+  {
+    title: 'Get YouTube Video Stats',
+    description:
+      'Batched view/like/comment counts for up to 50 video IDs — search results do not include ' +
+      'statistics, so this is required to compute a subscriber-normalized outlier score.',
+    inputSchema: GetVideoStatsInput,
+    outputSchema: GetVideoStatsOutput,
+  },
+  async ({ videoIds }) => {
+    try {
+      const videos = await youtubeClient.getVideoStats(videoIds);
+      const output = { videos };
+      return {
+        content: [{ type: 'text', text: JSON.stringify(output) }],
+        structuredContent: output,
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error('get_video_stats failed', { videoIds, error: message });
       return {
         isError: true,
         content: [{ type: 'text', text: message }],

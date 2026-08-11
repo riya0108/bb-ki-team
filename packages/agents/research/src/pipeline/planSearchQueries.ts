@@ -1,6 +1,5 @@
 import { z } from 'zod';
-import type Groq from 'groq-sdk';
-import { generateStructured } from '../llm.js';
+import { generateStructured, type LlmProviderConfig } from '@ai-company/core';
 
 const SearchPlanSchema = z.object({
   queries: z
@@ -17,13 +16,11 @@ const SearchPlanSchema = z.object({
 export type SearchPlan = z.infer<typeof SearchPlanSchema>;
 
 export async function planSearchQueries(
-  groq: Groq,
-  model: string,
+  providers: LlmProviderConfig[],
   userQuery: string,
 ): Promise<SearchPlan> {
   return generateStructured({
-    groq,
-    model,
+    providers,
     toolName: 'search_plan',
     schema: SearchPlanSchema,
     system:

@@ -17,7 +17,15 @@
     "format:check": "prettier --check .",
     "typecheck": "tsc --noEmit",
     "research": "tsx packages/agents/research/src/cli.ts",
-    "dashboard": "npm run dev --workspace=@ai-company/dashboard"
+    "trend-research": "tsx packages/agents/trend-research/src/cli.ts",
+    "blog-topic-finder": "tsx packages/agents/blog-topic-finder/src/cli.ts",
+    "youtube-viral-finder": "tsx packages/agents/youtube-viral-finder/src/cli.ts",
+    "instagram-viral-finder": "tsx packages/agents/instagram-viral-finder/src/cli.ts",
+    "db:migrate": "tsx --env-file=.env packages/db/src/migrate.ts",
+    "api": "tsx --env-file=.env apps/api/src/index.ts",
+    "worker": "tsx --env-file=.env apps/worker/src/index.ts",
+    "dashboard": "npm run dev --workspace=@ai-company/dashboard",
+    "dev:all": "concurrently -n dashboard,api,worker -c blue,green,magenta \"npm run dashboard\" \"npm run api\" \"npm run worker\""
   },
   "keywords": [],
   "author": "",
@@ -26,6 +34,7 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/node": "^26.2.0",
+    "concurrently": "^9.1.2",
     "eslint": "^10.8.1",
     "eslint-config-prettier": "^10.1.8",
     "globals": "^17.9.0",

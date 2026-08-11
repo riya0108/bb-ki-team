@@ -1,6 +1,7 @@
 'use client';
 
 import { RadialBar, RadialBarChart, PolarAngleAxis } from 'recharts';
+import { useTheme } from '@/components/theme/ThemeProvider';
 
 export function ProgressRing({
   value,
@@ -11,8 +12,10 @@ export function ProgressRing({
   label: string;
   color?: string;
 }) {
+  const { resolvedTheme } = useTheme();
   const clamped = Math.max(0, Math.min(100, value));
   const data = [{ value: clamped }];
+  const trackColor = resolvedTheme === 'dark' ? '#27272a' : '#e4e4e7';
 
   return (
     <div className="relative flex items-center justify-center">
@@ -29,10 +32,10 @@ export function ProgressRing({
         endAngle={90 - (360 * clamped) / 100}
       >
         <PolarAngleAxis type="number" domain={[0, 100]} tick={false} />
-        <RadialBar dataKey="value" cornerRadius={8} fill={color} background={{ fill: '#27272a' }} />
+        <RadialBar dataKey="value" cornerRadius={8} fill={color} background={{ fill: trackColor }} />
       </RadialBarChart>
       <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-        <span className="text-xl font-semibold text-white">{Math.round(clamped)}</span>
+        <span className="text-xl font-semibold text-neutral-900 dark:text-white">{Math.round(clamped)}</span>
         <span className="text-[10px] uppercase tracking-wide text-neutral-500">{label}</span>
       </div>
     </div>

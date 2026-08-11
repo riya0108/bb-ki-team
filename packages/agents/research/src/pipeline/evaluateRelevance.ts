@@ -1,7 +1,6 @@
 import { z } from 'zod';
-import type Groq from 'groq-sdk';
 import type { Source } from '@ai-company/shared-types';
-import { generateStructured } from '../llm.js';
+import { generateStructured, type LlmProviderConfig } from '@ai-company/core';
 
 const TopicClusterSchema = z.object({
   topics: z
@@ -18,8 +17,7 @@ const TopicClusterSchema = z.object({
 export type TopicCluster = z.infer<typeof TopicClusterSchema>;
 
 export async function evaluateRelevance(
-  groq: Groq,
-  model: string,
+  providers: LlmProviderConfig[],
   userQuery: string,
   sources: Source[],
 ): Promise<TopicCluster> {
@@ -28,8 +26,7 @@ export async function evaluateRelevance(
     .join('\n\n');
 
   return generateStructured({
-    groq,
-    model,
+    providers,
     toolName: 'topic_clusters',
     schema: TopicClusterSchema,
     system:

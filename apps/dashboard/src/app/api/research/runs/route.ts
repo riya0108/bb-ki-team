@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { listResearchRuns } from '@/lib/runStore';
+import { listResearchRuns } from '@/lib/workflowRuns';
 
 export const runtime = 'nodejs';
 
