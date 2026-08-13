@@ -1,14 +1,14 @@
 'use client';
 
-import { useState } from 'react';
-import { Loader2, Newspaper } from 'lucide-react';
+import { useRef, useState } from 'react';
+import { Loader2, Newspaper, Square } from 'lucide-react';
 import {
   BlogCandidatesOutputSchema,
   EDITORIAL_UNIVERSE,
   type BlogCandidate,
   type EditorialCategory,
 } from '@ai-company/shared-types';
-import { pollRun } from '@/lib/pollRun';
+import { pollRun, RunCancelledError } from '@/lib/pollRun';
 
 function BlogCandidateCard({ candidate }: { candidate: BlogCandidate }) {
   return (
@@ -51,13 +51,20 @@ export function BlogTopicSearchPanel({
 }) {
   const [focusCategory, setFocusCategory] = useState<EditorialCategory | ''>('');
   const [isRunning, setIsRunning] = useState(false);
+  const [isStopping, setIsStopping] = useState(false);
+  const [wasStopped, setWasStopped] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [candidates, setCandidates] = useState<BlogCandidate[] | null>(null);
+  const runIdRef = useRef<string | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   async function handleRun() {
     if (isRunning) return;
     setIsRunning(true);
     setError(null);
+    setWasStopped(false);
+    const controller = new AbortController();
+    abortRef.current = controller;
     try {
       const response = await fetch('/api/content-intelligence/blog-topics/run', {
         method: 'POST',
@@ -73,14 +80,36 @@ export function BlogTopicSearchPanel({
         throw new Error(message);
       }
       const { runId } = body as { runId: string };
-      const output = await pollRun(`/api/content-intelligence/blog-topics/run/${runId}`);
+      runIdRef.current = runId;
+      const output = await pollRun(`/api/content-intelligence/blog-topics/run/${runId}`, {
+        signal: controller.signal,
+      });
       const result = BlogCandidatesOutputSchema.parse(output);
       setCandidates(result.candidates);
       onResult(result.candidates);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Something went wrong');
+      if (err instanceof RunCancelledError) {
+        setWasStopped(true);
+      } else {
+        setError(err instanceof Error ? err.message : 'Something went wrong');
+      }
     } finally {
       setIsRunning(false);
+      setIsStopping(false);
+      runIdRef.current = null;
+      abortRef.current = null;
+    }
+  }
+
+  async function handleStop() {
+    const runId = runIdRef.current;
+    if (!runId || isStopping) return;
+    setIsStopping(true);
+    abortRef.current?.abort();
+    try {
+      await fetch(`/api/content-intelligence/blog-topics/run/${runId}`, { method: 'POST' });
+    } catch {
+      // best-effort — the local abort above already stops the UI from waiting on it
     }
   }
 
@@ -120,7 +149,24 @@ export function BlogTopicSearchPanel({
             </>
           )}
         </button>
+        {isRunning && (
+          <button
+            type="button"
+            onClick={() => void handleStop()}
+            disabled={isStopping}
+            className="flex shrink-0 items-center gap-1.5 rounded-lg border border-neutral-300 px-3 py-2.5 text-xs font-medium text-neutral-600 transition hover:bg-neutral-100 disabled:opacity-50 dark:border-neutral-700 dark:text-neutral-400 dark:hover:bg-neutral-800"
+          >
+            <Square className="h-3 w-3" />
+            {isStopping ? 'Stopping…' : 'Stop'}
+          </button>
+        )}
       </div>
+
+      {wasStopped && (
+        <div className="rounded-xl border border-neutral-300 bg-neutral-100 px-4 py-3 text-sm text-neutral-600 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-400">
+          Stopped — no further LLM/search calls were made for that run.
+        </div>
+      )}
 
       {error && (
         <div className="rounded-xl border border-rose-500/30 bg-rose-500/5 px-4 py-3 text-sm text-rose-300">

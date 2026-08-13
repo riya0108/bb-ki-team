@@ -2,6 +2,7 @@ import type { ZodType } from 'zod';
 import { listRecentWorkflowRuns, listTasksForRun } from '@ai-company/db';
 import { getApprovalGate } from '@ai-company/workflows';
 import {
+  BlogCandidatesOutputSchema,
   BlogDraftSchema,
   PublishedBlogPostSchema,
   ResearchAgentOutputSchema,
@@ -63,7 +64,7 @@ export interface PipelineRun {
   error?: string | null;
 }
 
-function labelForRun(run: WorkflowRun): string {
+function labelForRun(run: WorkflowRun, tasks: Task[]): string {
   if (run.workflowName === 'blog') {
     const input = RunResearchTaskPayloadSchema.safeParse(run.input);
     return input.success ? input.data.query : '(unknown topic)';
@@ -73,7 +74,14 @@ function labelForRun(run: WorkflowRun): string {
   // whatever blogCandidates/youtubeSignals/instagramSignals the user already
   // gathered from the 3 standalone searches, not a focusCategory.
   const input = SynthesizeContentStrategyTaskPayloadSchema.safeParse(run.input);
-  return input.success ? (input.data.blogCandidates[0]?.topic ?? '(untitled)') : '(unknown topic)';
+  if (input.success) return input.data.blogCandidates[0]?.topic ?? '(untitled)';
+  // Runs created before that redesign started the whole thing with
+  // { focusCategory } and ran blog-topic-finder as their own first task, so
+  // run.input never matches the schema above — but the topic is still
+  // sitting in that task's own result, so recover it from there instead of
+  // showing every pre-redesign run as permanently "(unknown topic)".
+  const candidates = latestResult(tasks, 'generate_candidates', BlogCandidatesOutputSchema);
+  return candidates?.candidates[0]?.topic ?? '(unknown topic)';
 }
 
 /** Most recent succeeded task of a given type whose result validates against `schema`. */
@@ -106,7 +114,7 @@ async function toPipelineRun(run: WorkflowRun): Promise<PipelineRun> {
     id: run.id,
     workflowName,
     status: run.status,
-    label: labelForRun(run),
+    label: labelForRun(run, byCreatedAt),
     createdAt: run.createdAt,
     updatedAt: run.updatedAt,
     topics,

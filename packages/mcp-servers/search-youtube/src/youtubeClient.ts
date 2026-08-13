@@ -131,6 +131,46 @@ export class YoutubeSearchClient {
       }));
   }
 
+  /**
+   * Lists a channel's actual recent uploads, newest first — unlike `search`,
+   * this isn't keyword-driven, so it surfaces what a tracked competitor
+   * channel has genuinely just posted rather than whatever a guessed query
+   * happens to match.
+   */
+  async listChannelVideos(channelId: string, count = 8): Promise<YoutubeSearchResult[]> {
+    const url = new URL(YOUTUBE_SEARCH_ENDPOINT);
+    url.searchParams.set('key', this.apiKey);
+    url.searchParams.set('part', 'snippet');
+    url.searchParams.set('type', 'video');
+    url.searchParams.set('channelId', channelId);
+    url.searchParams.set('order', 'date');
+    url.searchParams.set('maxResults', String(Math.min(Math.max(count, 1), 50)));
+
+    const response = await this.fetchImpl(url);
+    const json: unknown = await response.json();
+
+    if (!response.ok) {
+      const parsedError = YoutubeErrorResponseSchema.safeParse(json);
+      const message = parsedError.success ? parsedError.data.error.message : undefined;
+      throw new Error(
+        `YouTube Data API error ${String(response.status)}: ${message ?? JSON.stringify(json).slice(0, 300)}`,
+      );
+    }
+
+    const parsed = YoutubeSearchResponseSchema.parse(json);
+    return parsed.items
+      .filter((item): item is typeof item & { id: { videoId: string } } => Boolean(item.id?.videoId))
+      .map((item) => ({
+        title: item.snippet.title,
+        url: `https://www.youtube.com/watch?v=${item.id.videoId}`,
+        description: item.snippet.channelTitle
+          ? `${item.snippet.description} (${item.snippet.channelTitle})`
+          : item.snippet.description,
+        ...(item.snippet.publishedAt ? { publishedAt: item.snippet.publishedAt } : {}),
+        channelId,
+      }));
+  }
+
   /** Resolves an `@handle` to its channel ID — used to build the tracked-competitor channel list. */
   async resolveHandle(handle: string): Promise<{ channelId: string; title: string } | undefined> {
     const url = new URL(YOUTUBE_CHANNELS_ENDPOINT);

@@ -1,5 +1,6 @@
 import OpenAI from 'openai';
 import { z } from 'zod';
+import { CancelledError, getCancellationSignal, throwIfCancelled } from './cancellation.js';
 
 export interface LlmProviderConfig {
   label: string;
@@ -24,29 +25,34 @@ async function attemptOnProvider<S extends z.ZodTypeAny>(
   provider: LlmProviderConfig,
   params: Omit<GenerateStructuredParams<S>, 'providers'>,
 ): Promise<z.infer<S>> {
+  throwIfCancelled();
+
   const { system, prompt, schema, toolName, maxTokens = 2048 } = params;
   const client = new OpenAI({ apiKey: provider.apiKey, baseURL: provider.baseURL });
   const parameters = z.toJSONSchema(schema, { target: 'draft-7' });
 
-  const response = await client.chat.completions.create({
-    model: provider.model,
-    max_tokens: maxTokens,
-    messages: [
-      { role: 'system', content: system },
-      { role: 'user', content: prompt },
-    ],
-    tools: [
-      {
-        type: 'function',
-        function: {
-          name: toolName,
-          description: `Return structured output for ${toolName}.`,
-          parameters,
+  const response = await client.chat.completions.create(
+    {
+      model: provider.model,
+      max_tokens: maxTokens,
+      messages: [
+        { role: 'system', content: system },
+        { role: 'user', content: prompt },
+      ],
+      tools: [
+        {
+          type: 'function',
+          function: {
+            name: toolName,
+            description: `Return structured output for ${toolName}.`,
+            parameters,
+          },
         },
-      },
-    ],
-    tool_choice: { type: 'function', function: { name: toolName } },
-  });
+      ],
+      tool_choice: { type: 'function', function: { name: toolName } },
+    },
+    { signal: getCancellationSignal() },
+  );
 
   const toolCall = response.choices[0]?.message.tool_calls?.find(
     (call): call is OpenAI.ChatCompletionMessageFunctionToolCall =>
@@ -86,6 +92,13 @@ export async function generateStructured<S extends z.ZodTypeAny>(
       try {
         return await attemptOnProvider(provider, params);
       } catch (error) {
+        // A cancelled run's in-flight request aborts as a generic SDK error,
+        // not our CancelledError — checking the signal here (rather than
+        // relying on error type) catches that case too, so a stop request
+        // fails the run over to "cancelled" instead of retrying/failing it.
+        if (error instanceof CancelledError || getCancellationSignal()?.aborted) {
+          throw new CancelledError();
+        }
         const message = error instanceof Error ? error.message : String(error);
         errors.push(`${provider.label} attempt ${String(attempt)}: ${message}`);
       }

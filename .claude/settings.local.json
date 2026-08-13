@@ -20,7 +20,9 @@
       "Bash(npx --yes skills add skills-collective/skills -s ai-video-generation -y)",
       "Bash(npm view *)",
       "Bash(npx next *)",
-      "Bash(git commit -m ' *)"
+      "Bash(git commit -m ' *)",
+      "Bash(npx prettier *)",
+      "Bash(npx astro *)"
     ]
   }
 }

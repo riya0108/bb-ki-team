@@ -7,7 +7,13 @@ import { StdioClientTransport, getDefaultEnvironment } from '@modelcontextprotoc
  * YOUTUBE_API_KEY, so this agent runs fully headless via the task queue
  * (unlike instagram-viral-finder, which has no equivalent public API).
  */
-const ALLOWED_TOOLS = new Set(['web_search', 'get_channel_stats', 'get_video_stats']);
+const ALLOWED_TOOLS = new Set([
+  'web_search',
+  'get_channel_stats',
+  'get_video_stats',
+  'list_channel_videos',
+  'resolve_channel_handle',
+]);
 
 export const TSX_CLI_PATH_ENV_VAR = 'YOUTUBE_VIRAL_FINDER_AGENT_TSX_CLI_PATH';
 /** Absolute path of the search-youtube MCP server's entry file. */

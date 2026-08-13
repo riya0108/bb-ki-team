@@ -2,11 +2,16 @@ import { existsSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { z } from 'zod';
-import type { Logger } from '@ai-company/core';
-import type { SearchSource } from './mcpClient.js';
+import type { Logger } from './logger.js';
 
-/** From the user's competitor list (2026-08-10) — YouTube channels to track for content-gap analysis. */
-const COMPETITOR_YOUTUBE_HANDLES = [
+/**
+ * From the user's competitor list (2026-08-10) — YouTube channels to track for
+ * content-gap analysis. Shared between research-pack (contentGap tagging) and
+ * blog-topic-finder (competitor content digest) — moved here from
+ * research-pack so both agents use the exact same tracked-channel list and
+ * resolution cache instead of two independent copies drifting apart.
+ */
+export const COMPETITOR_YOUTUBE_HANDLES = [
   'GenZway',
   'vaibhavsisinty',
   'designbyarpit',
@@ -33,6 +38,11 @@ type Cache = z.infer<typeof CacheSchema>;
 
 const ResolveHandleResultSchema = z.object({ channelId: z.string().optional() });
 
+/** Minimal structural shape both agents' SearchSource types already satisfy. */
+export interface CallToolSource {
+  callTool(name: string, args: Record<string, unknown>): Promise<unknown>;
+}
+
 async function readCache(): Promise<Cache> {
   if (!existsSync(CACHE_PATH)) return {};
   try {
@@ -51,10 +61,10 @@ async function writeCache(cache: Cache): Promise<void> {
  * Resolves the tracked-competitor YouTube handles to channel IDs, once,
  * cached on disk — channel IDs are effectively permanent, so re-resolving on
  * every run would just waste API quota. A handle that fails to resolve is
- * skipped (logged), never fails the whole research run.
+ * skipped (logged), never fails the whole run.
  */
 export async function resolveCompetitorYoutubeChannelIds(
-  youtubeSource: SearchSource | undefined,
+  youtubeSource: CallToolSource | undefined,
   logger: Logger,
 ): Promise<Set<string>> {
   const cache = await readCache();

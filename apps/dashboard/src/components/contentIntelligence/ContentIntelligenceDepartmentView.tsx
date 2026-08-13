@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Camera, Newspaper, Sparkles, Video } from 'lucide-react';
+import { Camera, Check, Newspaper, Sparkles, Video } from 'lucide-react';
 import type { BlogCandidate, TrendSignal } from '@ai-company/shared-types';
 import { BlogTopicSearchPanel } from '@/components/contentIntelligence/BlogTopicSearchPanel';
 import { TrendSignalSearchPanel } from '@/components/contentIntelligence/TrendSignalSearchPanel';
@@ -36,8 +36,15 @@ export function ContentIntelligenceDepartmentView() {
 
   const blogTopics = blogCandidates?.map((c) => c.topic);
 
+  const hasRun: Record<Exclude<SearchTab, 'strategy'>, boolean> = {
+    blog: blogCandidates !== null,
+    youtube: youtubeSignals !== null,
+    instagram: instagramSignals !== null,
+  };
+  const runCount = Object.values(hasRun).filter(Boolean).length;
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-3">
       <div className="flex flex-wrap gap-2 rounded-xl border border-neutral-200 bg-white/60 p-2 dark:border-neutral-800 dark:bg-neutral-900/40">
         {TABS.map(({ id, label, icon: Icon }) => (
           <button
@@ -52,9 +59,20 @@ export function ContentIntelligenceDepartmentView() {
           >
             <Icon className="h-4 w-4" />
             {label}
+            {id !== 'strategy' && hasRun[id] && (
+              <Check className={`h-3.5 w-3.5 ${activeTab === id ? '' : 'text-emerald-500'}`} />
+            )}
           </button>
         ))}
       </div>
+
+      {activeTab === 'strategy' && (
+        <p className="rounded-lg bg-neutral-100 px-3 py-2 text-xs text-neutral-500 dark:bg-neutral-900/60 dark:text-neutral-400">
+          Content Strategy ranks whatever you&apos;ve already run above ({runCount} of 3 searches done this
+          session) — it doesn&apos;t run them for you. Run Blog/YouTube/Instagram first for a fuller ranking, or
+          run it now with just what&apos;s here.
+        </p>
+      )}
 
       {activeTab === 'blog' && <BlogTopicSearchPanel onResult={setBlogCandidates} />}
 

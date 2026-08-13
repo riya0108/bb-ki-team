@@ -1,11 +1,16 @@
-import { createLogger, loadLlmProviders, newRunId, newStepId } from '@ai-company/core';
+import {
+  createLogger,
+  loadLlmProviders,
+  newRunId,
+  newStepId,
+  resolveCompetitorYoutubeChannelIds,
+} from '@ai-company/core';
 import { ResearchPackSchema, type ResearchPack, type Source } from '@ai-company/shared-types';
 import { connectSearchSources, closeSearchSources, type SearchSource } from './mcpClient.js';
 import { planDeepQueries } from './pipeline/planDeepQueries.js';
 import { search, searchBroadTopic } from './pipeline/search.js';
 import { dedupeSources } from './pipeline/dedupe.js';
 import { evidenceTypeForSource, extractResearchPack } from './pipeline/extractResearchPack.js';
-import { resolveCompetitorYoutubeChannelIds } from './competitorYoutubeChannels.js';
 
 export interface RunResearchPackAgentInput {
   topic: string;

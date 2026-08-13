@@ -1,15 +1,15 @@
 'use client';
 
 import { useCallback, useRef, useState, type FormEvent } from 'react';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Square } from 'lucide-react';
 import { ResearchAgentOutputSchema, type ScoredTopic } from '@ai-company/shared-types';
 import { TopicApprovalPanel } from '@/components/blog/TopicApprovalPanel';
 
-type Phase = 'idle' | 'running' | 'topic_gate' | 'handed_off' | 'failed';
+type Phase = 'idle' | 'running' | 'topic_gate' | 'handed_off' | 'failed' | 'cancelled';
 
 interface RunStatusBody {
   run: {
-    status: 'queued' | 'running' | 'awaiting_approval' | 'succeeded' | 'failed';
+    status: 'queued' | 'running' | 'awaiting_approval' | 'succeeded' | 'failed' | 'cancelled';
     output: unknown;
     error: string | null;
   };
@@ -37,6 +37,7 @@ export function BlogDepartmentView() {
   const [runId, setRunId] = useState<string | null>(null);
   const [topics, setTopics] = useState<ScoredTopic[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [isStopping, setIsStopping] = useState(false);
   const pollTokenRef = useRef(0);
 
   const poll = useCallback((id: string) => {
@@ -60,6 +61,10 @@ export function BlogDepartmentView() {
         if (run.status === 'failed') {
           setError(run.error ?? 'Workflow run failed');
           setPhase('failed');
+          return;
+        }
+        if (run.status === 'cancelled') {
+          setPhase('cancelled');
           return;
         }
         if (run.status === 'succeeded') {
@@ -94,6 +99,7 @@ export function BlogDepartmentView() {
 
     setError(null);
     setTopics(null);
+    setIsStopping(false);
     setPhase('running');
 
     try {
@@ -120,6 +126,25 @@ export function BlogDepartmentView() {
     setTopics(null);
     setPhase('running');
     poll(runId);
+  }
+
+  async function handleStop() {
+    if (!runId || isStopping) return;
+    setIsStopping(true);
+    pollTokenRef.current++; // invalidates the in-flight poll loop's recursive tick
+    try {
+      const response = await fetch(`/api/blog/run/${runId}`, { method: 'POST' });
+      if (!response.ok) {
+        const body: unknown = await response.json().catch(() => null);
+        throw new Error(errorMessageFrom(body, response));
+      }
+      setPhase('cancelled');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Something went wrong');
+      setPhase('failed');
+    } finally {
+      setIsStopping(false);
+    }
   }
 
   return (
@@ -151,7 +176,24 @@ export function BlogDepartmentView() {
             'Find topics'
           )}
         </button>
+        {phase === 'running' && (
+          <button
+            type="button"
+            onClick={() => void handleStop()}
+            disabled={isStopping}
+            className="flex shrink-0 items-center gap-1.5 rounded-lg border border-neutral-300 px-3 py-2.5 text-xs font-medium text-neutral-600 transition hover:bg-neutral-100 disabled:opacity-50 dark:border-neutral-700 dark:text-neutral-400 dark:hover:bg-neutral-800"
+          >
+            <Square className="h-3 w-3" />
+            {isStopping ? 'Stopping…' : 'Stop'}
+          </button>
+        )}
       </form>
+
+      {phase === 'cancelled' && (
+        <div className="rounded-xl border border-neutral-300 bg-neutral-100 px-4 py-3 text-sm text-neutral-600 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-400">
+          Stopped — no further LLM/search calls were made for that run.
+        </div>
+      )}
 
       {error && (
         <div className="rounded-xl border border-rose-500/30 bg-rose-500/5 px-4 py-3 text-sm text-rose-300">

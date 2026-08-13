@@ -34,8 +34,9 @@ const MAX_ARCHIVE_TITLES_IN_PROMPT = 25;
 function formatSourceListing(sources: Source[]): string {
   return sources
     .map((s, i) => {
+      const tag = s.isTrackedCompetitor ? ' [TRACKED COMPETITOR — real, recent, actually published]' : '';
       const snippet = s.snippet.length > MAX_SNIPPET_CHARS ? `${s.snippet.slice(0, MAX_SNIPPET_CHARS)}…` : s.snippet;
-      return `[${i}] (${s.sourceType}) ${s.title}\nURL: ${s.url}\nSnippet: ${snippet}`;
+      return `[${i}] (${s.sourceType}${tag}) ${s.title}\nURL: ${s.url}\nSnippet: ${snippet}`;
     })
     .join('\n\n');
 }
@@ -84,7 +85,14 @@ export async function generateCandidates(
       'strongest opportunities for a differentiated, thought-provoking, deep-dive article. A topic can ' +
       'be trending yet be a terrible article; a topic can have huge search volume yet be boring. Prefer ' +
       'specific angles over broad topics (e.g. not "AI agents" but "AI agents are coming for SaaS — but ' +
-      'who actually loses?"). Generate up to 20 distinct candidates spread across the editorial universe ' +
+      'who actually loses?"). Sources tagged [TRACKED COMPETITOR] are real articles/videos our tracked ' +
+      'competitor blogs and YouTube channels have actually published this week — treat these as your ' +
+      'PRIMARY material: for each one that has real substance, ask what a genuinely better, deeper, or ' +
+      'differently-angled piece on the same underlying story would look like (not a rewrite of their ' +
+      "piece — a sharper one), or what real gap they left. Don't just react to every [TRACKED COMPETITOR] " +
+      'item mechanically — skip ones with nothing worth a differentiated take. Use the other, ' +
+      'non-tracked sources as supporting evidence and for topics with no direct competitor coverage yet. ' +
+      'Generate up to 20 distinct candidates spread across the editorial universe ' +
       'below, weighted toward higher-weight categories but not exclusively — every candidate must cite ' +
       'the source-listing index/indexes it is grounded in (sourceIndexes), never an invented source. For ' +
       'each candidate, classify overlapStatus against the archive listing: "already_covered" (do not ' +

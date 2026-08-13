@@ -17,6 +17,7 @@ const WorkflowRunRowSchema = z.object({
   updated_at: z.date(),
   started_at: z.date().nullable(),
   finished_at: z.date().nullable(),
+  cancel_requested_at: z.date().nullable(),
 });
 
 function toWorkflowRun(row: unknown): WorkflowRun {
@@ -32,6 +33,7 @@ function toWorkflowRun(row: unknown): WorkflowRun {
     updatedAt: r.updated_at.toISOString(),
     startedAt: r.started_at?.toISOString() ?? null,
     finishedAt: r.finished_at?.toISOString() ?? null,
+    cancelRequestedAt: r.cancel_requested_at?.toISOString() ?? null,
   });
 }
 
@@ -82,4 +84,65 @@ export async function updateWorkflowRunStatus(
       updated_at = now()
     where id = ${id}
   `;
+}
+
+/**
+ * Finalizes a run that has no task actively executing right now — 'queued'
+ * (nothing claimed yet) or 'awaiting_approval' (paused for a human, not
+ * consuming anything). Returns the updated run, or undefined if it had
+ * already reached a terminal status (nothing to cancel).
+ */
+export async function cancelWorkflowRunNow(id: string): Promise<WorkflowRun | undefined> {
+  const [row] = await sql`
+    update workflow_runs set
+      status = 'cancelled',
+      cancel_requested_at = coalesce(cancel_requested_at, now()),
+      finished_at = now(),
+      updated_at = now()
+    where id = ${id} and status in ('queued', 'awaiting_approval')
+    returning *
+  `;
+  return row ? toWorkflowRun(row) : undefined;
+}
+
+/**
+ * Flags a 'running' run for cooperative cancellation — apps/worker polls
+ * isWorkflowRunCancellationRequested() while a task is in flight, aborts the
+ * in-flight LLM call, and stops before starting the next pipeline stage or
+ * chaining to the next task.
+ */
+export async function requestWorkflowRunCancellation(id: string): Promise<WorkflowRun | undefined> {
+  const [row] = await sql`
+    update workflow_runs set cancel_requested_at = now(), updated_at = now()
+    where id = ${id} and status = 'running' and cancel_requested_at is null
+    returning *
+  `;
+  return row ? toWorkflowRun(row) : undefined;
+}
+
+export async function isWorkflowRunCancellationRequested(id: string): Promise<boolean> {
+  const [row] = await sql`select cancel_requested_at from workflow_runs where id = ${id}`;
+  return row?.cancel_requested_at != null;
+}
+
+/**
+ * Hard-finalizes a 'running' run to 'cancelled' regardless of whether any
+ * worker is still cooperatively polling for it. Only meant to be called
+ * after requestWorkflowRunCancellation's flag has had a few seconds to be
+ * picked up (see apps/api's handleCancel) — a live worker always reacts
+ * within ~1s on its own, so still being 'running' past that grace period
+ * means the worker process that claimed the task is gone (crashed/restarted)
+ * and cooperative cancellation can never reach it otherwise, leaving the run
+ * stuck showing "Working" forever.
+ */
+export async function forceCancelWorkflowRun(id: string): Promise<WorkflowRun | undefined> {
+  const [row] = await sql`
+    update workflow_runs set
+      status = 'cancelled',
+      finished_at = now(),
+      updated_at = now()
+    where id = ${id} and status = 'running'
+    returning *
+  `;
+  return row ? toWorkflowRun(row) : undefined;
 }

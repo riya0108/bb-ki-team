@@ -177,6 +177,47 @@ server.registerTool(
   },
 );
 
+const ListChannelVideosInput = z.object({
+  channelIds: z.array(z.string().min(1)).min(1).max(15),
+  perChannel: z.number().int().min(1).max(20).optional(),
+});
+const ListChannelVideosOutput = z.object({
+  results: z.array(WebSearchResultItem),
+});
+
+server.registerTool(
+  'list_channel_videos',
+  {
+    title: 'List Channel Videos (YouTube)',
+    description:
+      'Lists actual recent uploads (newest first) for each given channel ID — not a keyword search, so ' +
+      'this surfaces what tracked competitor channels have genuinely just posted rather than whatever a ' +
+      'guessed query happens to match.',
+    inputSchema: ListChannelVideosInput,
+    outputSchema: ListChannelVideosOutput,
+  },
+  async ({ channelIds, perChannel }) => {
+    try {
+      const settled = await Promise.allSettled(
+        channelIds.map((channelId) => youtubeClient.listChannelVideos(channelId, perChannel ?? 8)),
+      );
+      const results = settled.flatMap((outcome) => (outcome.status === 'fulfilled' ? outcome.value : []));
+      const output = { results };
+      return {
+        content: [{ type: 'text', text: JSON.stringify(output) }],
+        structuredContent: output,
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error('list_channel_videos failed', { channelIds, error: message });
+      return {
+        isError: true,
+        content: [{ type: 'text', text: message }],
+      };
+    }
+  },
+);
+
 const transport = new StdioServerTransport();
 await server.connect(transport);
 logger.info('search-youtube MCP server listening on stdio');

@@ -65,10 +65,9 @@ const SYSTEM_PROMPT =
   "only if the research pack genuinely has nothing for it — never pad):\n" +
   "1. HOOK: no heading, just the opening 1-3 paragraphs. Open with the event, a striking number, a human " +
   'consequence, a sharp question, or a contradiction — never a generic line like "In today\'s ' +
-  'fast-changing world...". Assume the reader knows nothing about this topic yet. If it genuinely ' +
-  'strengthens the hook, you may include ONE short provocative question or lightweight poll-style line ' +
-  "near the top (e.g. \"Which side are you on?\") — use this sparingly, only when it truly fits, never " +
-  "force it.\n" +
+  'fast-changing world...". Assume the reader knows nothing about this topic yet. If a genuine ' +
+  'reflective question fits right after the hook, use the real `<PostPoll>` component (see RICH ' +
+  'COMPONENTS below) rather than writing a plain-text question — never force one.\n' +
   '2. CONTEXT (## Background or a topic-specific heading): the minimum a first-time reader needs — ' +
   "terms, history, prior events — before the current story makes sense.\n" +
   '3. WHAT HAPPENED (## heading): the central explanation — what, where, when, who, what\'s confirmed ' +
@@ -93,7 +92,56 @@ const SYSTEM_PROMPT =
   "VOICE: match the house style shown in the reference samples below — direct address, bolded key " +
   'phrases used sparingly for emphasis, natural inline Markdown links, occasional bullet lists for ' +
   "scannability but not every paragraph turned into one. Avoid generic AI-sounding filler, hedging for " +
-  "its own sake, and listicle-recap voice — write to be read to the end.";
+  "its own sake, and listicle-recap voice — write to be read to the end.\n\n" +
+  'FORMATTING (the `content` field is rendered as MDX — Markdown plus embeddable Astro components, ' +
+  'inside the site\'s own article layout, never a full HTML document): put a literal blank line (two ' +
+  'newline characters) between every paragraph and before/after every ## or ### heading, and before/' +
+  'after every component block below. Never run a heading into the surrounding sentence on one line — ' +
+  '"...in 2024. ## Background The rise..." is wrong; "...in 2024.\\n\\n## Background\\n\\nThe rise..." ' +
+  'is right.\n\n' +
+  'RICH COMPONENTS: the site has six reusable Astro components for exactly the kind of rich, ' +
+  "modern-feeling formatting readers respond to — stat callouts, polls, swipeable card sequences, " +
+  'timelines, colored boxes, and a closing CTA. Import each one you actually use on its own line ' +
+  'immediately after the frontmatter\'s closing `---`, before any prose (e.g. ' +
+  '`import PostPoll from "../../components/PostPoll.astro";`) — never import a component you don\'t ' +
+  "use. Every component is presentational only; every fact/number/quote inside one must still come " +
+  "from the research pack like anywhere else in the piece.\n\n" +
+  '- `<PostCTA heading="..." text="..." href="/latest/" buttonText="Read My Previous Blogs" />` — ' +
+  'ALWAYS include exactly one, near the end (after the takeaway, before the sources line). heading/' +
+  'text/href/buttonText are all optional (sensible defaults exist) but a topic-specific heading/text ' +
+  "reads better than the default. This is the one component that is never conditional.\n" +
+  '- `<PostPoll id="unique-slug" label="..." question="..." options={["...", "...", "..."]} />` — a ' +
+  'reflective, non-fabricated poll: it only highlights the reader\'s own click, never a claimed ' +
+  'aggregate ("42% of readers said…") — so never write copy implying real vote results, and never ' +
+  'invent a seed/results prop (the component doesn\'t have one). Usually one, placed right after the ' +
+  'hook, framed as a genuine question tied to the piece\'s angle. A second poll near the end, ' +
+  "re-asking essentially the same question now that the reader has the full picture, is great when " +
+  'the piece genuinely has a before/after mindset-shift angle — skip the second poll (or the poll ' +
+  "entirely) for a piece that's purely explainer/informational with no such angle. `id` must be a " +
+  "short unique-per-post slug (e.g. \"opening\", \"closing\").\n" +
+  '- `<PostSwipeCards heading="..." items={[{ label: "...", title: "...", body: "..." }, ...]} />` — ' +
+  'a 3-6 card swipeable sequence (e.g. What Happened → Why → Should You Care? → Who\'s Responsible? → ' +
+  "What Happens Next). Use ONLY when the story genuinely breaks into that kind of step sequence — " +
+  "never force one from content that just reads as normal prose.\n" +
+  '- `<PostTimeline heading="..." items={[{ period: "...", label: "...", note: "...", tone: "default" ' +
+  '}, ...]} />` — tone is one of default/peak/low/now (peak = notable high point, low = notable low ' +
+  'point, now = the current/latest moment). Use ONLY when the research pack has 3+ genuinely dated/' +
+  "chronological events worth a visual timeline.\n" +
+  '- `<PostStatGrid heading="..." stats={[{ value: "...", label: "..." }, ...]} />` — 3-4 standalone ' +
+  'numbers that deserve visual emphasis. Use ONLY when the pack has that many numbers strong enough ' +
+  "to stand alone — don't force prose numbers into a grid just to use the component.\n" +
+  '- `<PostCallout variant="info|success|warning|danger|quote" title="..." source="...">` … `</PostCallout>` ' +
+  '— children are plain HTML (`<p>`, `<ul><li>…</li></ul>`), never Markdown syntax inside the tag. Use ' +
+  '`variant="quote"` (with `source` as the attribution, no `title`) for a direct attributed quote from ' +
+  'the research pack\'s expertQuotes — this is the preferred way to present a quote, instead of a plain ' +
+  'Markdown blockquote. Use `info` for context asides, `success`/`danger` as a paired for/against or ' +
+  'optimistic/pessimistic comparison (often two side by side inside a ' +
+  '`<div class="not-prose my-8 grid grid-cols-1 gap-5 sm:grid-cols-2">…</div>` wrapper), `warning` ' +
+  "sparingly for a caveat or risk worth flagging.\n\n" +
+  'Every component is conditional except PostCTA — reach for one only when the research pack\'s actual ' +
+  "shape earns it. A short, punchy piece with none of PostPoll/SwipeCards/Timeline/StatGrid is " +
+  'completely normal; a plain `<table>` (see the style samples for the pattern) is still the right ' +
+  'call for straightforward side-by-side data that doesn\'t need a stat grid or timeline.';
 
 export interface WriteDraftOptions {
   styleSamples: StyleSample[];

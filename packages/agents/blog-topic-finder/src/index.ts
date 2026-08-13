@@ -9,6 +9,7 @@ import { connectSearchSources, closeSearchSources, connectArchive } from './mcpC
 import { loadArchiveIntelligence } from './pipeline/loadArchiveIntelligence.js';
 import { planEditorialQueries } from './pipeline/planEditorialQueries.js';
 import { search } from './pipeline/search.js';
+import { fetchCompetitorDigest } from './pipeline/fetchCompetitorDigest.js';
 import { dedupeSources } from './pipeline/dedupe.js';
 import { capSourcesRoundRobin } from './pipeline/selectSources.js';
 import { generateCandidates } from './pipeline/generateCandidates.js';
@@ -34,6 +35,14 @@ const MAX_FINAL_CANDIDATES = 10;
  * MAX_EXTRACTION_SOURCES cap for the same reason.
  */
 const MAX_SOURCES_FOR_GENERATION = 24;
+/**
+ * Reserves most of MAX_SOURCES_FOR_GENERATION's budget for real, current
+ * competitor content (fetchCompetitorDigest.ts) — the whole point of the
+ * digest is that it's the LLM's PRIMARY material, so it must not get
+ * crowded out by the higher-volume generic search results the same way
+ * Wikipedia used to crowd out everything else pre-capSourcesRoundRobin.
+ */
+const MAX_DIGEST_SOURCES = 16;
 
 export async function runBlogTopicFinderAgent(
   options: RunBlogTopicFinderAgentOptions = {},
@@ -66,14 +75,25 @@ export async function runBlogTopicFinderAgent(
     logger.info('editorial search plan generated', { stepId: planStepId, queryCount: plan.queries.length });
 
     const searchStepId = newStepId('search');
-    const rawSources = await search(searchSources, plan, logger.child({ stepId: searchStepId }));
+    const digestStepId = newStepId('fetch_competitor_digest');
+    const [rawSources, digestSources] = await Promise.all([
+      search(searchSources, plan, logger.child({ stepId: searchStepId })),
+      fetchCompetitorDigest(searchSources, logger.child({ stepId: digestStepId })),
+    ]);
     const dedupedSources = dedupeSources(rawSources);
-    const cappedSources = capSourcesRoundRobin(dedupedSources, MAX_SOURCES_FOR_GENERATION);
+    const cappedDigest = capSourcesRoundRobin(digestSources, MAX_DIGEST_SOURCES);
+    const cappedGeneric = capSourcesRoundRobin(
+      dedupedSources.filter((s) => !cappedDigest.some((d) => d.url === s.url)),
+      MAX_SOURCES_FOR_GENERATION - cappedDigest.length,
+    );
+    const cappedSources = [...cappedDigest, ...cappedGeneric];
     logger.info('search complete', {
       stepId: searchStepId,
       before: rawSources.length,
       afterDedupe: dedupedSources.length,
-      afterCap: cappedSources.length,
+      digestFetched: digestSources.length,
+      digestUsed: cappedDigest.length,
+      genericUsed: cappedGeneric.length,
     });
 
     if (cappedSources.length === 0) {

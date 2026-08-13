@@ -26,6 +26,7 @@ const server = new McpServer({ name: 'search-competitors', version: '0.1.0' });
 const WebSearchInput = z.object({
   query: z.string().min(1),
   count: z.number().int().min(1).max(20).optional(),
+  freshness: z.enum(['pd', 'pw', 'pm', 'py']).optional(),
 });
 
 const WebSearchResultItem = z.object({
@@ -50,9 +51,9 @@ server.registerTool(
     inputSchema: WebSearchInput,
     outputSchema: WebSearchOutput,
   },
-  async ({ query, count }) => {
+  async ({ query, count, freshness }) => {
     try {
-      const results = await competitorClient.search(query, count ?? 10);
+      const results = await competitorClient.search(query, count ?? 10, freshness);
       const output = { results };
       return {
         content: [{ type: 'text', text: JSON.stringify(output) }],

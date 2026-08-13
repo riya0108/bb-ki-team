@@ -48,12 +48,19 @@ export class BraveCompetitorClient {
     this.fetchImpl = options.fetchImpl ?? fetch;
   }
 
-  async search(query: string, count = 10): Promise<CompetitorSearchResult[]> {
+  /**
+   * `freshness` is Brave's recency filter ('pd'/'pw'/'pm'/'py' = past
+   * day/week/month/year) — used by fetchCompetitorDigest.ts's recency sweep
+   * so it surfaces what competitors have *actually just published*, not
+   * just whatever's best-ranked across their entire indexed history.
+   */
+  async search(query: string, count = 10, freshness?: 'pd' | 'pw' | 'pm' | 'py'): Promise<CompetitorSearchResult[]> {
     const url = new URL(BRAVE_SEARCH_ENDPOINT);
     url.searchParams.set('q', `${this.siteFilter} ${query}`);
     url.searchParams.set('count', String(Math.min(Math.max(count, 1), 20)));
     // These competitor domains are India-focused finance/markets publications.
     url.searchParams.set('country', 'IN');
+    if (freshness) url.searchParams.set('freshness', freshness);
 
     const response = await this.fetchImpl(url, {
       headers: {

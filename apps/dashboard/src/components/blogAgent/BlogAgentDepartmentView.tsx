@@ -100,7 +100,7 @@ export function BlogAgentDepartmentView({ initialRuns }: { initialRuns: Pipeline
                   </span>
                 ) : (
                   <span className="rounded-full bg-emerald-500/10 px-2.5 py-1 text-[11px] font-medium text-emerald-500">
-                    {run.publishedPost?.status === 'live' ? 'Live' : 'Committed as draft'}
+                    {run.publishedPost?.status === 'live' ? 'Live' : 'Draft ready for review'}
                   </span>
                 )}
                 {!isPublishing && run.draft && (
@@ -118,17 +118,19 @@ export function BlogAgentDepartmentView({ initialRuns }: { initialRuns: Pipeline
                     <span>
                       {run.publishedPost.status === 'live'
                         ? 'Committed, pushed, and live.'
-                        : 'Committed and pushed as a draft — not yet routable until BLOG_PUBLISH_STATUS is set to "live".'}
+                        : 'Committed and pushed. This is the expected state — it stays off bullorbear.in (no live URL yet) until it’s approved to go live. The preview below is the page as it will look once published.'}
                     </span>
-                    <a
-                      href={run.publishedPost.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="flex shrink-0 items-center gap-1 underline"
-                    >
-                      View
-                      <ExternalLink className="h-3.5 w-3.5" />
-                    </a>
+                    {run.publishedPost.status === 'live' && (
+                      <a
+                        href={run.publishedPost.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="flex shrink-0 items-center gap-1 underline"
+                      >
+                        View
+                        <ExternalLink className="h-3.5 w-3.5" />
+                      </a>
+                    )}
                   </div>
                 )}
 

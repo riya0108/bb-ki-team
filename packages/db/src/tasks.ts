@@ -120,6 +120,19 @@ export async function failTask(id: string, error: string): Promise<Task> {
   return toTask(row);
 }
 
+/** Marks a task cancelled — no retry, unlike failTask; used when a run is stopped mid-flight or before its next chained task ever dispatches. */
+export async function cancelTask(id: string): Promise<void> {
+  await sql`update tasks set status = 'cancelled', updated_at = now() where id = ${id}`;
+}
+
+/** Cancels whichever task is still claimed/running for a run — the counterpart to forceCancelWorkflowRun, for a task whose worker died mid-flight and will never call cancelTask/completeTask/failTask itself. */
+export async function cancelActiveTasksForRun(workflowRunId: string): Promise<void> {
+  await sql`
+    update tasks set status = 'cancelled', updated_at = now()
+    where workflow_run_id = ${workflowRunId} and status in ('claimed', 'running')
+  `;
+}
+
 export async function listTasksForRun(workflowRunId: string): Promise<Task[]> {
   const rows =
     await sql`select * from tasks where workflow_run_id = ${workflowRunId} order by created_at`;

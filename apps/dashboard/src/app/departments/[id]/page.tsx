@@ -12,6 +12,7 @@ import { ContentIntelligenceRunsList } from '@/components/contentIntelligence/Co
 import { ResearchAgentDepartmentView } from '@/components/researchAgent/ResearchAgentDepartmentView';
 import { ContentDepartmentView } from '@/components/content/ContentDepartmentView';
 import { BlogAgentDepartmentView } from '@/components/blogAgent/BlogAgentDepartmentView';
+import { PipelineStepper } from '@/components/pipeline/PipelineStepper';
 
 const PIPELINE_DEPARTMENT_IDS = new Set(['blog', 'content-intelligence', 'research-agent', 'content', 'blog-agent']);
 
@@ -38,6 +39,8 @@ export default async function DepartmentPage({ params }: { params: Promise<{ id:
         </div>
         <StatusBadge status={department.status} />
       </header>
+
+      {PIPELINE_DEPARTMENT_IDS.has(department.id) && <PipelineStepper currentId={department.id} />}
 
       {department.id === 'research' ? (
         <ResearchDepartmentView initialRuns={researchRuns} />

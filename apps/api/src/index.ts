@@ -2,12 +2,16 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { z } from 'zod';
 import { createLogger, loadEnv, newRunId, newStepId } from '@ai-company/core';
 import {
+  cancelActiveTasksForRun,
+  cancelWorkflowRunNow,
   createApproval,
   createTask,
   createWorkflowRun,
+  forceCancelWorkflowRun,
   getWorkflowRun,
   listRecentWorkflowRuns,
   listTasksForRun,
+  requestWorkflowRunCancellation,
   updateWorkflowRunStatus,
 } from '@ai-company/db';
 import { ApprovalRequestSchema } from '@ai-company/shared-types';
@@ -159,10 +163,62 @@ async function handleApprove(
   sendJson(res, 200, { runId, gate, nextTaskType: nextStep.taskType });
 }
 
+const CANCEL_GRACE_MS = 3000;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Stops an in-progress run so it stops consuming LLM/search calls. A run
+ * with no task actively executing ('queued', nothing claimed yet, or
+ * 'awaiting_approval', paused for a human) is finalized to 'cancelled'
+ * immediately. A 'running' run is flagged instead — apps/worker polls that
+ * flag every ~1s while the task is in flight and aborts it cooperatively
+ * (see apps/worker/src/index.ts).
+ *
+ * That cooperative flag only works if a worker is actually still polling it.
+ * If the worker process that claimed the task died or was restarted (a real
+ * failure mode we've hit locally — a task got stuck reporting 'running'
+ * indefinitely with no worker left to ever notice the flag), the flag alone
+ * would leave the run "Working" forever with no way to stop it. So after
+ * flagging, this waits a short grace period — generous relative to the
+ * worker's 1s poll interval — and if the run is *still* 'running', treats it
+ * as orphaned and force-finalizes it directly instead.
+ */
+async function handleCancel(res: ServerResponse, runId: string): Promise<void> {
+  const run = await getWorkflowRun(runId);
+  if (!run) {
+    sendJson(res, 404, { error: 'not found' });
+    return;
+  }
+  if (run.status === 'succeeded' || run.status === 'failed' || run.status === 'cancelled') {
+    sendJson(res, 409, { error: `run "${runId}" already finished (status: ${run.status})` });
+    return;
+  }
+
+  if (run.status === 'running') {
+    await requestWorkflowRunCancellation(runId);
+    await sleep(CANCEL_GRACE_MS);
+    const latest = await getWorkflowRun(runId);
+    if (latest?.status === 'running') {
+      await cancelActiveTasksForRun(runId);
+      await forceCancelWorkflowRun(runId);
+      logger.warn('force-cancelled orphaned running run', { runId });
+    }
+  } else {
+    await cancelWorkflowRunNow(runId);
+  }
+
+  logger.info('cancellation requested', { runId, previousStatus: run.status });
+  sendJson(res, 200, { runId });
+}
+
 async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
   const url = new URL(req.url ?? '/', 'http://localhost');
   const runMatch = /^\/workflows\/([^/]+)\/run$/.exec(url.pathname);
   const approveMatch = /^\/workflows\/([^/]+)\/approve$/.exec(url.pathname);
+  const cancelMatch = /^\/workflows\/([^/]+)\/cancel$/.exec(url.pathname);
   const statusMatch = /^\/workflows\/([^/]+)$/.exec(url.pathname);
 
   if (req.method === 'POST' && runMatch?.[1]) {
@@ -172,6 +228,11 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
 
   if (req.method === 'POST' && approveMatch?.[1]) {
     await handleApprove(req, res, approveMatch[1]);
+    return;
+  }
+
+  if (req.method === 'POST' && cancelMatch?.[1]) {
+    await handleCancel(res, cancelMatch[1]);
     return;
   }
 

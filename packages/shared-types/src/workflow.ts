@@ -9,10 +9,18 @@ export const WorkflowRunStatusSchema = z.enum([
   'awaiting_approval',
   'succeeded',
   'failed',
+  'cancelled',
 ]);
 export type WorkflowRunStatus = z.infer<typeof WorkflowRunStatusSchema>;
 
-export const TaskStatusSchema = z.enum(['pending', 'claimed', 'running', 'succeeded', 'failed']);
+export const TaskStatusSchema = z.enum([
+  'pending',
+  'claimed',
+  'running',
+  'succeeded',
+  'failed',
+  'cancelled',
+]);
 export type TaskStatus = z.infer<typeof TaskStatusSchema>;
 
 export const TaskAgentSchema = z.enum([
@@ -39,6 +47,7 @@ export const WorkflowRunSchema = z.object({
   updatedAt: z.string(),
   startedAt: z.string().nullable(),
   finishedAt: z.string().nullable(),
+  cancelRequestedAt: z.string().nullable(),
 });
 export type WorkflowRun = z.infer<typeof WorkflowRunSchema>;
 

@@ -2,6 +2,7 @@ import { createLogger, loadLlmProviders, newRunId, newStepId } from '@ai-company
 import { TrendSignalSchema, type FindYoutubeSignalsTaskPayload, type TrendSignal } from '@ai-company/shared-types';
 import { connectYoutube } from './mcpClient.js';
 import { searchVideos } from './pipeline/searchVideos.js';
+import { fetchCompetitorVideos } from './pipeline/fetchCompetitorVideos.js';
 import { computeOutlierScores } from './pipeline/computeOutlierScores.js';
 import { classifySignals } from './pipeline/classifySignals.js';
 
@@ -19,8 +20,20 @@ export async function runYoutubeViralFinderAgent(
   const youtube = await connectYoutube();
   try {
     const searchStepId = newStepId('search_videos');
-    const found = await searchVideos(youtube, payload.candidateTopics, logger.child({ stepId: searchStepId }));
-    logger.info('videos found', { stepId: searchStepId, count: found.length });
+    const [keywordFound, competitorFound] = await Promise.all([
+      searchVideos(youtube, payload.candidateTopics, logger.child({ stepId: searchStepId })),
+      fetchCompetitorVideos(youtube, logger.child({ stepId: searchStepId })),
+    ]);
+    const seenUrls = new Set<string>();
+    const found = [...competitorFound, ...keywordFound].filter((c) =>
+      seenUrls.has(c.url) ? false : (seenUrls.add(c.url), true),
+    );
+    logger.info('videos found', {
+      stepId: searchStepId,
+      keywordCount: keywordFound.length,
+      competitorCount: competitorFound.length,
+      totalAfterDedupe: found.length,
+    });
 
     if (found.length === 0) return [];
 

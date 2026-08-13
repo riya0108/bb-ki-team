@@ -22,12 +22,22 @@ interface SourceDefinition {
   id: SourceType;
   label: string;
   requiredEnvVars: string[];
+  /** Extra tools allowed on this source only, beyond ALLOWED_SEARCH_TOOLS. */
+  extraTools?: string[];
 }
 
 const SOURCE_DEFINITIONS: SourceDefinition[] = [
   { id: 'wikipedia', label: 'Wikipedia', requiredEnvVars: [] },
   { id: 'news', label: 'News (NewsAPI)', requiredEnvVars: ['NEWS_API_KEY'] },
-  { id: 'youtube', label: 'YouTube', requiredEnvVars: ['YOUTUBE_API_KEY'] },
+  {
+    id: 'youtube',
+    label: 'YouTube',
+    requiredEnvVars: ['YOUTUBE_API_KEY'],
+    // Lets fetchCompetitorDigest.ts pull tracked-competitor channels' actual
+    // recent uploads, not just keyword search — see resolve_channel_handle's
+    // use in packages/core/src/competitorYoutubeChannels.ts.
+    extraTools: ['list_channel_videos', 'resolve_channel_handle'],
+  },
   { id: 'competitor', label: 'Competitor blogs (site-scoped search)', requiredEnvVars: ['BRAVE_SEARCH_API_KEY'] },
   { id: 'hackernews', label: 'Hacker News', requiredEnvVars: [] },
 ];
@@ -63,12 +73,13 @@ async function connectSource(def: SourceDefinition, entry: string, tsxCli: strin
   }
   const transport = new StdioClientTransport({ command: process.execPath, args: [tsxCli, entry], env });
   await client.connect(transport);
+  const allowedTools = new Set([...ALLOWED_SEARCH_TOOLS, ...(def.extraTools ?? [])]);
 
   return {
     id: def.id,
     label: def.label,
     async callTool(name, args) {
-      if (!ALLOWED_SEARCH_TOOLS.has(name)) {
+      if (!allowedTools.has(name)) {
         throw new Error(`blog-topic-finder agent: tool "${name}" is outside its MCP allowlist for source "${def.id}"`);
       }
       const result = await client.callTool({ name, arguments: args });

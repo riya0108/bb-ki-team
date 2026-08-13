@@ -1,10 +1,16 @@
 'use client';
 
 import { useState } from 'react';
-import { ChevronDown, Loader2, RefreshCw } from 'lucide-react';
+import { ChevronDown, Loader2, RefreshCw, Square } from 'lucide-react';
 import type { PipelineRun } from '@/lib/pipelineRuns';
 import { TopicApprovalPanel } from '@/components/blog/TopicApprovalPanel';
 import { formatDateTime } from '@/lib/formatDate';
+
+function errorMessageFrom(body: unknown, response: Response): string {
+  return body && typeof body === 'object' && 'error' in body && typeof body.error === 'string'
+    ? body.error
+    : `Request failed (${String(response.status)})`;
+}
 
 const STATUS_LABEL: Record<string, { label: string; className: string }> = {
   queued: { label: 'Queued', className: 'bg-neutral-500/10 text-neutral-500' },
@@ -12,11 +18,13 @@ const STATUS_LABEL: Record<string, { label: string; className: string }> = {
   awaiting_approval: { label: 'Awaiting topic approval', className: 'bg-violet-500/10 text-violet-500' },
   handed_off: { label: 'Sent to Research Agent', className: 'bg-emerald-500/10 text-emerald-500' },
   failed: { label: 'Failed', className: 'bg-rose-500/10 text-rose-500' },
+  cancelled: { label: 'Stopped', className: 'bg-neutral-500/10 text-neutral-500' },
 };
 
 function statusInfo(run: PipelineRun): { label: string; className: string } {
   if (run.status === 'awaiting_approval' && run.gate === 'topic') return STATUS_LABEL.awaiting_approval;
   if (run.status === 'failed') return STATUS_LABEL.failed;
+  if (run.status === 'cancelled') return STATUS_LABEL.cancelled;
   if (run.status === 'queued' || run.status === 'running') return STATUS_LABEL[run.status];
   return STATUS_LABEL.handed_off;
 }
@@ -34,6 +42,8 @@ export function ContentIntelligenceRunsList({ initialRuns }: { initialRuns: Pipe
     initialRuns.find((r) => r.status === 'awaiting_approval' && r.gate === 'topic')?.id ?? null,
   );
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [stoppingId, setStoppingId] = useState<string | null>(null);
+  const [stopError, setStopError] = useState<string | null>(null);
 
   async function refresh() {
     setIsRefreshing(true);
@@ -51,6 +61,23 @@ export function ContentIntelligenceRunsList({ initialRuns }: { initialRuns: Pipe
   function handleDecided() {
     setExpandedId(null);
     setTimeout(() => void refresh(), 1500);
+  }
+
+  /** Stops a queued/running run — see apps/api's handleCancel for how it handles a run whose worker has died mid-flight, not just a live one. */
+  async function handleStop(runId: string) {
+    if (stoppingId) return;
+    setStopError(null);
+    setStoppingId(runId);
+    try {
+      const response = await fetch(`/api/content-intelligence/run/${runId}`, { method: 'POST' });
+      const body: unknown = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(errorMessageFrom(body, response));
+      await refresh();
+    } catch (err) {
+      setStopError(err instanceof Error ? err.message : 'Something went wrong');
+    } finally {
+      setStoppingId(null);
+    }
   }
 
   if (runs.length === 0) {
@@ -120,14 +147,37 @@ export function ContentIntelligenceRunsList({ initialRuns }: { initialRuns: Pipe
                   </div>
                 )}
                 {(run.status === 'running' || run.status === 'queued') && (
-                  <div className="flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 p-4 text-sm text-amber-300">
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    Still working — refresh in a bit.
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between gap-3 rounded-lg border border-amber-500/30 bg-amber-500/5 p-4 text-sm text-amber-300">
+                      <span className="flex items-center gap-2">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Still working — refresh in a bit.
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => void handleStop(run.id)}
+                        disabled={stoppingId === run.id}
+                        className="flex shrink-0 items-center gap-1.5 rounded-lg border border-amber-500/40 px-3 py-1.5 text-xs font-medium text-amber-200 transition hover:bg-amber-500/10 disabled:opacity-50"
+                      >
+                        <Square className="h-3 w-3" />
+                        {stoppingId === run.id ? 'Stopping…' : 'Stop'}
+                      </button>
+                    </div>
+                    {stopError && (
+                      <div className="rounded-lg border border-rose-500/30 bg-rose-500/5 p-3 text-xs text-rose-300">
+                        {stopError}
+                      </div>
+                    )}
                   </div>
                 )}
                 {((run.status === 'awaiting_approval' && run.gate !== 'topic') || run.status === 'succeeded') && (
                   <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-4 text-sm text-emerald-300">
                     Sent to the Research Agent — check the Research Agent, Content, and Blog Agent departments.
+                  </div>
+                )}
+                {run.status === 'cancelled' && (
+                  <div className="rounded-lg border border-neutral-300 bg-neutral-100 p-4 text-sm text-neutral-600 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-400">
+                    Stopped — no further LLM/search calls were made for this run.
                   </div>
                 )}
               </div>

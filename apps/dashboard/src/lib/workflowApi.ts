@@ -31,7 +31,7 @@ export async function startWorkflowRun(
 export interface WorkflowRunStatus {
   run: {
     id: string;
-    status: 'queued' | 'running' | 'awaiting_approval' | 'succeeded' | 'failed';
+    status: 'queued' | 'running' | 'awaiting_approval' | 'succeeded' | 'failed' | 'cancelled';
     output: unknown;
     error: string | null;
   };
@@ -65,6 +65,22 @@ export async function approveWorkflowRun(runId: string, body: ApproveWorkflowRun
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
+  const payload: unknown = await response.json().catch(() => null);
+  if (!response.ok) {
+    const message =
+      payload &&
+      typeof payload === 'object' &&
+      'error' in payload &&
+      typeof payload.error === 'string'
+        ? payload.error
+        : `apps/api request failed (${String(response.status)})`;
+    throw new Error(message);
+  }
+}
+
+/** Stops an in-progress run — see apps/api's handleCancel for the queued/awaiting_approval-vs-running distinction. */
+export async function cancelWorkflowRun(runId: string): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/workflows/${runId}/cancel`, { method: 'POST' });
   const payload: unknown = await response.json().catch(() => null);
   if (!response.ok) {
     const message =
