@@ -10,7 +10,7 @@ const GetStyleSamplesResultSchema = z.object({
 
 const STYLE_SAMPLE_COUNT = 3;
 const MIN_WORD_COUNT = 900;
-const MAX_WORD_COUNT = 2000;
+const MAX_WORD_COUNT = 1150;
 
 function citedSourceUrls(researchPack: WriteDraftTaskPayload['researchPack']): string[] {
   const urls = new Set<string>();

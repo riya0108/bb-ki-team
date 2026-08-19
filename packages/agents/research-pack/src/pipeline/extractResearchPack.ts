@@ -73,6 +73,7 @@ export function evidenceTypeForSource(source: Source): EvidenceSourceType {
       return source.isTrackedCompetitor ? 'secondary' : 'community';
     case 'hackernews':
     case 'instagram':
+    case 'reddit':
       return 'community';
     case 'competitor':
     case 'news':

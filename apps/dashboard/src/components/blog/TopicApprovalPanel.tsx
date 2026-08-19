@@ -74,7 +74,11 @@ export function TopicApprovalPanel({
         </div>
       )}
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-        {topics.map((topic, index) => (
+        {/* Topics arrive pre-sorted best-first (research/blog-topic-finder agents both sort by
+            score descending) — showing only the top 3 matches the intended "pick one of three"
+            flow instead of dumping the agent's full internal candidate list on the reviewer.
+            slice() preserves original indices 0-2, which selectedTopicIndex below relies on. */}
+        {topics.slice(0, 3).map((topic, index) => (
           <div key={topic.topic} className="space-y-2">
             <TopicCard topic={topic} />
             <button

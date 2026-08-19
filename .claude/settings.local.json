@@ -22,7 +22,8 @@
       "Bash(npx next *)",
       "Bash(git commit -m ' *)",
       "Bash(npx prettier *)",
-      "Bash(npx astro *)"
+      "Bash(npx astro *)",
+      "Bash(skills add *)"
     ]
   }
 }

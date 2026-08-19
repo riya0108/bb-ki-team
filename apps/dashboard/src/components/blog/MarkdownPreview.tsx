@@ -40,25 +40,17 @@ function renderInline(text: string, keyPrefix: string): ReactNode[] {
 
 /**
  * The writer agent's SYSTEM_PROMPT (packages/agents/writer/src/pipeline/writeDraft.ts)
- * fixes the heading text for every section but the hook and CONTEXT — list
- * them so a heading run into its own body text on one line (e.g. "##
- * Background The rise...") can be split into "## Background" plus a
- * separate body paragraph. A generic "capitalized words = heading" guess
- * doesn't work here: body sentences routinely open with a capitalized word
- * too ("The causal chain...", "Zepto's advertising...").
+ * suggests these exact heading strings as its "## The Bottom Line" / "##
+ * What Happens Next" examples — list them so a heading run into its own
+ * body text on one line (e.g. "## The Bottom Line The real story...") can
+ * be split into "## The Bottom Line" plus a separate body paragraph. A
+ * generic "capitalized words = heading" guess doesn't work here: body
+ * sentences routinely open with a capitalized word too ("The causal
+ * chain...", "Zepto's advertising..."). Every other section heading is
+ * topic-specific model output, so it can't be enumerated here — those rely
+ * on the provider putting the heading on its own line to begin with.
  */
-const KNOWN_SECTION_HEADINGS = [
-  'What People Are Missing',
-  'What Happens Next',
-  'What Happened',
-  'Real-World Impact',
-  'The Bottom Line',
-  'Background',
-  'Stakeholders',
-  'Takeaway',
-  'Numbers',
-  'Why',
-];
+const KNOWN_SECTION_HEADINGS = ['The Bottom Line', 'What Happens Next'];
 const KNOWN_HEADING_PATTERN = new RegExp(
   `(#{2,3} (?:${KNOWN_SECTION_HEADINGS.join('|')}))(?=[ \\t])`,
   'g',

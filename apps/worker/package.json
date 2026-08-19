@@ -20,6 +20,7 @@
     "@ai-company/mcp-search-hackernews": "0.1.0",
     "@ai-company/mcp-search-instagram": "0.1.0",
     "@ai-company/mcp-search-news": "0.1.0",
+    "@ai-company/mcp-search-reddit": "0.1.0",
     "@ai-company/mcp-search-trends": "0.1.0",
     "@ai-company/mcp-search-wikipedia": "0.1.0",
     "@ai-company/mcp-search-youtube": "0.1.0",

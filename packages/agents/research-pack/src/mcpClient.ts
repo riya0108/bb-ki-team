@@ -28,6 +28,7 @@ const SOURCE_DEFINITIONS: SourceDefinition[] = [
   { id: 'youtube', label: 'YouTube', requiredEnvVars: ['YOUTUBE_API_KEY'] },
   { id: 'competitor', label: 'Competitor blogs (site-scoped search)', requiredEnvVars: ['BRAVE_SEARCH_API_KEY'] },
   { id: 'hackernews', label: 'Hacker News', requiredEnvVars: [] },
+  { id: 'reddit', label: 'Reddit', requiredEnvVars: ['REDDIT_CLIENT_ID', 'REDDIT_CLIENT_SECRET'] },
 ];
 
 function resolvedPathFromEnv(envVar: string): string {

@@ -40,6 +40,7 @@ export function configureAgentEnv(): void {
     youtube: require.resolve('@ai-company/mcp-search-youtube'),
     competitor: require.resolve('@ai-company/mcp-search-competitors'),
     hackernews: require.resolve('@ai-company/mcp-search-hackernews'),
+    reddit: require.resolve('@ai-company/mcp-search-reddit'),
   });
 
   process.env.BLOG_PUBLISHER_AGENT_TSX_CLI_PATH = require.resolve('tsx/cli');

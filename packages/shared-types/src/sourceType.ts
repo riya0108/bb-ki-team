@@ -8,5 +8,6 @@ export const SourceTypeSchema = z.enum([
   'competitor',
   'hackernews',
   'instagram',
+  'reddit',
 ]);
 export type SourceType = z.infer<typeof SourceTypeSchema>;

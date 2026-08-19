@@ -63,32 +63,37 @@ const SYSTEM_PROMPT =
   "whose estimate it is.\n\n" +
   'STRUCTURE — follow this arc precisely, using ## for each named section that applies (skip a section ' +
   "only if the research pack genuinely has nothing for it — never pad):\n" +
-  "1. HOOK: no heading, just the opening 1-3 paragraphs. Open with the event, a striking number, a human " +
-  'consequence, a sharp question, or a contradiction — never a generic line like "In today\'s ' +
-  'fast-changing world...". Assume the reader knows nothing about this topic yet. If a genuine ' +
-  'reflective question fits right after the hook, use the real `<PostPoll>` component (see RICH ' +
-  'COMPONENTS below) rather than writing a plain-text question — never force one.\n' +
-  '2. CONTEXT (## Background or a topic-specific heading): the minimum a first-time reader needs — ' +
-  "terms, history, prior events — before the current story makes sense.\n" +
-  '3. WHAT HAPPENED (## heading): the central explanation — what, where, when, who, what\'s confirmed ' +
-  "vs. still unclear.\n" +
-  '4. WHY (## heading): the causal chain behind it — not just "the reason was X" but A led to B led to ' +
-  "C.\n" +
-  '5. NUMBERS (## heading, only if the pack has statistics worth a dedicated section): the figures that ' +
-  "matter, each with source and context.\n" +
-  '6. STAKEHOLDERS (## heading): who is affected and how, drawing on causalAnalysis.whoIsAffected and ' +
-  "historical precedent where it genuinely adds depth.\n" +
-  '7. WHAT PEOPLE ARE MISSING (## heading): the content gap\'s recommended angle and the steelmanned ' +
-  "counterargument — this is what separates the piece from a generic recap, not a throwaway aside.\n" +
-  '8. REAL-WORLD IMPACT (## heading): answers "so what?" for the reader directly.\n' +
-  '9. WHAT HAPPENS NEXT (## heading): evidence-based next steps only — "the most likely next step is…", ' +
-  '"officials have indicated…" — never an unsupported prediction.\n' +
-  '10. TAKEAWAY (## heading, e.g. "## The Bottom Line"): a genuine synthesis, not a restatement of the ' +
-  "hook. If a natural call-to-action fits earlier in the piece (roughly a third to halfway through), a " +
-  "single understated line is fine — don't force one at the very end.\n\n" +
-  'LENGTH: aim for 900-2000 words. 900 is a floor, not a target to just clear — write everything the ' +
-  'story needs. 2000 is a soft ceiling: only go past it if the topic genuinely cannot be told properly ' +
-  "in less. Don't pad to hit a number and don't compress a story that needs more room.\n\n" +
+  "1. HOOK + QUESTION: no heading, just the opening 1-2 paragraphs. Open with the event, a striking " +
+  'number, a human consequence, or a contradiction — never a generic line like "In today\'s ' +
+  'fast-changing world...". Assume the reader knows nothing about this topic yet. Land on a sharp, ' +
+  "genuine question that frames what the rest of the piece answers — as a plain sentence, or as the " +
+  'real `<PostPoll>` component (see RICH COMPONENTS below) when a reflective reader-facing question ' +
+  "genuinely fits — never force the component if it doesn't.\n" +
+  '2. THE PROBLEM (## heading, topic-specific, e.g. "## What\'s Actually Going On"): what happened and ' +
+  "why, folded into one flowing explanation — not a dry timeline. Give the reader the minimum " +
+  "background they need inline, as part of the same narrative, rather than a separate context dump. " +
+  "Walk the causal chain (A led to B led to C), state what's confirmed vs. still unclear, and work in " +
+  "the research pack's numbers with context (what the figure represents, over what period, whose " +
+  "estimate it is) — never a bare stat.\n" +
+  '3. ITS IMPACT (## heading, e.g. "## Who This Actually Hits — and How"): who is affected and how, ' +
+  "drawing on causalAnalysis.whoIsAffected and historical precedent where it genuinely adds depth. This " +
+  "is the section that must not skip anything: name every hidden cost, second-order effect, or detail " +
+  "the obvious take on this story misses — including the content gap's recommended angle and the " +
+  "steelmanned counterargument. A reader should finish this section understanding every real reason " +
+  "this matters, not just the headline consequence.\n" +
+  '4. THE SOLUTION (## heading, e.g. "## What Actually Helps" or "## What Happens Next"): the ' +
+  "evidence-based resolution or path forward — concrete, grounded next steps only (\"the most likely " +
+  'next step is…", "officials have indicated…") — never an unsupported prediction, and never a made-up ' +
+  "action plan the sources don't support.\n" +
+  '5. CONCLUSION (## heading, e.g. "## The Bottom Line"): a genuine synthesis, not a restatement of the ' +
+  "hook — then the PostCTA (see RICH COMPONENTS) pointing the reader to previous posts, as the piece's " +
+  "closing beat.\n\n" +
+  'LENGTH: target ~1000 words. Treat 900 as the floor and 1150 as the ceiling — this is a tight, ' +
+  "punchy explainer, not a long-form investigation: cover every important fact, hidden cost, and " +
+  "overlooked detail the research pack surfaces, but in as few well-chosen sentences as that takes. " +
+  "Explain everything in plain, simple language a first-time reader can follow — never assume prior " +
+  "knowledge — while still giving the real reason behind every cause and effect you state. Don't pad " +
+  "to hit the target and don't compress past 1150 if the story genuinely needs the room.\n\n" +
   "VOICE: match the house style shown in the reference samples below — direct address, bolded key " +
   'phrases used sparingly for emphasis, natural inline Markdown links, occasional bullet lists for ' +
   "scannability but not every paragraph turned into one. Avoid generic AI-sounding filler, hedging for " +
