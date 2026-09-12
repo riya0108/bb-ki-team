@@ -3,29 +3,14 @@
   "version": "1.0.0",
   "description": "AI Company OS",
   "private": true,
-  "workspaces": [
-    "packages/*",
-    "packages/agents/*",
-    "packages/mcp-servers/*",
-    "apps/*"
-  ],
+  "workspaces": ["packages/*", "packages/agents/*", "packages/mcp-servers/*", "apps/*"],
   "scripts": {
     "test": "vitest run",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "typecheck": "tsc --noEmit",
-    "research": "tsx packages/agents/research/src/cli.ts",
-    "trend-research": "tsx packages/agents/trend-research/src/cli.ts",
-    "blog-topic-finder": "tsx packages/agents/blog-topic-finder/src/cli.ts",
-    "youtube-viral-finder": "tsx packages/agents/youtube-viral-finder/src/cli.ts",
-    "instagram-viral-finder": "tsx packages/agents/instagram-viral-finder/src/cli.ts",
-    "db:migrate": "tsx --env-file=.env packages/db/src/migrate.ts",
-    "api": "tsx --env-file=.env apps/api/src/index.ts",
-    "worker": "tsx --env-file=.env apps/worker/src/index.ts",
-    "dashboard": "npm run dev --workspace=@ai-company/dashboard",
-    "dev:all": "concurrently -n dashboard,api,worker -c blue,green,magenta \"npm run dashboard\" \"npm run api\" \"npm run worker\""
+    "typecheck": "tsc --noEmit"
   },
   "keywords": [],
   "author": "",

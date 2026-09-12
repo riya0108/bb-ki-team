@@ -41,5 +41,5 @@
     "moduleDetection": "force",
     "skipLibCheck": true
   },
-  "exclude": ["node_modules", "apps"]
+  "exclude": ["node_modules"]
 }
