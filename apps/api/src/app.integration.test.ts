@@ -117,6 +117,8 @@ describeIfDb('apps/api HTTP surface (integration, real Postgres)', () => {
       fetchTool: unusedFetchTool,
       youtubeTranscriptTool: unusedYoutubeTool,
       logger: noopLogger,
+      publishConnectors: {},
+      scheduleConnectors: {},
     };
     const app = createApp(deps);
     server = app.listen(0);
@@ -244,6 +246,8 @@ describeIfDb('apps/api HTTP surface (integration, real Postgres)', () => {
       fetchTool: unusedFetchTool,
       youtubeTranscriptTool: unusedYoutubeTool,
       logger: noopLogger,
+      publishConnectors: {},
+      scheduleConnectors: {},
     };
     const learningApp = createApp(deps);
     const learningServer = learningApp.listen(0);

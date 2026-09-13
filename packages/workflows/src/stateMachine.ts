@@ -10,10 +10,12 @@ export class IllegalTransitionError extends Error {
   }
 }
 
-// The 9-state lifecycle from spec section 0.3, restricted to the edges Phase 1's
-// ledger functions actually exercise. scheduled/published stay unreachable until
-// Phase 3 ships a publish connector — see spec 15.4 ("never publish without an
-// authorised connector").
+// The 9-state lifecycle from spec section 0.3. approved -> scheduled/published opened
+// up in Phase 3 alongside packages/workflows/src/publishing.ts's approval-gated
+// requestPublish/requestSchedule — those functions are the only callers, and they
+// re-check status === 'approved' themselves before ever attempting a transition, so
+// this being reachable in the state graph does not by itself relax spec 15.4's "never
+// publish without an authorised connector" (there still is none by default).
 const TRANSITIONS: Record<ContentStatus, ContentStatus[]> = {
   idea: ['researched', 'draft'],
   researched: ['draft'],
@@ -24,8 +26,8 @@ const TRANSITIONS: Record<ContentStatus, ContentStatus[]> = {
   // to review", generalized to changes_requested for the same reason: edited
   // text always needs fresh eyes before it can be approved).
   changes_requested: ['in_review', 'rejected'],
-  approved: ['in_review', 'rejected'],
-  scheduled: [],
+  approved: ['in_review', 'rejected', 'scheduled', 'published'],
+  scheduled: ['published'],
   published: [],
   rejected: [],
 };

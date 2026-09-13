@@ -1,5 +1,14 @@
 import { ContentStatusSchema } from '@bb/shared-types';
-import { ContentItemNotFoundError, getContentItem, listContentItems, recordApproval, reject, requestChanges } from '@bb/workflows';
+import {
+  ContentItemNotFoundError,
+  getContentItem,
+  listContentItems,
+  recordApproval,
+  reject,
+  requestChanges,
+  requestPublish,
+  requestSchedule,
+} from '@bb/workflows';
 import { Router } from 'express';
 import { z } from 'zod';
 
@@ -52,6 +61,27 @@ export function createContentRouter(deps: AppDeps): Router {
     const body = parseWith(RejectSchema, req.body);
     const item = await reject(deps.pool, req.params.id ?? '', body.reason);
     res.status(200).json({ item });
+  });
+
+  // No real connectors are registered yet (deps.publishConnectors/scheduleConnectors
+  // are empty until a Phase 3 platform integration is built) — every call here
+  // records an honest failed PUBLISH_EVENT rather than pretending to publish
+  // (CLAUDE.md: never fabricate success; spec 15.4).
+  router.post('/:id/publish', async (req, res) => {
+    const { item, event } = await requestPublish(deps.pool, req.params.id ?? '', deps.publishConnectors);
+    res.status(200).json({ item, event });
+  });
+
+  const ScheduleSchema = z.object({ scheduledFor: z.string().datetime() });
+  router.post('/:id/schedule', async (req, res) => {
+    const body = parseWith(ScheduleSchema, req.body);
+    const { item, event } = await requestSchedule(
+      deps.pool,
+      req.params.id ?? '',
+      new Date(body.scheduledFor),
+      deps.scheduleConnectors,
+    );
+    res.status(200).json({ item, event });
   });
 
   return router;

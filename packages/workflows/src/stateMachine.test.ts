@@ -27,6 +27,9 @@ const LEGAL_EDGES: [ContentStatus, ContentStatus][] = [
   ['changes_requested', 'rejected'],
   ['approved', 'in_review'],
   ['approved', 'rejected'],
+  ['approved', 'scheduled'],
+  ['approved', 'published'],
+  ['scheduled', 'published'],
 ];
 
 describe('canTransition', () => {
@@ -47,12 +50,21 @@ describe('canTransition', () => {
     }
   });
 
-  it('has no outgoing edges from the terminal states', () => {
-    for (const terminal of ['scheduled', 'published', 'rejected'] as ContentStatus[]) {
+  it('has no outgoing edges from the truly terminal states', () => {
+    // scheduled is excluded here: it has exactly one legal edge, to published
+    // (spec 0.3: "SCHEDULED ... Yes, at scheduled time" it becomes published).
+    for (const terminal of ['published', 'rejected'] as ContentStatus[]) {
       for (const to of ALL_STATUSES) {
         if (to === terminal) continue;
         expect(canTransition(terminal, to)).toBe(false);
       }
+    }
+  });
+
+  it('scheduled can only ever advance to published', () => {
+    for (const to of ALL_STATUSES) {
+      const expected = to === 'published';
+      expect(canTransition('scheduled', to)).toBe(expected);
     }
   });
 });

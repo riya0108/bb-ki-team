@@ -7,3 +7,4 @@ export * from './repositories/approvals.js';
 export * from './repositories/learningEvents.js';
 export * from './repositories/qaResults.js';
 export * from './repositories/interviewSessions.js';
+export * from './repositories/publishEvents.js';

@@ -22,6 +22,7 @@ const ERROR_STATUS: Record<string, number> = {
   ContentItemNotFoundError: 404,
   IllegalTransitionError: 409,
   StaleApprovalVersionError: 409,
+  ContentNotApprovedError: 409,
   AllProvidersFailedError: 502,
   LlmOutputValidationError: 502,
 };
