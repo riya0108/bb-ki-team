@@ -5,6 +5,7 @@ import type { AppDeps } from './deps.js';
 import { errorHandler } from './errorHandler.js';
 import { createContentRouter } from './routes/content.js';
 import { createContentDnaRouter } from './routes/contentDna.js';
+import { createInstagramRouter } from './routes/instagram.js';
 import { createLinkedinRouter } from './routes/linkedin.js';
 import { createXRouter } from './routes/x.js';
 
@@ -21,6 +22,7 @@ export function createApp(deps: AppDeps): Express {
 
   app.use('/linkedin', createLinkedinRouter(deps));
   app.use('/x', createXRouter(deps));
+  app.use('/instagram', createInstagramRouter(deps));
   app.use('/content', createContentRouter(deps));
   app.use('/content-dna', createContentDnaRouter(deps));
 

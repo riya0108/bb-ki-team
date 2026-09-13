@@ -72,6 +72,22 @@ describe('checkPersonalExperience', () => {
   it('passes with no first-person experience claims', () => {
     expect(checkPersonalExperience('The market moved sharply today.', [], []).status).toBe('PASS');
   });
+
+  it('fails an ordinary first-person narrative with no "experienced/felt/realized"-style trigger word', () => {
+    // Found live: a generated Reel script narrated a whole fabricated personal story
+    // using only ordinary past tense (was/had/sold/tried), which the original narrow
+    // verb list missed entirely.
+    const result = checkPersonalExperience(
+      'I was 24, fresh out of college. I had a simple wooden box that I sold for ₹999. I tried raising the price.',
+      [],
+      [],
+    );
+    expect(result.status).toBe('FAIL');
+  });
+
+  it('still passes third-person or opinion-only text using the word "I" as part of an acronym-like term', () => {
+    expect(checkPersonalExperience('The RBI announced a new policy today.', [], []).status).toBe('PASS');
+  });
 });
 
 describe('classifyHighRiskTopic', () => {
