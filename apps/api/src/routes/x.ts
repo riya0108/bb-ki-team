@@ -1,6 +1,14 @@
 import { randomUUID } from 'node:crypto';
 
-import { draftXTopicPost, proposeXAngles, reviseXPost, runQuote, runRepurpose, runSourceDiscovery } from '@bb/agent-x';
+import {
+  draftXTopicPost,
+  handleXChatMessage,
+  proposeXAngles,
+  reviseXPost,
+  runQuote,
+  runRepurpose,
+  runSourceDiscovery,
+} from '@bb/agent-x';
 import { loadCurrentDna } from '@bb/content-dna';
 import { Router } from 'express';
 import { z } from 'zod';
@@ -101,6 +109,14 @@ export function createXRouter(deps: AppDeps): Router {
       runId,
     });
     res.status(200).json({ runId, package: pkg, learningEvent });
+  });
+
+  const ChatSchema = z.object({ message: z.string().min(1), openContentId: z.string().uuid().nullable().optional() });
+  router.post('/chat', async (req, res) => {
+    const body = parseWith(ChatSchema, req.body);
+    const runId = randomUUID();
+    const chatResult = await handleXChatMessage(deps, body.message, { openContentId: body.openContentId ?? null }, runId);
+    res.status(200).json({ runId, ...chatResult });
   });
 
   return router;

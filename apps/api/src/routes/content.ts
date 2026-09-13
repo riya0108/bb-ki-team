@@ -1,5 +1,7 @@
+import { listPublishEventsForContent, listRevisionsForContent } from '@bb/db';
 import { ContentStatusSchema } from '@bb/shared-types';
 import {
+  addRevision,
   ContentItemNotFoundError,
   getContentItem,
   listContentItems,
@@ -82,6 +84,33 @@ export function createContentRouter(deps: AppDeps): Router {
       deps.scheduleConnectors,
     );
     res.status(200).json({ item, event });
+  });
+
+  router.get('/:id/revisions', async (req, res) => {
+    const revisions = await listRevisionsForContent(deps.pool, req.params.id ?? '');
+    res.status(200).json({ revisions });
+  });
+
+  // Direct draft-canvas text edits (dashboard: "click into the exact text, edit it,
+  // save a revision" — spec 17). Distinct from the LLM-mediated /edit endpoints each
+  // agent exposes (natural-language instruction -> new draft): this writes the
+  // user's exact text as a new revision. addRevision already enforces spec 15.2's
+  // re-review invariant (an approved item edited this way returns to in_review).
+  const ReviseSchema = z.object({ newText: z.string().min(1), changedById: z.string().min(1) });
+  router.post('/:id/revisions', async (req, res) => {
+    const body = parseWith(ReviseSchema, req.body);
+    const { item, revision } = await addRevision(deps.pool, req.params.id ?? '', {
+      changeType: 'user_edit',
+      newText: body.newText,
+      changedBy: 'user',
+      changedById: body.changedById,
+    });
+    res.status(201).json({ item, revision });
+  });
+
+  router.get('/:id/publish-events', async (req, res) => {
+    const events = await listPublishEventsForContent(deps.pool, req.params.id ?? '');
+    res.status(200).json({ events });
   });
 
   return router;

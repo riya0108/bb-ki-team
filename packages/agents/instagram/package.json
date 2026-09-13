@@ -9,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
+    "@bb/chat": "0.1.0",
     "@bb/content-dna": "0.1.0",
     "@bb/core": "0.1.0",
     "@bb/db": "0.1.0",

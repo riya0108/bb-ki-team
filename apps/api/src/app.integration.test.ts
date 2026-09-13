@@ -179,6 +179,28 @@ describeIfDb('apps/api HTTP surface (integration, real Postgres)', () => {
     expect(getResponse.status).toBe(200);
     const getBody = (await getResponse.json()) as { item: { status: string } };
     expect(getBody.item.status).toBe('approved');
+
+    // A manual draft-canvas edit on an approved item must return it to in_review
+    // (spec 15.2) rather than silently keeping a stale approval.
+    const reviseResponse = await fetch(`${baseUrl}/content/${draftBody.package.contentId}/revisions`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ newText: 'Manually rewritten by the dashboard user.', changedById: 'riya' }),
+    });
+    expect(reviseResponse.status).toBe(201);
+    const reviseBody = (await reviseResponse.json()) as { item: { status: string; currentText: string } };
+    expect(reviseBody.item.status).toBe('in_review');
+    expect(reviseBody.item.currentText).toBe('Manually rewritten by the dashboard user.');
+
+    const revisionsResponse = await fetch(`${baseUrl}/content/${draftBody.package.contentId}/revisions`);
+    expect(revisionsResponse.status).toBe(200);
+    const revisionsBody = (await revisionsResponse.json()) as { revisions: { changeType: string }[] };
+    expect(revisionsBody.revisions.some((r) => r.changeType === 'user_edit')).toBe(true);
+
+    const publishEventsResponse = await fetch(`${baseUrl}/content/${draftBody.package.contentId}/publish-events`);
+    expect(publishEventsResponse.status).toBe(200);
+    const publishEventsBody = (await publishEventsResponse.json()) as { events: unknown[] };
+    expect(publishEventsBody.events).toEqual([]);
   });
 
   it('runs the X single-post draft -> edit lifecycle end to end', async () => {

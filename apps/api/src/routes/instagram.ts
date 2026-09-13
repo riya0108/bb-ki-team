@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { runInstagramHead } from '@bb/agent-instagram';
+import { handleInstagramChatMessage, runInstagramHead } from '@bb/agent-instagram';
 import { InstagramFormatSchema } from '@bb/shared-types';
 import { Router } from 'express';
 import { z } from 'zod';
@@ -40,6 +40,19 @@ export function createInstagramRouter(deps: AppDeps): Router {
       runId,
     });
     res.status(201).json({ runId, package: pkg });
+  });
+
+  const ChatSchema = z.object({ message: z.string().min(1), openContentId: z.string().uuid().nullable().optional() });
+  router.post('/chat', async (req, res) => {
+    const body = parseWith(ChatSchema, req.body);
+    const runId = randomUUID();
+    const chatResult = await handleInstagramChatMessage(
+      deps,
+      body.message,
+      { openContentId: body.openContentId ?? null },
+      runId,
+    );
+    res.status(200).json({ runId, ...chatResult });
   });
 
   return router;

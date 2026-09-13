@@ -1,5 +1,5 @@
 {
-  "name": "@bb/agent-blog",
+  "name": "@bb/chat",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -9,14 +9,9 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@bb/chat": "0.1.0",
-    "@bb/content-dna": "0.1.0",
     "@bb/core": "0.1.0",
     "@bb/db": "0.1.0",
-    "@bb/mcp-client": "0.1.0",
-    "@bb/qa-gate": "0.1.0",
     "@bb/shared-types": "0.1.0",
-    "@bb/workflows": "0.1.0",
     "zod": "^4.4.3"
   }
 }

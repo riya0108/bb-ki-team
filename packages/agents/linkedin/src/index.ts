@@ -7,3 +7,4 @@ export * from './postcastInterview.js';
 export * from './editPost.js';
 export * from './repurpose.js';
 export * from './youtubeLink.js';
+export * from './chat.js';

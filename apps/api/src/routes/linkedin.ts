@@ -5,6 +5,7 @@ import {
   draftPostcastIdea,
   draftSingleTopicPost,
   generatePostcastPostIdeas,
+  handleLinkedinChatMessage,
   proposeLinkedinAngles,
   reviseLinkedinPost,
   runRepurpose,
@@ -162,6 +163,19 @@ export function createLinkedinRouter(deps: AppDeps): Router {
       runId,
     });
     res.status(200).json({ runId, package: pkg, learningEvent });
+  });
+
+  const ChatSchema = z.object({ message: z.string().min(1), openContentId: z.string().uuid().nullable().optional() });
+  router.post('/chat', async (req, res) => {
+    const body = parseWith(ChatSchema, req.body);
+    const runId = randomUUID();
+    const chatResult = await handleLinkedinChatMessage(
+      deps,
+      body.message,
+      { openContentId: body.openContentId ?? null },
+      runId,
+    );
+    res.status(200).json({ runId, ...chatResult });
   });
 
   return router;

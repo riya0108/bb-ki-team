@@ -11,5 +11,6 @@ export * from './instagramPackage.js';
 export * from './youtubeShortPackage.js';
 export * from './blogPackage.js';
 export * from './publishEvent.js';
+export * from './chatMessage.js';
 export * from './fetchResult.js';
 export * from './youtubeTranscript.js';

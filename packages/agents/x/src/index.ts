@@ -6,3 +6,4 @@ export * from './sourceDiscovery.js';
 export * from './repurpose.js';
 export * from './quote.js';
 export * from './editPost.js';
+export * from './chat.js';
