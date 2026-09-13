@@ -24,6 +24,7 @@ interface ContentItemRow {
   approved_version: number | null;
   approved_at: Date | null;
   approved_by: string | null;
+  package: unknown;
 }
 
 function mapRow(row: ContentItemRow): ContentItem {
@@ -48,6 +49,7 @@ function mapRow(row: ContentItemRow): ContentItem {
     approvedVersion: row.approved_version,
     approvedAt: row.approved_at?.toISOString() ?? null,
     approvedBy: row.approved_by,
+    package: row.package,
   });
 }
 
@@ -55,8 +57,8 @@ export async function insertContentItem(db: Queryable, input: NewContentItemInpu
   const result = await db.query<ContentItemRow>(
     `INSERT INTO content_items
        (platform, created_by_agent, mode, topic, content_pillar, source_ids, source_urls,
-        core_claim, angle, content_dna_version, current_text, risk_level)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::risk_level)
+        core_claim, angle, content_dna_version, current_text, risk_level, package)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::risk_level, $13)
      RETURNING *`,
     [
       input.platform,
@@ -71,6 +73,7 @@ export async function insertContentItem(db: Queryable, input: NewContentItemInpu
       input.contentDnaVersion,
       input.text,
       input.riskLevel ?? 'low',
+      input.package ? JSON.stringify(input.package) : null,
     ],
   );
   const row = result.rows[0];
@@ -109,14 +112,25 @@ export async function listContentItems(
 export async function updateContentItemText(
   db: Queryable,
   id: string,
-  input: { version: number; text: string; riskLevel?: RiskLevel },
+  input: { version: number; text: string; riskLevel?: RiskLevel; package?: Record<string, unknown> | null },
 ): Promise<ContentItem> {
   const result = await db.query<ContentItemRow>(
     `UPDATE content_items
-     SET current_version = $2, current_text = $3, risk_level = COALESCE($4::risk_level, risk_level), updated_at = now()
+     SET current_version = $2,
+         current_text = $3,
+         risk_level = COALESCE($4::risk_level, risk_level),
+         package = CASE WHEN $5::boolean THEN $6::jsonb ELSE package END,
+         updated_at = now()
      WHERE id = $1
      RETURNING *`,
-    [id, input.version, input.text, input.riskLevel ?? null],
+    [
+      id,
+      input.version,
+      input.text,
+      input.riskLevel ?? null,
+      input.package !== undefined,
+      input.package !== undefined ? JSON.stringify(input.package) : null,
+    ],
   );
   const row = result.rows[0];
   if (!row) throw new Error(`updateContentItemText: no content item with id ${id}`);

@@ -87,7 +87,11 @@ export interface AddRevisionResult {
 export async function addRevision(
   pool: Pool,
   contentId: string,
-  input: NewRevisionInput,
+  // `package` isn't part of the revisions table (NewRevisionInput) — it's an optional
+  // passthrough to content_items.package for platforms whose content isn't a flat
+  // string (X threads, Instagram carousels/reels, YouTube Shorts scripts). Omit it
+  // entirely to leave the item's existing package untouched.
+  input: NewRevisionInput & { package?: Record<string, unknown> | null },
 ): Promise<AddRevisionResult> {
   return withTransaction(pool, async (client) => {
     const current = await requireContentItem(client, contentId);
@@ -113,7 +117,11 @@ export async function addRevision(
       }
     }
 
-    const item = await updateContentItemText(client, contentId, { version: newVersion, text: input.newText });
+    const item = await updateContentItemText(client, contentId, {
+      version: newVersion,
+      text: input.newText,
+      ...(input.package !== undefined ? { package: input.package } : {}),
+    });
 
     if (current.status === 'approved') {
       const openApproval = await getOpenApprovalForContent(client, contentId);

@@ -47,6 +47,7 @@ describe('ContentItemSchema', () => {
     approvedVersion: null,
     approvedAt: null,
     approvedBy: null,
+    package: null,
   };
 
   it('accepts a valid draft content item', () => {

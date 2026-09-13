@@ -4,6 +4,8 @@ export * from './contentItem.js';
 export * from './revision.js';
 export * from './learningEvent.js';
 export * from './qa.js';
+export * from './publishAction.js';
 export * from './linkedinPackage.js';
+export * from './xPackage.js';
 export * from './fetchResult.js';
 export * from './youtubeTranscript.js';

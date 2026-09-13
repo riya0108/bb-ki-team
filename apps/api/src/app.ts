@@ -6,6 +6,7 @@ import { errorHandler } from './errorHandler.js';
 import { createContentRouter } from './routes/content.js';
 import { createContentDnaRouter } from './routes/contentDna.js';
 import { createLinkedinRouter } from './routes/linkedin.js';
+import { createXRouter } from './routes/x.js';
 
 // Pure function from deps to a listenable app — no process/env/network access of its
 // own, so it can be built against fake deps and driven with a real HTTP client in
@@ -19,6 +20,7 @@ export function createApp(deps: AppDeps): Express {
   });
 
   app.use('/linkedin', createLinkedinRouter(deps));
+  app.use('/x', createXRouter(deps));
   app.use('/content', createContentRouter(deps));
   app.use('/content-dna', createContentDnaRouter(deps));
 

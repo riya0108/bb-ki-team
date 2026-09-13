@@ -82,6 +82,18 @@ function buildLlm(
         originalityStatus: 'Original.',
       });
     }
+    if (system.includes('generate three')) {
+      return JSON.stringify({ angles: [{ angle: 'An X angle', description: 'A description' }] });
+    }
+    if (system.includes('X-native principles')) {
+      return JSON.stringify({
+        mode: 'single',
+        hookOptions: ['A strong hook'],
+        finalCopy: 'A sharp single X post.',
+        threadPosts: null,
+        factCheckStatus: 'Entirely opinion.',
+      });
+    }
     return JSON.stringify({ status: 'PASS', notes: 'ok' });
   });
 }
@@ -165,6 +177,37 @@ describeIfDb('apps/api HTTP surface (integration, real Postgres)', () => {
     expect(getResponse.status).toBe(200);
     const getBody = (await getResponse.json()) as { item: { status: string } };
     expect(getBody.item.status).toBe('approved');
+  });
+
+  it('runs the X single-post draft -> edit lifecycle end to end', async () => {
+    const anglesResponse = await fetch(`${baseUrl}/x/angles`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ topic: 'UPI adoption' }),
+    });
+    expect(anglesResponse.status).toBe(200);
+    const anglesBody = (await anglesResponse.json()) as { angles: { angle: string }[] };
+    expect(anglesBody.angles.length).toBeGreaterThan(0);
+
+    const draftResponse = await fetch(`${baseUrl}/x/single-post/draft`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ topic: 'UPI adoption', angle: anglesBody.angles[0]?.angle }),
+    });
+    expect(draftResponse.status).toBe(201);
+    const draftBody = (await draftResponse.json()) as { package: { contentId: string; mode: string; status: string } };
+    contentIdsThisTest.push(draftBody.package.contentId);
+    expect(draftBody.package.mode).toBe('single');
+    expect(draftBody.package.status).toBe('in_review');
+
+    const editResponse = await fetch(`${baseUrl}/x/edit`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ contentId: draftBody.package.contentId, instruction: 'Make the hook punchier' }),
+    });
+    expect(editResponse.status).toBe(200);
+    const editBody = (await editResponse.json()) as { package: { finalCopy: string } };
+    expect(editBody.package.finalCopy).toBe('A sharp single X post.');
   });
 
   it('returns 404 with a structured body for an unknown content id', async () => {

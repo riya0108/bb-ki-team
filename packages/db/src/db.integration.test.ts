@@ -73,25 +73,37 @@ describeIfDb('packages/db repositories (integration, real Postgres)', () => {
       const dna = await insertContentDna(db, { version: 1, status: 'active', body: dnaBody });
 
       const item = await insertContentItem(db, {
-        platform: 'linkedin',
-        createdByAgent: 'agent-linkedin',
-        mode: 'single_topic',
+        platform: 'x',
+        createdByAgent: 'agent-x',
+        mode: 'thread',
         topic: 'AI regulation',
         contentDnaVersion: dna.version,
         text: 'first draft',
+        package: { threadPosts: ['first draft'] },
       });
       expect(item.currentVersion).toBe(1);
       expect(item.status).toBe('draft');
+      expect(item.package).toEqual({ threadPosts: ['first draft'] });
 
       const revision = await insertRevision(db, item.id, 2, item.currentText, {
         changeType: 'user_edit',
         newText: 'edited draft',
         changedBy: 'user',
       });
-      const updated = await updateContentItemText(db, item.id, { version: 2, text: 'edited draft' });
+      const updated = await updateContentItemText(db, item.id, {
+        version: 2,
+        text: 'edited draft',
+        package: { threadPosts: ['edited draft', 'second post'] },
+      });
       expect(updated.currentVersion).toBe(2);
       expect(updated.currentText).toBe('edited draft');
+      expect(updated.package).toEqual({ threadPosts: ['edited draft', 'second post'] });
       expect(revision.approvalInvalidated).toBe(false);
+
+      // Omitting `package` entirely (vs. passing null) must leave the existing value
+      // alone — this is what lets plain text-only edits skip re-supplying the package.
+      const unchanged = await updateContentItemText(db, item.id, { version: 3, text: 'edited again' });
+      expect(unchanged.package).toEqual({ threadPosts: ['edited draft', 'second post'] });
 
       const approval = await insertApproval(db, { contentId: item.id, version: 2, approvedBy: 'riya' });
       expect(approval.invalidatedAt).toBeNull();

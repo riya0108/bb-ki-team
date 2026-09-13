@@ -244,6 +244,7 @@ export async function draftPostcastIdea(input: DraftPostcastIdeaInput): Promise<
     llm: input.llm,
     runId: input.runId,
     stepId: `qa-${item.id}`,
+    platform: 'LinkedIn',
   });
   await recordQaResult(input.pool, item.id, item.currentVersion, qa);
 

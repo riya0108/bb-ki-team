@@ -36,6 +36,9 @@ export interface RunQaGateInput {
   llm: LlmClient;
   runId: string;
   stepId: string;
+  // Human-readable label passed straight through to the rubric checks (e.g.
+  // 'LinkedIn', 'X', 'Instagram caption') — see RubricCheckInput.platform.
+  platform: string;
 }
 
 function worstStatus(results: QaDimensionResult[]): 'PASS' | 'PASS_WITH_WARNINGS' | 'BLOCKED' {
@@ -54,7 +57,7 @@ function requiredActionsFrom(name: string, result: QaDimensionResult): string[] 
 // else PASS. publishAllowed is always false in Phase 1 — there is no publish
 // connector at all, so this can't help but satisfy spec section 15.4.
 export async function runQaGate(input: RunQaGateInput): Promise<QaResult> {
-  const { finalPost, sourceReferences, sourceTexts, contentDna, status, llm, runId, stepId } = input;
+  const { finalPost, sourceReferences, sourceTexts, contentDna, status, llm, runId, stepId, platform } = input;
 
   const { riskLevel, riskFlags: topicRiskFlags } = classifyHighRiskTopic(finalPost);
   const isHighRisk = riskLevel === 'high';
@@ -73,7 +76,7 @@ export async function runQaGate(input: RunQaGateInput): Promise<QaResult> {
   const approvalState = checkApprovalState(status);
   const publishing = checkPublishing();
 
-  const rubricInput = { finalPost, sourceTexts, dna: contentDna, llm, runId, stepId };
+  const rubricInput = { finalPost, sourceTexts, dna: contentDna, llm, runId, stepId, platform };
   const [voiceMatchRubric, originality, platformFit, clarity, hookHonesty] = await Promise.all([
     checkVoiceMatchRubric(rubricInput),
     checkOriginality(rubricInput),

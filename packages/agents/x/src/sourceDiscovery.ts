@@ -5,18 +5,18 @@ import { listSources, markSourceAccessed, updateSourceStatus } from '@bb/db';
 import type { FetchTool } from '@bb/mcp-client';
 import { FetchToolError } from '@bb/mcp-client';
 import { runQaGate } from '@bb/qa-gate';
-import type { ContentDnaRecord, LinkedinPackage, Source } from '@bb/shared-types';
+import type { ContentDnaRecord, Source, XPackage } from '@bb/shared-types';
 import { RiskLevelSchema } from '@bb/shared-types';
 import { createContentItem, listContentItems, recordQaResult, submitForReview } from '@bb/workflows';
 import { z } from 'zod';
 
-import { draftLinkedinPost } from './draftPost.js';
+import { draftXPost } from './draftPost.js';
 import { InsufficientDistinctTopicsError, NoAccessibleSourcesError, NoTrustedSourcesError } from './errors.js';
-import { buildLinkedinPackage } from './packaging.js';
+import { buildXPackage } from './packaging.js';
 
-const CREATED_BY_AGENT = 'agent-01-linkedin';
+const CREATED_BY_AGENT = 'agent-02-x';
 const RECENT_TOPICS_LIMIT = 20;
-const TOPICS_TO_SELECT = 2;
+const DEFAULT_TOPICS_TO_SELECT = 1;
 
 const CandidateTopicSchema = z.object({
   sourceUrl: z.string().url(),
@@ -37,25 +37,21 @@ export interface FetchedSource {
 }
 
 function buildCandidateExtractionSystemPrompt(dna: ContentDnaRecord): string {
-  return `You are the research-lead half of Agent 01 — the Bull or Bear LinkedIn Head Agent (spec 5.4).
-You inspect trusted sources and identify topics worth posting about. You are a research lead, not a
-ghostwriter (spec 5.5): you extract topics and angles, never sentences to copy.
+  return `You are the trend/idea-discovery half of Agent 02 — the Bull or Bear X Content Head Agent
+(spec 6.1). You inspect trusted sources and identify ideas worth posting about. You are a research
+lead, not a ghostwriter (spec 5.5, cross-platform): extract topics and angles, never sentences to copy.
 
 Creator's Content DNA:
 - Primary topics: ${dna.topics.primary.join(', ') || 'none noted'}
-- Secondary topics: ${dna.topics.secondary.join(', ') || 'none noted'}
 - Topics to avoid: ${dna.topics.avoid.join(', ') || 'none noted'}
 - Expertise: ${dna.identity.expertise.join(', ') || 'unspecified'}
 
 Rules:
 - Only propose a topic actually supported by the supplied source text — never invent one.
-- Give each candidate its own distinct angle (spec 5.8: never produce two drafts that are essentially
-  the same). Do not propose two candidates that are variations of the same underlying topic.
+- Give each candidate its own distinct angle; do not propose variations of the same underlying idea.
 - Skip anything already covered by the recently published topics listed below.
-- coreClaim should be the one specific, checkable claim the post would center on, or null if the
-  topic doesn't hinge on a specific claim.
-- relevanceScore (0-1) reflects fit with the creator's Content DNA topics/expertise, not just how
-  newsworthy the source is.
+- coreClaim is the one specific, checkable claim the post would center on, or null if it doesn't
+  hinge on one.
 - riskLevel should be "high" for anything touching legal, medical, safety-critical or unverified
   financial-outcome claims; otherwise "low" or "medium".`;
 }
@@ -95,9 +91,6 @@ function normalizeTopic(topic: string): string {
   return topic.trim().toLowerCase();
 }
 
-// Spec 5.4 ("select at least two genuinely different topics") + 5.8 ("never produce two
-// drafts that are essentially the same"): dedupe by normalized topic text, keep the
-// highest-scoring candidate per distinct topic, then take the top N by relevance.
 export function selectDistinctTopics(candidates: CandidateTopic[], count: number): CandidateTopic[] {
   const byTopic = new Map<string, CandidateTopic>();
   for (const candidate of candidates) {
@@ -120,18 +113,20 @@ export interface RunSourceDiscoveryDeps {
   fetchTool: FetchTool;
   logger: Logger;
   runId: string;
+  topicCount?: number;
 }
 
-// Implements the standard source-discovery workflow, spec section 5.4, end to end:
-// load DNA + trusted sources, fetch what's reachable, extract and select two distinct
-// topics, draft both in voice, run the QA gate, persist, and submit for human review.
-// Never schedules or publishes — Phase 1 has no publish connector at all.
-export async function runSourceDiscovery(deps: RunSourceDiscoveryDeps): Promise<LinkedinPackage[]> {
+// Spec 6.1's Trend/idea discovery mode. Scans trusted X sources (sources table rows
+// with platform: 'x'), drafts each selected idea as X-native content (letting the
+// model decide single-vs-thread per spec 6.3), and submits for review. Never
+// schedules or publishes — Phase 2 has no publish connector.
+export async function runSourceDiscovery(deps: RunSourceDiscoveryDeps): Promise<XPackage[]> {
   const { pool, llm, fetchTool, logger, runId } = deps;
+  const topicCount = deps.topicCount ?? DEFAULT_TOPICS_TO_SELECT;
 
   const dna = await loadCurrentDna(pool);
 
-  const sources = await listSources(pool, { platform: 'linkedin', status: 'active' });
+  const sources = await listSources(pool, { platform: 'x', status: 'active' });
   if (sources.length === 0) throw new NoTrustedSourcesError();
 
   const fetched: FetchedSource[] = [];
@@ -154,7 +149,7 @@ export async function runSourceDiscovery(deps: RunSourceDiscoveryDeps): Promise<
   }
   if (fetched.length === 0) throw new NoAccessibleSourcesError();
 
-  const recentItems = await listContentItems(pool, { platform: 'linkedin' });
+  const recentItems = await listContentItems(pool, { platform: 'x' });
   const recentTopics = recentItems
     .slice(0, RECENT_TOPICS_LIMIT)
     .map((item) => item.topic)
@@ -162,8 +157,6 @@ export async function runSourceDiscovery(deps: RunSourceDiscoveryDeps): Promise<
 
   const rawCandidates = await extractCandidateTopics(fetched, recentTopics, dna, llm, runId);
 
-  // Defense against a hallucinated sourceUrl: only trust candidates that point back to
-  // a source we actually fetched (never fabricate provenance — CLAUDE.md).
   const fetchedByUrl = new Map(fetched.map((f) => [f.source.url, f]));
   const validCandidates = rawCandidates.filter((candidate) => {
     const known = fetchedByUrl.has(candidate.sourceUrl);
@@ -173,14 +166,14 @@ export async function runSourceDiscovery(deps: RunSourceDiscoveryDeps): Promise<
     return known;
   });
 
-  const selected = selectDistinctTopics(validCandidates, TOPICS_TO_SELECT);
+  const selected = selectDistinctTopics(validCandidates, topicCount);
 
-  const packages: LinkedinPackage[] = [];
+  const packages: XPackage[] = [];
   for (const candidate of selected) {
     const fetchedSource = fetchedByUrl.get(candidate.sourceUrl);
     if (!fetchedSource) throw new NoAccessibleSourcesError();
 
-    const draft = await draftLinkedinPost({
+    const draft = await draftXPost({
       topic: candidate.topic,
       angle: candidate.angle,
       coreClaim: candidate.coreClaim,
@@ -192,7 +185,7 @@ export async function runSourceDiscovery(deps: RunSourceDiscoveryDeps): Promise<
     });
 
     const item = await createContentItem(pool, {
-      platform: 'linkedin',
+      platform: 'x',
       createdByAgent: CREATED_BY_AGENT,
       mode: 'source_discovery',
       topic: candidate.topic,
@@ -201,12 +194,13 @@ export async function runSourceDiscovery(deps: RunSourceDiscoveryDeps): Promise<
       sourceIds: [fetchedSource.source.id],
       sourceUrls: [fetchedSource.source.url],
       contentDnaVersion: dna.version,
-      text: draft.finalPost,
+      text: draft.finalCopy,
       riskLevel: candidate.riskLevel,
+      package: { mode: draft.mode, hookOptions: draft.hookOptions, threadPosts: draft.threadPosts },
     });
 
     const qa = await runQaGate({
-      finalPost: draft.finalPost,
+      finalPost: draft.finalCopy,
       sourceReferences: [fetchedSource.source.url],
       sourceTexts: [fetchedSource.text],
       contentDna: dna,
@@ -214,13 +208,12 @@ export async function runSourceDiscovery(deps: RunSourceDiscoveryDeps): Promise<
       llm,
       runId,
       stepId: `qa-${item.id}`,
-      platform: 'LinkedIn',
+      platform: 'X',
     });
     await recordQaResult(pool, item.id, item.currentVersion, qa);
 
     const reviewedItem = await submitForReview(pool, item.id);
-
-    packages.push(buildLinkedinPackage(reviewedItem, draft, qa));
+    packages.push(buildXPackage(reviewedItem, draft));
   }
 
   return packages;

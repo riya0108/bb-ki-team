@@ -22,6 +22,10 @@ export const AgentModeSchema = z.enum([
   'youtube_link',
   'voice_note',
   'edit',
+  // X-specific (spec section 6.1) — single_topic/source_discovery/repurpose/edit
+  // above are reused as-is since X's spec describes the same underlying concepts.
+  'thread',
+  'quote',
 ]);
 export type AgentMode = z.infer<typeof AgentModeSchema>;
 
@@ -49,6 +53,13 @@ export const ContentItemSchema = z.object({
   approvedVersion: z.number().int().positive().nullable(),
   approvedAt: z.string().datetime().nullable(),
   approvedBy: z.string().nullable(),
+  // Full structured output contract for platforms whose content isn't one flat
+  // string (X threads, Instagram carousels/reels, YouTube Shorts scripts) — see
+  // spec section 23.1's PACKAGE field. currentText stays the single-string/primary
+  // representation used for revisions/diffing regardless of platform; each agent
+  // parses this back into its own typed *PackageSchema on read. null for platforms
+  // (LinkedIn) whose currentText is already the complete output.
+  package: z.record(z.string(), z.unknown()).nullable(),
 });
 export type ContentItem = z.infer<typeof ContentItemSchema>;
 
@@ -65,5 +76,6 @@ export const NewContentItemInputSchema = z.object({
   contentDnaVersion: z.number().int().positive(),
   text: z.string(),
   riskLevel: RiskLevelSchema.optional(),
+  package: z.record(z.string(), z.unknown()).nullable().optional(),
 });
 export type NewContentItemInput = z.infer<typeof NewContentItemInputSchema>;

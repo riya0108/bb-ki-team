@@ -1,9 +1,7 @@
 import { z } from 'zod';
 
 import { AgentModeSchema, ContentStatusSchema } from './contentItem.js';
-
-export const PublishActionSchema = z.enum(['none', 'schedule', 'publish']);
-export type PublishAction = z.infer<typeof PublishActionSchema>;
+import { PublishActionSchema } from './publishAction.js';
 
 // Mirrors the LINKEDIN_PACKAGE output contract, spec section 5.7.
 export const LinkedinPackageSchema = z.object({

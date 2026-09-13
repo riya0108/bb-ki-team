@@ -9,6 +9,11 @@ export interface RubricCheckInput {
   llm: LlmClient;
   runId: string;
   stepId: string;
+  // Human-readable label, e.g. 'LinkedIn', 'X', 'Instagram caption', 'YouTube Shorts
+  // script' — the QA gate is shared across every platform agent (CLAUDE.md), so
+  // platform-specific judgment (voice/originality/fit) must never hardcode one
+  // platform's conventions into its prompt.
+  platform: string;
 }
 
 async function callRubric(
@@ -30,7 +35,7 @@ async function callRubric(
 }
 
 export async function checkVoiceMatchRubric(input: RubricCheckInput): Promise<QaDimensionResult> {
-  const system = `You are a strict editor checking whether a LinkedIn post matches a creator's established voice.
+  const system = `You are a strict editor checking whether a ${input.platform} post matches a creator's established voice.
 Voice profile: tone=${input.dna.voice.tone}, energy=${input.dna.voice.energy ?? 'unspecified'}, directness=${input.dna.voice.directness ?? 'unspecified'}.
 Judge tone, rhythm, and word choice against this profile (beyond any forbidden-word list, which is checked separately).
 Respond with status PASS/WARN/FAIL, a one-sentence "notes" explanation, and optional "evidence" quotes.`;
@@ -66,14 +71,18 @@ export async function checkOriginality(input: RubricCheckInput): Promise<QaDimen
     return { status: 'PASS', notes: 'No source material to compare against; treated as original.' };
   }
 
-  const system = `You are checking whether a LinkedIn post is an original expression of an idea from source material, or a disguised rewrite (spec 5.5: never copy a source's structure, distinctive phrasing, or conclusion line-for-line).
+  const system = `You are checking whether a ${input.platform} post is an original expression of an idea from source material, or a disguised rewrite (spec 5.5: never copy a source's structure, distinctive phrasing, or conclusion line-for-line).
 Judge whether the post adds the author's own angle, analysis, or interpretation rather than merely paraphrasing the source.
 Respond with status PASS/WARN/FAIL, a one-sentence "notes" explanation, and optional "evidence" quotes.`;
   return callRubric(input.llm, input.runId, input.stepId, system, input.finalPost);
 }
 
 export async function checkPlatformFit(input: RubricCheckInput): Promise<QaDimensionResult> {
-  const system = `You are checking whether a post is native to LinkedIn: professional-adjacent, uses line breaks for readability, appropriate length, no platform-mismatched formatting (e.g. no hashtag spam, no X-style thread numbering).
+  const system = `You are checking whether this content is native to ${input.platform}: it uses the
+formatting, tone, structure and length conventions readers actually expect on ${input.platform},
+and does not carry over another platform's conventions inappropriately (e.g. don't flag a genuine
+${input.platform} structural convention — like X thread numbering, or Instagram carousel slide
+breaks — as wrong just because a different platform does it differently).
 Respond with status PASS/WARN/FAIL, a one-sentence "notes" explanation, and optional "evidence" quotes.`;
   return callRubric(input.llm, input.runId, input.stepId, system, input.finalPost);
 }

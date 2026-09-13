@@ -2,35 +2,32 @@ import type { LlmClient } from '@bb/core';
 import { loadCurrentDna } from '@bb/content-dna';
 import type { Pool } from '@bb/db';
 import { runQaGate } from '@bb/qa-gate';
-import type { ContentDnaRecord, LinkedinPackage } from '@bb/shared-types';
+import type { ContentDnaRecord, XPackage } from '@bb/shared-types';
 import { createContentItem, recordQaResult, submitForReview } from '@bb/workflows';
 import { z } from 'zod';
 
-import { draftLinkedinPost } from './draftPost.js';
-import { buildLinkedinPackage } from './packaging.js';
+import { draftXPost } from './draftPost.js';
+import { buildXPackage } from './packaging.js';
 
-const CREATED_BY_AGENT = 'agent-01-linkedin';
-const MAX_ANGLES = 3;
+const CREATED_BY_AGENT = 'agent-02-x';
 
 const AngleOptionSchema = z.object({ angle: z.string(), description: z.string() });
 export type AngleOption = z.infer<typeof AngleOptionSchema>;
 
-const ProposeAnglesResponseSchema = z.object({ angles: z.array(AngleOptionSchema).min(1).max(MAX_ANGLES) });
+const ProposeAnglesResponseSchema = z.object({ angles: z.array(AngleOptionSchema).min(1).max(3) });
 
 function buildProposeAnglesSystemPrompt(dna: ContentDnaRecord): string {
-  return `You are Agent 01 — the Bull or Bear LinkedIn Head Agent, in Single Topic mode (spec 5.1).
-Given a topic the creator wants to post about, propose 1-3 genuinely different angles (not
-paraphrases of one idea — spec 5.8). Each angle should be a distinct way into the topic: a
-different insight, disagreement, mechanism, or audience implication.
+  return `You are Agent 02 — the Bull or Bear X Content Head Agent (spec 6.3: "generate three
+hook/angle options"). Given a topic, propose up to 3 genuinely different angles — not paraphrases
+of one idea (spec 5.8, cross-platform). Each angle should be a distinct way into the topic.
 
 Creator's Content DNA:
 - Role: ${dna.identity.role}
-- Expertise: ${dna.identity.expertise.join(', ') || 'unspecified'}
 - Strongly held opinions: ${dna.opinions.stronglyHeld.join(', ') || 'none noted'}
 - Topics to avoid: ${dna.topics.avoid.join(', ') || 'none noted'}`;
 }
 
-export async function proposeLinkedinAngles(
+export async function proposeXAngles(
   topic: string,
   dna: ContentDnaRecord,
   llm: LlmClient,
@@ -42,7 +39,7 @@ export async function proposeLinkedinAngles(
       messages: [
         {
           role: 'user',
-          content: `Topic: ${topic}\n\nPropose 1-3 distinct angles as JSON: { "angles": [{ "angle": ..., "description": ... }] }.`,
+          content: `Topic: ${topic}\n\nPropose up to 3 distinct angles as JSON: { "angles": [{ "angle": ..., "description": ... }] }.`,
         },
       ],
       runId,
@@ -53,21 +50,25 @@ export async function proposeLinkedinAngles(
   return response.angles;
 }
 
-export interface DraftSingleTopicPostInput {
+export interface DraftXTopicPostInput {
   pool: Pool;
   llm: LlmClient;
   topic: string;
   angle: string;
+  // 'single_topic' -> spec 6.1's Single-post mode; 'thread' -> Thread mode. Drives
+  // both the persisted AgentMode and whether draftXPost is forced into that shape.
+  mode: 'single_topic' | 'thread';
   runId: string;
 }
 
-// Drafts, persists, QA-gates and submits for review the post for one already-chosen
-// angle (spec 5.1's "1-3 angles, then final editable post" — angle selection is the
-// caller's/human's job; this covers the second half of that flow).
-export async function draftSingleTopicPost(input: DraftSingleTopicPostInput): Promise<LinkedinPackage> {
+// Spec 6.1 Single-post mode and Thread mode share everything except whether the draft
+// is forced into a single post or a thread — kept as one function so that shared
+// behavior (persist, QA, submit for review) can't drift between the two.
+export async function draftXTopicPost(input: DraftXTopicPostInput): Promise<XPackage> {
   const dna = await loadCurrentDna(input.pool);
+  const forceMode = input.mode === 'thread' ? 'thread' : 'single';
 
-  const draft = await draftLinkedinPost({
+  const draft = await draftXPost({
     topic: input.topic,
     angle: input.angle,
     coreClaim: null,
@@ -75,22 +76,24 @@ export async function draftSingleTopicPost(input: DraftSingleTopicPostInput): Pr
     contentDna: dna,
     llm: input.llm,
     runId: input.runId,
-    stepId: 'draft-single-topic',
+    stepId: `draft-x-${input.mode}`,
+    forceMode,
   });
 
   const item = await createContentItem(input.pool, {
-    platform: 'linkedin',
+    platform: 'x',
     createdByAgent: CREATED_BY_AGENT,
-    mode: 'single_topic',
+    mode: input.mode,
     topic: input.topic,
     angle: input.angle,
     contentDnaVersion: dna.version,
-    text: draft.finalPost,
+    text: draft.finalCopy,
     riskLevel: 'low',
+    package: { mode: draft.mode, hookOptions: draft.hookOptions, threadPosts: draft.threadPosts },
   });
 
   const qa = await runQaGate({
-    finalPost: draft.finalPost,
+    finalPost: draft.finalCopy,
     sourceReferences: [],
     sourceTexts: [],
     contentDna: dna,
@@ -98,11 +101,11 @@ export async function draftSingleTopicPost(input: DraftSingleTopicPostInput): Pr
     llm: input.llm,
     runId: input.runId,
     stepId: `qa-${item.id}`,
-    platform: 'LinkedIn',
+    platform: 'X',
   });
   await recordQaResult(input.pool, item.id, item.currentVersion, qa);
 
   const reviewedItem = await submitForReview(input.pool, item.id);
 
-  return buildLinkedinPackage(reviewedItem, draft, qa);
+  return buildXPackage(reviewedItem, draft);
 }

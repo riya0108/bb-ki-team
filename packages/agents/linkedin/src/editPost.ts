@@ -101,6 +101,7 @@ export async function reviseLinkedinPost(input: ReviseLinkedinPostInput): Promis
     llm: input.llm,
     runId: input.runId,
     stepId: `qa-${revisedItem.id}-v${revisedItem.currentVersion}`,
+    platform: 'LinkedIn',
   });
   await recordQaResult(input.pool, revisedItem.id, revisedItem.currentVersion, qa);
 

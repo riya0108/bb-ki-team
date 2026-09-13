@@ -35,6 +35,7 @@ describe('runQaGate', () => {
       llm,
       runId: 'run-1',
       stepId: 'step-1',
+      platform: 'LinkedIn',
     });
 
     expect(result.overallStatus).toBe('PASS');
@@ -52,6 +53,7 @@ describe('runQaGate', () => {
       llm,
       runId: 'run-1',
       stepId: 'step-1',
+      platform: 'LinkedIn',
     });
 
     expect(result.overallStatus).toBe('BLOCKED');
@@ -76,6 +78,7 @@ describe('runQaGate', () => {
       llm,
       runId: 'run-1',
       stepId: 'step-1',
+      platform: 'LinkedIn',
     });
 
     expect(result.overallStatus).toBe('BLOCKED');
@@ -92,8 +95,32 @@ describe('runQaGate', () => {
       llm,
       runId: 'run-1',
       stepId: 'step-1',
+      platform: 'LinkedIn',
     });
 
     expect(result.riskFlags).toContain('financial_claims');
+  });
+
+  it('passes the given platform into the rubric prompts, never hardcoding LinkedIn', async () => {
+    const systemPrompts: string[] = [];
+    const llm = createFakeLlmClient((input) => {
+      systemPrompts.push(input.system ?? '');
+      return passingRubricResponse;
+    });
+
+    await runQaGate({
+      finalPost: 'A thread-native post about markets.',
+      sourceReferences: [],
+      sourceTexts: [],
+      contentDna: dna,
+      status: 'in_review',
+      llm,
+      runId: 'run-1',
+      stepId: 'step-1',
+      platform: 'X',
+    });
+
+    expect(systemPrompts.some((p) => p.includes('X'))).toBe(true);
+    expect(systemPrompts.some((p) => p.includes('LinkedIn'))).toBe(false);
   });
 });
