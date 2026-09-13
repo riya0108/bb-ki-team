@@ -1,24 +1,21 @@
 {
-  "name": "@bb/api",
+  "name": "@bb/agent-youtube-shorts",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "main": "./src/server.ts",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
   "dependencies": {
-    "@bb/agent-instagram": "0.1.0",
-    "@bb/agent-linkedin": "0.1.0",
-    "@bb/agent-x": "0.1.0",
-    "@bb/agent-youtube-shorts": "0.1.0",
     "@bb/content-dna": "0.1.0",
     "@bb/core": "0.1.0",
     "@bb/db": "0.1.0",
     "@bb/mcp-client": "0.1.0",
+    "@bb/qa-gate": "0.1.0",
     "@bb/shared-types": "0.1.0",
     "@bb/workflows": "0.1.0",
-    "express": "^5.2.1",
     "zod": "^4.4.3"
-  },
-  "devDependencies": {
-    "@types/express": "^5.0.5"
   }
 }

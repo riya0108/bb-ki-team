@@ -8,5 +8,6 @@ export * from './publishAction.js';
 export * from './linkedinPackage.js';
 export * from './xPackage.js';
 export * from './instagramPackage.js';
+export * from './youtubeShortPackage.js';
 export * from './fetchResult.js';
 export * from './youtubeTranscript.js';
