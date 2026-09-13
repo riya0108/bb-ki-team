@@ -5,6 +5,7 @@
   "type": "module",
   "main": "./src/server.ts",
   "dependencies": {
+    "@bb/agent-blog": "0.1.0",
     "@bb/agent-instagram": "0.1.0",
     "@bb/agent-linkedin": "0.1.0",
     "@bb/agent-x": "0.1.0",

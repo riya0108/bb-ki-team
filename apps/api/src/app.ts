@@ -3,6 +3,7 @@ import type { Express } from 'express';
 
 import type { AppDeps } from './deps.js';
 import { errorHandler } from './errorHandler.js';
+import { createBlogRouter } from './routes/blog.js';
 import { createContentRouter } from './routes/content.js';
 import { createContentDnaRouter } from './routes/contentDna.js';
 import { createInstagramRouter } from './routes/instagram.js';
@@ -25,6 +26,7 @@ export function createApp(deps: AppDeps): Express {
   app.use('/x', createXRouter(deps));
   app.use('/instagram', createInstagramRouter(deps));
   app.use('/youtube-shorts', createYoutubeShortsRouter(deps));
+  app.use('/blog', createBlogRouter(deps));
   app.use('/content', createContentRouter(deps));
   app.use('/content-dna', createContentDnaRouter(deps));
 
