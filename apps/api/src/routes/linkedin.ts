@@ -14,6 +14,7 @@ import {
   startPostcastInterview,
 } from '@bb/agent-linkedin';
 import { loadCurrentDna } from '@bb/content-dna';
+import { listChatMessages } from '@bb/db';
 import { Router } from 'express';
 import { z } from 'zod';
 
@@ -163,6 +164,11 @@ export function createLinkedinRouter(deps: AppDeps): Router {
       runId,
     });
     res.status(200).json({ runId, package: pkg, learningEvent });
+  });
+
+  router.get('/chat', async (_req, res) => {
+    const messages = await listChatMessages(deps.pool, 'linkedin');
+    res.status(200).json({ messages });
   });
 
   const ChatSchema = z.object({ message: z.string().min(1), openContentId: z.string().uuid().nullable().optional() });

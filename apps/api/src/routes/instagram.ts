@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import { handleInstagramChatMessage, runInstagramHead } from '@bb/agent-instagram';
+import { listChatMessages } from '@bb/db';
 import { InstagramFormatSchema } from '@bb/shared-types';
 import { Router } from 'express';
 import { z } from 'zod';
@@ -40,6 +41,11 @@ export function createInstagramRouter(deps: AppDeps): Router {
       runId,
     });
     res.status(201).json({ runId, package: pkg });
+  });
+
+  router.get('/chat', async (_req, res) => {
+    const messages = await listChatMessages(deps.pool, 'instagram');
+    res.status(200).json({ messages });
   });
 
   const ChatSchema = z.object({ message: z.string().min(1), openContentId: z.string().uuid().nullable().optional() });

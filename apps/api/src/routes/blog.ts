@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import { handleBlogChatMessage, runBlogArticle, runBlogArticleFromSource } from '@bb/agent-blog';
+import { listChatMessages } from '@bb/db';
 import { Router } from 'express';
 import { z } from 'zod';
 
@@ -59,6 +60,11 @@ export function createBlogRouter(deps: AppDeps): Router {
       runId,
     });
     res.status(201).json({ runId, package: pkg });
+  });
+
+  router.get('/chat', async (_req, res) => {
+    const messages = await listChatMessages(deps.pool, 'blog');
+    res.status(200).json({ messages });
   });
 
   const ChatSchema = z.object({ message: z.string().min(1), openContentId: z.string().uuid().nullable().optional() });

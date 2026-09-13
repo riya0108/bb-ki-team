@@ -41,5 +41,9 @@
     "moduleDetection": "force",
     "skipLibCheck": true
   },
-  "exclude": ["node_modules"]
+  // apps/dashboard is a Vite/React frontend with its own moduleResolution
+  // ("bundler", no .js extensions on relative imports) and tsconfig.json —
+  // it's typechecked separately (see root package.json's "typecheck" script)
+  // rather than mixed into this Node-oriented compilation unit.
+  "exclude": ["node_modules", "apps/dashboard"]
 }

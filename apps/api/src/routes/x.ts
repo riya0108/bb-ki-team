@@ -10,6 +10,7 @@ import {
   runSourceDiscovery,
 } from '@bb/agent-x';
 import { loadCurrentDna } from '@bb/content-dna';
+import { listChatMessages } from '@bb/db';
 import { Router } from 'express';
 import { z } from 'zod';
 
@@ -109,6 +110,11 @@ export function createXRouter(deps: AppDeps): Router {
       runId,
     });
     res.status(200).json({ runId, package: pkg, learningEvent });
+  });
+
+  router.get('/chat', async (_req, res) => {
+    const messages = await listChatMessages(deps.pool, 'x');
+    res.status(200).json({ messages });
   });
 
   const ChatSchema = z.object({ message: z.string().min(1), openContentId: z.string().uuid().nullable().optional() });
