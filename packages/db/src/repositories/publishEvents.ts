@@ -39,7 +39,10 @@ function mapRow(row: PublishEventRow): PublishEvent {
   });
 }
 
-export async function insertPublishEvent(db: Queryable, input: NewPublishEventInput): Promise<PublishEvent> {
+export async function insertPublishEvent(
+  db: Queryable,
+  input: NewPublishEventInput,
+): Promise<PublishEvent> {
   const result = await db.query<PublishEventRow>(
     `INSERT INTO publish_events
        (content_id, platform, version, approved_by, approved_at, scheduled_for, published_at,
@@ -66,10 +69,43 @@ export async function insertPublishEvent(db: Queryable, input: NewPublishEventIn
   return mapRow(row);
 }
 
-export async function listPublishEventsForContent(db: Queryable, contentId: string): Promise<PublishEvent[]> {
+export async function listPublishEventsForContent(
+  db: Queryable,
+  contentId: string,
+): Promise<PublishEvent[]> {
   const result = await db.query<PublishEventRow>(
     'SELECT * FROM publish_events WHERE content_id = $1 ORDER BY created_at DESC',
     [contentId],
   );
   return result.rows.map(mapRow);
+}
+
+export interface DueSchedule {
+  contentId: string;
+  scheduledFor: string;
+}
+
+// The most recent successful "schedule" attempt per content item still sitting in
+// content_items.status = 'scheduled' (the authoritative "hasn't fired yet" signal —
+// firing inserts a SEPARATE publish_event row rather than updating this one, so
+// checking published_at on the scheduling row itself is not enough: it stays null
+// forever even after a later event successfully publishes the item) whose target
+// time has arrived. DISTINCT ON picks the latest scheduling event per item so a
+// prior failed publish attempt for the same item can't be mistaken for its schedule.
+export async function listDueSchedules(db: Queryable, asOf: Date): Promise<DueSchedule[]> {
+  const result = await db.query<{ content_id: string; scheduled_for: Date }>(
+    `SELECT DISTINCT ON (pe.content_id) pe.content_id, pe.scheduled_for
+     FROM publish_events pe
+     JOIN content_items ci ON ci.id = pe.content_id
+     WHERE pe.result = 'success'
+       AND pe.scheduled_for IS NOT NULL
+       AND ci.status = 'scheduled'
+       AND pe.scheduled_for <= $1
+     ORDER BY pe.content_id, pe.created_at DESC`,
+    [asOf],
+  );
+  return result.rows.map((row) => ({
+    contentId: row.content_id,
+    scheduledFor: row.scheduled_for.toISOString(),
+  }));
 }

@@ -1,5 +1,6 @@
 import { PLATFORM_LABELS, PLATFORMS } from '../api/client';
 import type { Platform } from '../api/client';
+import { PlatformIcon } from './icons';
 
 interface PlatformTabsProps {
   selected: Platform;
@@ -12,9 +13,11 @@ export function PlatformTabs({ selected, onSelect }: PlatformTabsProps) {
       {PLATFORMS.map((platform) => (
         <button
           key={platform}
-          className={platform === selected ? 'active' : ''}
+          type="button"
+          className={`platform-chip${platform === selected ? ' active' : ''}`}
           onClick={() => onSelect(platform)}
         >
+          <PlatformIcon platform={platform} />
           {PLATFORM_LABELS[platform]}
         </button>
       ))}

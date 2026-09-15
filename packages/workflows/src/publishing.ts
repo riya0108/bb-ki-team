@@ -1,4 +1,9 @@
-import { getContentItemById, insertPublishEvent, setContentItemStatus } from '@bb/db';
+import {
+  getContentItemById,
+  insertPublishEvent,
+  listDueSchedules,
+  setContentItemStatus,
+} from '@bb/db';
 import type { Pool } from '@bb/db';
 import type { ContentItem, PublishEvent } from '@bb/shared-types';
 
@@ -12,6 +17,15 @@ export class ContentNotApprovedError extends Error {
         '(spec 15.2: publishing may only happen from an approved exact version).',
     );
     this.name = 'ContentNotApprovedError';
+  }
+}
+
+export class ContentNotScheduledError extends Error {
+  constructor(contentId: string, status: string) {
+    super(
+      `Cannot fire scheduled publish for content ${contentId}: status is "${status}", not "scheduled".`,
+    );
+    this.name = 'ContentNotScheduledError';
   }
 }
 
@@ -53,18 +67,34 @@ async function requireApprovedItem(db: Pool, contentId: string): Promise<Approve
   return item as ApprovedContentItem;
 }
 
+// scheduled -> published (stateMachine.ts) reuses the same approvedVersion/approvedBy
+// /approvedAt trail scheduling left intact — a scheduled item never loses its
+// approval, it just waits for apps/worker to actually fire it.
+async function requireScheduledItem(db: Pool, contentId: string): Promise<ApprovedContentItem> {
+  const item = await getContentItemById(db, contentId);
+  if (!item) throw new ContentItemNotFoundError(contentId);
+  if (
+    item.status !== 'scheduled' ||
+    !item.approvedVersion ||
+    !item.approvedBy ||
+    !item.approvedAt
+  ) {
+    throw new ContentNotScheduledError(contentId, item.status);
+  }
+  return item as ApprovedContentItem;
+}
+
 // Spec 15.3/15.4: every publish ATTEMPT is logged, whether it succeeds or fails — a
 // missing connector is a real, loggable outcome, not an exception, since it's the
 // expected state until a platform is actually wired up (spec 15.4: "never claim a
 // post was published unless the connector confirms it" — the honest failure here is
-// exactly that guarantee holding). Only an invalid request (wrong status) throws,
-// since that's rejected before any attempt is even logged.
-export async function requestPublish(
+// exactly that guarantee holding). Shared by requestPublish (an approved item, fired
+// on demand) and firePendingSchedule (a scheduled item, fired by apps/worker once due).
+async function attemptPublish(
   pool: Pool,
-  contentId: string,
+  item: ApprovedContentItem,
   connectors: Record<string, PublishConnector>,
 ): Promise<PublishOutcome> {
-  const item = await requireApprovedItem(pool, contentId);
   const connector = connectors[item.platform];
 
   if (!connector) {
@@ -111,6 +141,44 @@ export async function requestPublish(
     });
     return { item, event };
   }
+}
+
+export async function requestPublish(
+  pool: Pool,
+  contentId: string,
+  connectors: Record<string, PublishConnector>,
+): Promise<PublishOutcome> {
+  const item = await requireApprovedItem(pool, contentId);
+  return attemptPublish(pool, item, connectors);
+}
+
+// Fires a single due schedule — called by requestPublish's scheduled-item counterpart,
+// apps/worker's poll loop, never directly by a human-facing route (nothing publishes
+// except through an approval-gated path; spec 15: no publish/schedule tool call is
+// allowed except after an approval gate has recorded approval for this exact version).
+export async function firePendingSchedule(
+  pool: Pool,
+  contentId: string,
+  connectors: Record<string, PublishConnector>,
+): Promise<PublishOutcome> {
+  const item = await requireScheduledItem(pool, contentId);
+  return attemptPublish(pool, item, connectors);
+}
+
+// What apps/worker calls on each tick: find every scheduled item whose target time
+// has arrived and actually publish it, one at a time, logging every attempt via
+// firePendingSchedule/attemptPublish regardless of outcome (spec 15.3/15.4).
+export async function publishDueSchedules(
+  pool: Pool,
+  connectors: Record<string, PublishConnector>,
+  asOf: Date = new Date(),
+): Promise<PublishOutcome[]> {
+  const due = await listDueSchedules(pool, asOf);
+  const outcomes: PublishOutcome[] = [];
+  for (const { contentId } of due) {
+    outcomes.push(await firePendingSchedule(pool, contentId, connectors));
+  }
+  return outcomes;
 }
 
 export async function requestSchedule(

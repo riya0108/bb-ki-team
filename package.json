@@ -3,7 +3,12 @@
   "version": "1.0.0",
   "description": "Bull or Bear AI Content Creation Team",
   "private": true,
-  "workspaces": ["packages/*", "packages/agents/*", "packages/mcp-servers/*", "apps/*"],
+  "workspaces": [
+    "packages/*",
+    "packages/agents/*",
+    "packages/mcp-servers/*",
+    "apps/*"
+  ],
   "scripts": {
     "test": "vitest run --no-file-parallelism",
     "lint": "eslint .",
@@ -12,7 +17,10 @@
     "format:check": "prettier --check .",
     "typecheck": "tsc --noEmit && npm run typecheck --workspace=@bb/dashboard",
     "db:migrate": "tsx --env-file=.env packages/db/src/migrate.ts",
+    "x:verify": "tsx --env-file=.env packages/mcp-servers/x/src/verify.ts",
+    "buffer:verify": "tsx --env-file=.env packages/mcp-servers/buffer/src/verify.ts",
     "api": "tsx watch --env-file=.env apps/api/src/server.ts",
+    "worker": "tsx watch --env-file=.env apps/worker/src/index.ts",
     "dashboard": "npm run dev --workspace=@bb/dashboard",
     "dev": "concurrently -n api,dashboard -c blue,magenta \"npm run api\" \"npm run dashboard\""
   },

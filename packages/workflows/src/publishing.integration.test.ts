@@ -9,7 +9,14 @@ import type { Pool } from '@bb/db';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 import { createContentItem, recordApproval, submitForReview } from './ledger.js';
-import { ContentNotApprovedError, requestPublish, requestSchedule } from './publishing.js';
+import {
+  ContentNotApprovedError,
+  ContentNotScheduledError,
+  firePendingSchedule,
+  publishDueSchedules,
+  requestPublish,
+  requestSchedule,
+} from './publishing.js';
 import type { PublishConnector, ScheduleConnector } from './publishing.js';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
@@ -33,7 +40,11 @@ describeIfDb('packages/workflows publishing (integration, real Postgres)', () =>
 
   beforeAll(async () => {
     pool = createPool(databaseUrl ?? '');
-    const dna = await insertContentDna(pool, { version: Date.now() % 1_000_000, status: 'active', body: dnaBody });
+    const dna = await insertContentDna(pool, {
+      version: Date.now() % 1_000_000,
+      status: 'active',
+      body: dnaBody,
+    });
     dnaVersion = dna.version;
   });
 
@@ -86,7 +97,10 @@ describeIfDb('packages/workflows publishing (integration, real Postgres)', () =>
     expect(event.error).toContain('No publish connector');
     expect(event.connector).toBe('none');
 
-    const row = await pool.query<{ status: string }>('SELECT status FROM content_items WHERE id = $1', [contentId]);
+    const row = await pool.query<{ status: string }>(
+      'SELECT status FROM content_items WHERE id = $1',
+      [contentId],
+    );
     expect(row.rows[0]?.status).toBe('approved');
   });
 
@@ -95,7 +109,10 @@ describeIfDb('packages/workflows publishing (integration, real Postgres)', () =>
     const fakeConnector: PublishConnector = {
       name: 'fake-linkedin-connector',
       publish: () =>
-        Promise.resolve({ platformPostId: 'urn:li:post:123', platformUrl: 'https://linkedin.com/post/123' }),
+        Promise.resolve({
+          platformPostId: 'urn:li:post:123',
+          platformUrl: 'https://linkedin.com/post/123',
+        }),
     };
 
     const { item, event } = await requestPublish(pool, contentId, { linkedin: fakeConnector });
@@ -120,7 +137,10 @@ describeIfDb('packages/workflows publishing (integration, real Postgres)', () =>
     expect(event.result).toBe('failed');
     expect(event.error).toContain('401');
 
-    const row = await pool.query<{ status: string }>('SELECT status FROM content_items WHERE id = $1', [contentId]);
+    const row = await pool.query<{ status: string }>(
+      'SELECT status FROM content_items WHERE id = $1',
+      [contentId],
+    );
     expect(row.rows[0]?.status).toBe('approved');
   });
 
@@ -132,7 +152,9 @@ describeIfDb('packages/workflows publishing (integration, real Postgres)', () =>
     };
     const scheduledFor = new Date(Date.now() + 60 * 60 * 1000);
 
-    const { item, event } = await requestSchedule(pool, contentId, scheduledFor, { x: fakeConnector });
+    const { item, event } = await requestSchedule(pool, contentId, scheduledFor, {
+      x: fakeConnector,
+    });
 
     expect(item.status).toBe('scheduled');
     expect(event.result).toBe('success');
@@ -149,6 +171,88 @@ describeIfDb('packages/workflows publishing (integration, real Postgres)', () =>
     });
     createdContentIds.push(item.id);
 
-    await expect(requestSchedule(pool, item.id, new Date(), {})).rejects.toBeInstanceOf(ContentNotApprovedError);
+    await expect(requestSchedule(pool, item.id, new Date(), {})).rejects.toBeInstanceOf(
+      ContentNotApprovedError,
+    );
+  });
+
+  async function createScheduledItem(scheduledFor: Date, platform = 'x'): Promise<string> {
+    const contentId = await createApprovedItem(platform);
+    const noopScheduleConnector: ScheduleConnector = {
+      name: 'fake-x-scheduler',
+      schedule: () => Promise.resolve(),
+    };
+    await requestSchedule(pool, contentId, scheduledFor, { [platform]: noopScheduleConnector });
+    return contentId;
+  }
+
+  it('firePendingSchedule fires a due schedule and transitions it to published', async () => {
+    const contentId = await createScheduledItem(new Date(Date.now() - 1000));
+    const fakeConnector: PublishConnector = {
+      name: 'fake-x-connector',
+      publish: () =>
+        Promise.resolve({ platformPostId: '123', platformUrl: 'https://x.com/i/web/status/123' }),
+    };
+
+    const { item, event } = await firePendingSchedule(pool, contentId, { x: fakeConnector });
+
+    expect(item.status).toBe('published');
+    expect(event.result).toBe('success');
+    expect(event.platformPostId).toBe('123');
+  });
+
+  it('firePendingSchedule refuses content that is not scheduled', async () => {
+    const contentId = await createApprovedItem();
+    await expect(firePendingSchedule(pool, contentId, {})).rejects.toBeInstanceOf(
+      ContentNotScheduledError,
+    );
+  });
+
+  it('publishDueSchedules fires everything due and leaves not-yet-due items alone', async () => {
+    const dueId = await createScheduledItem(new Date(Date.now() - 1000));
+    const notYetDueId = await createScheduledItem(new Date(Date.now() + 60 * 60 * 1000));
+    const fakeConnector: PublishConnector = {
+      name: 'fake-x-connector',
+      publish: () =>
+        Promise.resolve({ platformPostId: 'abc', platformUrl: 'https://x.com/i/web/status/abc' }),
+    };
+
+    const outcomes = await publishDueSchedules(pool, { x: fakeConnector }, new Date());
+    const outcomeIds = outcomes.map((outcome) => outcome.item.id);
+
+    expect(outcomeIds).toContain(dueId);
+    expect(outcomeIds).not.toContain(notYetDueId);
+
+    const dueRow = await pool.query<{ status: string }>(
+      'SELECT status FROM content_items WHERE id = $1',
+      [dueId],
+    );
+    expect(dueRow.rows[0]?.status).toBe('published');
+
+    const notYetDueRow = await pool.query<{ status: string }>(
+      'SELECT status FROM content_items WHERE id = $1',
+      [notYetDueId],
+    );
+    expect(notYetDueRow.rows[0]?.status).toBe('scheduled');
+  });
+
+  // Regression: firing logs a NEW publish_event row rather than updating the
+  // scheduling row's published_at (attemptPublish always inserts) — a query that
+  // only checked published_at on the scheduling event itself would see it as still
+  // null forever and keep re-offering an already-published item as "due" on every
+  // subsequent tick.
+  it('does not keep offering an item as due after it has already been fired', async () => {
+    const contentId = await createScheduledItem(new Date(Date.now() - 1000));
+    const fakeConnector: PublishConnector = {
+      name: 'fake-x-connector',
+      publish: () =>
+        Promise.resolve({ platformPostId: 'xyz', platformUrl: 'https://x.com/i/web/status/xyz' }),
+    };
+
+    const first = await publishDueSchedules(pool, { x: fakeConnector }, new Date());
+    expect(first.map((outcome) => outcome.item.id)).toContain(contentId);
+
+    const second = await publishDueSchedules(pool, { x: fakeConnector }, new Date());
+    expect(second.map((outcome) => outcome.item.id)).not.toContain(contentId);
   });
 });

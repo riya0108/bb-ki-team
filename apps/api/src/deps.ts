@@ -3,7 +3,14 @@ import { createFallbackLlmClient, createLogger, loadEnv } from '@bb/core';
 import type { Pool } from '@bb/db';
 import { createPool } from '@bb/db';
 import type { FetchTool, YoutubeTranscriptTool } from '@bb/mcp-client';
-import { createLinkedinMcpClient, createYoutubeTranscriptMcpClient } from '@bb/mcp-client';
+import {
+  createBlogGitPublishConnector,
+  createBlogGitScheduleConnector,
+  createBufferPublishConnector,
+  createLinkedinMcpClient,
+  createXScheduleConnector,
+  createYoutubeTranscriptMcpClient,
+} from '@bb/mcp-client';
 import type { PublishConnector, ScheduleConnector } from '@bb/workflows';
 
 // Single composition root: everything a route handler needs, built once at process
@@ -16,9 +23,19 @@ export interface AppDeps {
   fetchTool: FetchTool;
   youtubeTranscriptTool: YoutubeTranscriptTool;
   logger: Logger;
-  // Keyed by platform. Empty until Phase 3's real connectors are built — every
-  // publish/schedule request honestly fails and is logged rather than pretending
-  // to succeed (CLAUDE.md: never fabricate success; spec 15.4).
+  // Keyed by platform. A platform with no entry here means every publish/schedule
+  // request for it honestly fails and is logged rather than pretending to succeed
+  // (CLAUDE.md: never fabricate success; spec 15.4).
+  //
+  // X's own direct API (packages/mcp-client's createXPublishConnector, still present
+  // but unregistered below) was tried live and X rejected it with 402
+  // "credits-depleted" — POST /2/tweets draws from this account's paid credit
+  // balance, which is $0 on purpose (no card on file). The real X publish/schedule
+  // path is instead Buffer (createBufferPublishConnector): it posts to the connected
+  // X account on this account's behalf without touching X's paid API. X's
+  // ScheduleConnector does no external call itself — it just lets requestSchedule
+  // record the target time; apps/worker's own poll loop later calls this same
+  // publish connector once that time arrives (see apps/worker/src/deps.ts).
   publishConnectors: Record<string, PublishConnector>;
   scheduleConnectors: Record<string, ScheduleConnector>;
 }
@@ -30,6 +47,18 @@ export function createAppDeps(): AppDeps {
   const llm = createFallbackLlmClient(env, logger);
   const fetchTool = createLinkedinMcpClient(logger);
   const youtubeTranscriptTool = createYoutubeTranscriptMcpClient(logger);
+
+  const publishConnectors: Record<string, PublishConnector> = {};
+  const scheduleConnectors: Record<string, ScheduleConnector> = {};
+  if (env.buffer) {
+    publishConnectors.x = createBufferPublishConnector(env.buffer, logger);
+    scheduleConnectors.x = createXScheduleConnector();
+  }
+  if (env.blogGit) {
+    publishConnectors.blog = createBlogGitPublishConnector(env.blogGit, logger);
+    scheduleConnectors.blog = createBlogGitScheduleConnector();
+  }
+
   return {
     env,
     pool,
@@ -37,11 +66,28 @@ export function createAppDeps(): AppDeps {
     fetchTool,
     youtubeTranscriptTool,
     logger,
-    publishConnectors: {},
-    scheduleConnectors: {},
+    publishConnectors,
+    scheduleConnectors,
   };
 }
 
+function closeable(
+  connector: PublishConnector | ScheduleConnector,
+): connector is (PublishConnector | ScheduleConnector) & { close: () => Promise<void> } {
+  return typeof (connector as { close?: unknown }).close === 'function';
+}
+
 export async function closeAppDeps(deps: AppDeps): Promise<void> {
-  await Promise.all([deps.fetchTool.close(), deps.youtubeTranscriptTool.close(), deps.pool.end()]);
+  const connectorCloses = [
+    ...Object.values(deps.publishConnectors),
+    ...Object.values(deps.scheduleConnectors),
+  ]
+    .filter(closeable)
+    .map((connector) => connector.close());
+  await Promise.all([
+    deps.fetchTool.close(),
+    deps.youtubeTranscriptTool.close(),
+    deps.pool.end(),
+    ...connectorCloses,
+  ]);
 }

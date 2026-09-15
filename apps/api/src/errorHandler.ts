@@ -42,13 +42,24 @@ export function errorHandler(logger: Logger) {
     }
     const status = statusForError(err);
     const name = err instanceof Error ? err.name : 'Error';
-    const message = err instanceof Error ? err.message : 'Unknown error';
 
     if (status >= 500) {
       logger.error({ err, path: req.path, runId: req.header('x-run-id') }, 'Unhandled error in request');
     } else {
       logger.warn({ errName: name, path: req.path }, 'Request failed');
     }
+
+    // Known/mapped errors (ERROR_STATUS above) throw deliberately worded messages
+    // meant to reach the client. An unmapped error is, by definition, one nothing
+    // anticipated — its message might be a raw DB/provider error containing internal
+    // details, so only the generic "Internal Server Error" ever leaves the process;
+    // the real message is already in the log line above.
+    const message =
+      status >= 500
+        ? 'Internal Server Error'
+        : err instanceof Error
+          ? err.message
+          : 'Unknown error';
 
     res.status(status).json({ error: name, message });
   };

@@ -58,11 +58,16 @@ export async function runBlogArticle(input: RunBlogArticleInput): Promise<BlogPa
     title,
     deck: draft.deck,
     category: draft.category,
+    metaDescription: draft.metaDescription,
     sections: draft.sections,
     practicalTakeaway: draft.practicalTakeaway,
     conclusion: draft.conclusion,
     disclaimer: draft.disclaimer,
     sources: draft.sources,
+    comparisonStat: draft.comparisonStat,
+    revealCards: draft.revealCards,
+    poll: draft.poll,
+    pullQuote: draft.pullQuote,
   });
 
   const validation = validateBlogHtml(html);

@@ -6,6 +6,7 @@ import { ContentQueue } from './components/ContentQueue';
 import { DnaPanel } from './components/DnaPanel';
 import { DraftCanvas } from './components/DraftCanvas';
 import { PlatformTabs } from './components/PlatformTabs';
+import { ScheduledTracker } from './components/ScheduledTracker';
 
 function hasContentId(result: unknown): result is { contentId: string } {
   return typeof result === 'object' && result !== null && typeof (result as { contentId?: unknown }).contentId === 'string';
@@ -35,7 +36,14 @@ export function App() {
 
   return (
     <div className="app-shell">
-      <PlatformTabs selected={platform} onSelect={selectPlatform} />
+      <div className="bottom-glow" aria-hidden="true" />
+      <div className="topbar">
+        <div className="brand">
+          Teri<span className="brand-dot" />
+        </div>
+        <PlatformTabs selected={platform} onSelect={selectPlatform} />
+        <div className="topbar-right">BB ki Team</div>
+      </div>
       <div className="main-layout">
         <ContentQueue platform={platform} selectedId={openContentId} onSelect={setOpenContentId} refreshToken={refreshToken} />
         <div className="center-panel">
@@ -44,6 +52,7 @@ export function App() {
         </div>
         <DnaPanel refreshToken={refreshToken} />
       </div>
+      <ScheduledTracker refreshToken={refreshToken} />
     </div>
   );
 }

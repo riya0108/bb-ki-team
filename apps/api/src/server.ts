@@ -5,8 +5,8 @@ function main(): void {
   const deps = createAppDeps();
   const app = createApp(deps);
 
-  const server = app.listen(deps.env.apiPort, () => {
-    deps.logger.info({ port: deps.env.apiPort }, 'apps/api listening');
+  const server = app.listen(deps.env.apiPort, deps.env.apiHost, () => {
+    deps.logger.info({ host: deps.env.apiHost, port: deps.env.apiPort }, 'apps/api listening');
   });
 
   const shutdown = (): void => {

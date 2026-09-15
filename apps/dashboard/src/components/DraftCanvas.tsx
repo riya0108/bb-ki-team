@@ -75,11 +75,7 @@ export function DraftCanvas({ contentId, onChanged }: DraftCanvasProps) {
   }
 
   if (!contentId || !item) {
-    return (
-      <div className="draft-area">
-        <div className="empty-state">Select a draft from the queue, or ask the assistant below to create one.</div>
-      </div>
-    );
+    return null;
   }
 
   const dirty = text !== item.currentText;

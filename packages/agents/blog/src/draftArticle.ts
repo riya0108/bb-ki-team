@@ -21,6 +21,49 @@ const BlogSectionOutputSchema = z.object({
   sourceNote: z.string().nullable(),
 });
 
+// Optional visual components matching the Bull or Bear reference article format
+// (see htmlBuilder.ts). The model includes one only when the content genuinely
+// supports it — never invented to decorate an article that doesn't warrant it — and
+// every number/claim inside one is subject to the same sourcing rules as prose.
+const ComparisonStatOutputSchema = z.object({
+  label: z.string().min(1),
+  leftValue: z.string().min(1),
+  leftCaption: z.string().min(1),
+  rightValue: z.string().min(1),
+  rightCaption: z.string().min(1),
+  footnote: z.string().min(1),
+  afterSectionIndex: z.number().int().min(0),
+});
+
+const RevealCardOutputSchema = z.object({
+  icon: z.string().min(1),
+  teaser: z.string().min(1),
+  title: z.string().min(1),
+  text: z.string().min(1),
+});
+
+const RevealCardsOutputSchema = z.object({
+  title: z.string().min(1),
+  cards: z.array(RevealCardOutputSchema).min(3).max(6),
+  afterSectionIndex: z.number().int().min(0),
+});
+
+const PollOptionOutputSchema = z.object({
+  label: z.string().min(1),
+  revealText: z.string().min(1),
+});
+
+const PollOutputSchema = z.object({
+  question: z.string().min(1),
+  options: z.tuple([PollOptionOutputSchema, PollOptionOutputSchema]),
+  afterSectionIndex: z.number().int().min(0),
+});
+
+const PullQuoteOutputSchema = z.object({
+  text: z.string().min(1),
+  afterSectionIndex: z.number().int().min(0),
+});
+
 export const DraftBlogArticleOutputSchema = z.object({
   titleOptions: z.array(z.string()).min(1).max(3),
   category: z.string().min(1),
@@ -36,6 +79,10 @@ export const DraftBlogArticleOutputSchema = z.object({
   estimatedReadTime: z.string().nullable(),
   seoStatus: z.string(),
   styleMatchStatus: z.string(),
+  comparisonStat: ComparisonStatOutputSchema.nullable().default(null),
+  revealCards: RevealCardsOutputSchema.nullable().default(null),
+  poll: PollOutputSchema.nullable().default(null),
+  pullQuote: PullQuoteOutputSchema.nullable().default(null),
 });
 export type DraftBlogArticleOutput = z.infer<typeof DraftBlogArticleOutputSchema>;
 
@@ -89,7 +136,25 @@ Blog article anatomy (spec 12.4):
 
 Never use an unsupported number. Every material claim must be traceable to the supplied source
 material, or clearly framed as opinion/interpretation. Do not invent image URLs, sources, or
-quotes.`;
+quotes.
+
+Optional visual components — the final HTML is a richly formatted page (styled cards, a
+comparison-stat callout, a poll), not a plain wall of text. Include each one only when the
+content genuinely supports it — never fabricate a stat or invent a list of "hidden" items just
+to fill a component, and every number inside one still needs a real source or must be clearly
+your own analysis:
+- comparisonStat: a "guess vs. reality" or "before vs. after" style callout with two big numbers
+  (e.g. what people estimate vs. what's actually true) and a one-line footnote. Only when the
+  source material actually supports a comparison like this.
+- revealCards: 3-6 short tap-to-reveal cards (a one-line teaser + a single emoji icon on the
+  front, a title + 1-3 sentence explanation on the back) — good for "N things you didn't know"
+  style lists that arise naturally from the material.
+- poll: a two-option question inviting the reader to self-identify, each option paired with a
+  short reveal (a relevant stat or observation) shown after they pick.
+- pullQuote: one sentence from the article worth pulling out as a visual quote.
+Each component takes an afterSectionIndex (0-based index into "sections") saying which section
+it should appear directly after — place it where it fits the argument, not automatically at the
+end. Omit (null) any component that doesn't fit this particular article.`;
 }
 
 function buildUserPrompt(input: DraftBlogArticleInput): string {
@@ -111,7 +176,8 @@ sourceNote — body is plain text, paragraphs separated by a blank line), practi
 null), conclusion, disclaimer (or null — only for regulated subject matter), sources (array,
 can be empty), articleSummary (a concise editorial summary of the piece), estimatedReadTime (e.g.
 "5 min", or null), seoStatus (one sentence), styleMatchStatus (one sentence: how this matches the
-supplied style baseline).`;
+supplied style baseline), comparisonStat/revealCards/poll/pullQuote (each null unless the content
+genuinely supports it — see the visual components guidance above).`;
 }
 
 export async function draftBlogArticle(input: DraftBlogArticleInput): Promise<DraftBlogArticleOutput> {

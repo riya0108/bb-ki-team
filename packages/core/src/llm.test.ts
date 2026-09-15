@@ -12,10 +12,17 @@ import { createLogger } from './logger.js';
 
 const logger = createLogger({ module: 'llm.test' });
 
-const baseInput = { messages: [{ role: 'user' as const, content: 'hi' }], runId: 'run-1', stepId: 'step-1' };
+const baseInput = {
+  messages: [{ role: 'user' as const, content: 'hi' }],
+  runId: 'run-1',
+  stepId: 'step-1',
+};
 
 function jsonResponse(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'content-type': 'application/json' },
+  });
 }
 
 function chatCompletion(content: string): unknown {
@@ -27,12 +34,14 @@ describe('createFallbackLlmClient.complete', () => {
     const env: Env = {
       databaseUrl: 'x',
       apiPort: 4000,
+      apiHost: '127.0.0.1',
       gemini: { apiKey: 'g', model: 'gemini-model' },
       groq: { apiKey: 'q', model: 'groq-model' },
     };
     const fetchImpl = vi.fn((url: string | URL | Request) => {
       if (url === LLM_PROVIDER_ENDPOINTS.gemini) return Promise.resolve(jsonResponse('boom', 500));
-      if (url === LLM_PROVIDER_ENDPOINTS.groq) return Promise.resolve(jsonResponse(chatCompletion('groq says hi')));
+      if (url === LLM_PROVIDER_ENDPOINTS.groq)
+        return Promise.resolve(jsonResponse(chatCompletion('groq says hi')));
       return Promise.reject(new Error('unexpected url in test'));
     });
     const client = createFallbackLlmClient(env, logger, { fetchImpl });
@@ -46,6 +55,7 @@ describe('createFallbackLlmClient.complete', () => {
     const env: Env = {
       databaseUrl: 'x',
       apiPort: 4000,
+      apiHost: '127.0.0.1',
       groq: { apiKey: 'q', model: 'groq-model' },
     };
     const fetchImpl = vi.fn(() => Promise.resolve(jsonResponse('nope', 500)));
@@ -57,7 +67,12 @@ describe('createFallbackLlmClient.complete', () => {
 
 describe('createFallbackLlmClient.complete request shape', () => {
   it('defaults max_tokens high enough for a full structured response, not the old 1024 that truncated real drafts', async () => {
-    const env: Env = { databaseUrl: 'x', apiPort: 4000, groq: { apiKey: 'q', model: 'm' } };
+    const env: Env = {
+      databaseUrl: 'x',
+      apiPort: 4000,
+      apiHost: '127.0.0.1',
+      groq: { apiKey: 'q', model: 'm' },
+    };
     const fetchImpl = vi.fn((_url: string | URL | Request, _init?: RequestInit) =>
       Promise.resolve(jsonResponse(chatCompletion('hi'))),
     );
@@ -72,7 +87,12 @@ describe('createFallbackLlmClient.complete request shape', () => {
   });
 
   it('lets a caller override max_tokens explicitly', async () => {
-    const env: Env = { databaseUrl: 'x', apiPort: 4000, groq: { apiKey: 'q', model: 'm' } };
+    const env: Env = {
+      databaseUrl: 'x',
+      apiPort: 4000,
+      apiHost: '127.0.0.1',
+      groq: { apiKey: 'q', model: 'm' },
+    };
     const fetchImpl = vi.fn((_url: string | URL | Request, _init?: RequestInit) =>
       Promise.resolve(jsonResponse(chatCompletion('hi'))),
     );
@@ -91,7 +111,12 @@ describe('createFallbackLlmClient.completeStructured', () => {
   const schema = z.object({ greeting: z.string() });
 
   it('parses valid JSON on the first attempt', async () => {
-    const env: Env = { databaseUrl: 'x', apiPort: 4000, groq: { apiKey: 'q', model: 'm' } };
+    const env: Env = {
+      databaseUrl: 'x',
+      apiPort: 4000,
+      apiHost: '127.0.0.1',
+      groq: { apiKey: 'q', model: 'm' },
+    };
     const fetchImpl = vi.fn(() =>
       Promise.resolve(jsonResponse(chatCompletion(JSON.stringify({ greeting: 'hi' })))),
     );
@@ -103,7 +128,12 @@ describe('createFallbackLlmClient.completeStructured', () => {
   });
 
   it('strips a markdown JSON code fence with a trailing newline after the closing fence', async () => {
-    const env: Env = { databaseUrl: 'x', apiPort: 4000, groq: { apiKey: 'q', model: 'm' } };
+    const env: Env = {
+      databaseUrl: 'x',
+      apiPort: 4000,
+      apiHost: '127.0.0.1',
+      groq: { apiKey: 'q', model: 'm' },
+    };
     // Reproduces a real provider response shape: some models append trailing
     // whitespace after the closing ``` fence, which an anchored ^...$ regex misses.
     const fenced = '```json\n{"greeting": "hi"}\n```\n';
@@ -116,7 +146,12 @@ describe('createFallbackLlmClient.completeStructured', () => {
   });
 
   it('strips a markdown JSON code fence preceded by leading commentary', async () => {
-    const env: Env = { databaseUrl: 'x', apiPort: 4000, groq: { apiKey: 'q', model: 'm' } };
+    const env: Env = {
+      databaseUrl: 'x',
+      apiPort: 4000,
+      apiHost: '127.0.0.1',
+      groq: { apiKey: 'q', model: 'm' },
+    };
     const fenced = 'Here is the JSON:\n```json\n{"greeting": "hi"}\n```';
     const fetchImpl = vi.fn(() => Promise.resolve(jsonResponse(chatCompletion(fenced))));
     const client = createFallbackLlmClient(env, logger, { fetchImpl });
@@ -127,7 +162,12 @@ describe('createFallbackLlmClient.completeStructured', () => {
   });
 
   it('repairs once when the first response is invalid, then succeeds', async () => {
-    const env: Env = { databaseUrl: 'x', apiPort: 4000, groq: { apiKey: 'q', model: 'm' } };
+    const env: Env = {
+      databaseUrl: 'x',
+      apiPort: 4000,
+      apiHost: '127.0.0.1',
+      groq: { apiKey: 'q', model: 'm' },
+    };
     let call = 0;
     const fetchImpl = vi.fn(() => {
       call += 1;
@@ -146,12 +186,19 @@ describe('createFallbackLlmClient.completeStructured', () => {
     // spreads over the schema-augmented system built for the first attempt), so on
     // retry the model lost the schema instruction entirely and had even less context
     // to recover from its first mistake.
-    const env: Env = { databaseUrl: 'x', apiPort: 4000, groq: { apiKey: 'q', model: 'm' } };
+    const env: Env = {
+      databaseUrl: 'x',
+      apiPort: 4000,
+      apiHost: '127.0.0.1',
+      groq: { apiKey: 'q', model: 'm' },
+    };
     let call = 0;
     const systemPromptsSeen: string[] = [];
     const fetchImpl = vi.fn((_url: string | URL | Request, init?: RequestInit) => {
       call += 1;
-      const body = JSON.parse(init?.body as string) as { messages: { role: string; content: string }[] };
+      const body = JSON.parse(init?.body as string) as {
+        messages: { role: string; content: string }[];
+      };
       const systemMessage = body.messages.find((m) => m.role === 'system');
       systemPromptsSeen.push(systemMessage?.content ?? '');
       if (call === 1) return Promise.resolve(jsonResponse(chatCompletion('not json at all')));
@@ -168,11 +215,18 @@ describe('createFallbackLlmClient.completeStructured', () => {
   });
 
   it('throws LlmOutputValidationError when both attempts fail', async () => {
-    const env: Env = { databaseUrl: 'x', apiPort: 4000, groq: { apiKey: 'q', model: 'm' } };
+    const env: Env = {
+      databaseUrl: 'x',
+      apiPort: 4000,
+      apiHost: '127.0.0.1',
+      groq: { apiKey: 'q', model: 'm' },
+    };
     const fetchImpl = vi.fn(() => Promise.resolve(jsonResponse(chatCompletion('still not json'))));
     const client = createFallbackLlmClient(env, logger, { fetchImpl });
 
-    await expect(client.completeStructured(baseInput, schema)).rejects.toBeInstanceOf(LlmOutputValidationError);
+    await expect(client.completeStructured(baseInput, schema)).rejects.toBeInstanceOf(
+      LlmOutputValidationError,
+    );
     expect(fetchImpl).toHaveBeenCalledTimes(2);
   });
 });

@@ -58,7 +58,11 @@ const unusedYoutubeTool: YoutubeTranscriptTool = {
 };
 
 function buildLlm(
-  editClassification: { isVoiceLevelInstruction: boolean; summary: string; proposedChange: unknown } = {
+  editClassification: {
+    isVoiceLevelInstruction: boolean;
+    summary: string;
+    proposedChange: unknown;
+  } = {
     isVoiceLevelInstruction: false,
     summary: 'one-off',
     proposedChange: null,
@@ -107,11 +111,15 @@ describeIfDb('apps/api HTTP surface (integration, real Postgres)', () => {
 
   beforeAll(async () => {
     pool = createPool(databaseUrl ?? '');
-    const dna = await insertContentDna(pool, { version: Date.now() % 1_000_000, status: 'active', body: dnaBody });
+    const dna = await insertContentDna(pool, {
+      version: Date.now() % 1_000_000,
+      status: 'active',
+      body: dnaBody,
+    });
     dnaVersion = dna.version;
 
     const deps: AppDeps = {
-      env: { databaseUrl: databaseUrl ?? '', apiPort: 0 },
+      env: { databaseUrl: databaseUrl ?? '', apiPort: 0, apiHost: '127.0.0.1' },
       pool,
       llm: buildLlm(),
       fetchTool: unusedFetchTool,
@@ -129,7 +137,9 @@ describeIfDb('apps/api HTTP surface (integration, real Postgres)', () => {
 
   afterEach(async () => {
     if (contentIdsThisTest.length > 0) {
-      await pool.query('DELETE FROM content_items WHERE id = ANY($1::uuid[])', [contentIdsThisTest]);
+      await pool.query('DELETE FROM content_items WHERE id = ANY($1::uuid[])', [
+        contentIdsThisTest,
+      ]);
     }
     contentIdsThisTest = [];
   });
@@ -162,15 +172,20 @@ describeIfDb('apps/api HTTP surface (integration, real Postgres)', () => {
       body: JSON.stringify({ topic: 'UPI adoption', angle: anglesBody.angles[0]?.angle }),
     });
     expect(draftResponse.status).toBe(201);
-    const draftBody = (await draftResponse.json()) as { package: { contentId: string; status: string } };
+    const draftBody = (await draftResponse.json()) as {
+      package: { contentId: string; status: string };
+    };
     contentIdsThisTest.push(draftBody.package.contentId);
     expect(draftBody.package.status).toBe('in_review');
 
-    const approveResponse = await fetch(`${baseUrl}/content/${draftBody.package.contentId}/approve`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ version: 1, approvedBy: 'riya' }),
-    });
+    const approveResponse = await fetch(
+      `${baseUrl}/content/${draftBody.package.contentId}/approve`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ version: 1, approvedBy: 'riya' }),
+      },
+    );
     expect(approveResponse.status).toBe(200);
     const approveBody = (await approveResponse.json()) as { item: { status: string } };
     expect(approveBody.item.status).toBe('approved');
@@ -182,22 +197,36 @@ describeIfDb('apps/api HTTP surface (integration, real Postgres)', () => {
 
     // A manual draft-canvas edit on an approved item must return it to in_review
     // (spec 15.2) rather than silently keeping a stale approval.
-    const reviseResponse = await fetch(`${baseUrl}/content/${draftBody.package.contentId}/revisions`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ newText: 'Manually rewritten by the dashboard user.', changedById: 'riya' }),
-    });
+    const reviseResponse = await fetch(
+      `${baseUrl}/content/${draftBody.package.contentId}/revisions`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          newText: 'Manually rewritten by the dashboard user.',
+          changedById: 'riya',
+        }),
+      },
+    );
     expect(reviseResponse.status).toBe(201);
-    const reviseBody = (await reviseResponse.json()) as { item: { status: string; currentText: string } };
+    const reviseBody = (await reviseResponse.json()) as {
+      item: { status: string; currentText: string };
+    };
     expect(reviseBody.item.status).toBe('in_review');
     expect(reviseBody.item.currentText).toBe('Manually rewritten by the dashboard user.');
 
-    const revisionsResponse = await fetch(`${baseUrl}/content/${draftBody.package.contentId}/revisions`);
+    const revisionsResponse = await fetch(
+      `${baseUrl}/content/${draftBody.package.contentId}/revisions`,
+    );
     expect(revisionsResponse.status).toBe(200);
-    const revisionsBody = (await revisionsResponse.json()) as { revisions: { changeType: string }[] };
+    const revisionsBody = (await revisionsResponse.json()) as {
+      revisions: { changeType: string }[];
+    };
     expect(revisionsBody.revisions.some((r) => r.changeType === 'user_edit')).toBe(true);
 
-    const publishEventsResponse = await fetch(`${baseUrl}/content/${draftBody.package.contentId}/publish-events`);
+    const publishEventsResponse = await fetch(
+      `${baseUrl}/content/${draftBody.package.contentId}/publish-events`,
+    );
     expect(publishEventsResponse.status).toBe(200);
     const publishEventsBody = (await publishEventsResponse.json()) as { events: unknown[] };
     expect(publishEventsBody.events).toEqual([]);
@@ -219,7 +248,9 @@ describeIfDb('apps/api HTTP surface (integration, real Postgres)', () => {
       body: JSON.stringify({ topic: 'UPI adoption', angle: anglesBody.angles[0]?.angle }),
     });
     expect(draftResponse.status).toBe(201);
-    const draftBody = (await draftResponse.json()) as { package: { contentId: string; mode: string; status: string } };
+    const draftBody = (await draftResponse.json()) as {
+      package: { contentId: string; mode: string; status: string };
+    };
     contentIdsThisTest.push(draftBody.package.contentId);
     expect(draftBody.package.mode).toBe('single');
     expect(draftBody.package.status).toBe('in_review');
@@ -227,7 +258,10 @@ describeIfDb('apps/api HTTP surface (integration, real Postgres)', () => {
     const editResponse = await fetch(`${baseUrl}/x/edit`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ contentId: draftBody.package.contentId, instruction: 'Make the hook punchier' }),
+      body: JSON.stringify({
+        contentId: draftBody.package.contentId,
+        instruction: 'Make the hook punchier',
+      }),
     });
     expect(editResponse.status).toBe(200);
     const editBody = (await editResponse.json()) as { package: { finalCopy: string } };
@@ -262,7 +296,7 @@ describeIfDb('apps/api HTTP surface (integration, real Postgres)', () => {
       proposedChange: { voice: { forbiddenPhrases: ['!'] } },
     });
     const deps: AppDeps = {
-      env: { databaseUrl: databaseUrl ?? '', apiPort: 0 },
+      env: { databaseUrl: databaseUrl ?? '', apiPort: 0, apiHost: '127.0.0.1' },
       pool,
       llm: learningLlm,
       fetchTool: unusedFetchTool,
@@ -294,7 +328,9 @@ describeIfDb('apps/api HTTP surface (integration, real Postgres)', () => {
         }),
       });
       expect(editResponse.status).toBe(200);
-      const editBody = (await editResponse.json()) as { learningEvent: { id: string; appliedToDna: boolean } };
+      const editBody = (await editResponse.json()) as {
+        learningEvent: { id: string; appliedToDna: boolean };
+      };
       expect(editBody.learningEvent).not.toBeNull();
       expect(editBody.learningEvent.appliedToDna).toBe(false);
 
@@ -322,7 +358,9 @@ describeIfDb('apps/api HTTP surface (integration, real Postgres)', () => {
       expect(stillPendingBody.events.map((e) => e.id)).not.toContain(editBody.learningEvent.id);
 
       await pool.query('DELETE FROM learning_events WHERE id = $1', [editBody.learningEvent.id]);
-      await pool.query('DELETE FROM content_dna WHERE version = $1', [confirmBody.contentDna.version]);
+      await pool.query('DELETE FROM content_dna WHERE version = $1', [
+        confirmBody.contentDna.version,
+      ]);
     } finally {
       await new Promise<void>((resolve) => learningServer.close(() => resolve()));
     }

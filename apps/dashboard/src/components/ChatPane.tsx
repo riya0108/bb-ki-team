@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 
 import type { Platform } from '../api/client';
 import { ApiError, listChatMessages, sendChatMessage } from '../api/client';
+import { PlusIcon, SendIcon } from './icons';
 
 interface LocalMessage {
   id: string;
@@ -59,22 +60,19 @@ export function ChatPane({ platform, openContentId, onActionResult }: ChatPanePr
     }
   }
 
-  return (
-    <div className="chat-area">
-      <div className="chat-messages" ref={scrollRef}>
-        {messages.length === 0 && (
-          <div className="empty-state">
-            Ask this agent for something — e.g. &ldquo;draft a post about UPI adoption, angle: merchants are driving
-            it&rdquo;.
-          </div>
+  function renderComposer(variant?: 'hero') {
+    const isHeroVariant = variant === 'hero';
+    const composer = (
+      <div className={`chat-composer${isHeroVariant ? ' hero-composer' : ''}`}>
+        {isHeroVariant && (
+          <>
+            <span className="composer-plus" aria-hidden="true">
+              <PlusIcon />
+            </span>
+            <span className="composer-label">Ask</span>
+            <span className="composer-divider" aria-hidden="true" />
+          </>
         )}
-        {messages.map((m) => (
-          <div key={m.id} className={`chat-bubble ${m.role}`}>
-            {m.content}
-          </div>
-        ))}
-      </div>
-      <div className="chat-composer">
         <input
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
@@ -84,13 +82,47 @@ export function ChatPane({ platform, openContentId, onActionResult }: ChatPanePr
               void send();
             }
           }}
-          placeholder={`Message the ${platform} agent…`}
+          placeholder={isHeroVariant ? 'anything..' : 'Ask anything..'}
           disabled={sending}
         />
-        <button className="primary" onClick={() => void send()} disabled={sending || !draft.trim()}>
-          Send
+        <button type="button" className="send-button" onClick={() => void send()} disabled={sending || !draft.trim()} aria-label="Send">
+          <SendIcon />
         </button>
       </div>
+    );
+
+    if (!isHeroVariant) return composer;
+
+    // The animated glow lives on this wrapper (not on .hero-composer itself) so the
+    // pill's own opaque background paints over it and hides everything but the edges —
+    // a pseudo-element on the pill would paint *above* the pill's own background fill
+    // (backgrounds are the bottom-most stacking layer even under negative z-index
+    // children) and wash color across the whole input instead of just the border.
+    return <div className="hero-composer-glow">{composer}</div>;
+  }
+
+  const isHero = messages.length === 0 && !openContentId;
+
+  if (isHero) {
+    return (
+      <div className="chat-area chat-hero">
+        <div className="teri-hero">
+          <div className="teri-hero-composer">{renderComposer('hero')}</div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="chat-area">
+      <div className="chat-messages" ref={scrollRef}>
+        {messages.map((m) => (
+          <div key={m.id} className={`chat-bubble ${m.role}`}>
+            {m.content}
+          </div>
+        ))}
+      </div>
+      {renderComposer()}
     </div>
   );
 }
