@@ -25,6 +25,10 @@
   --radius-md: 14px;
   --radius-lg: 20px;
   --radius-pill: 999px;
+  /* Chat composer corner radius — fixed (not the pill token) so a short
+     single-line bar still reads as a rounded pill but a tall, multi-line one
+     settles into a proper rounded rectangle instead of a stretched oval. */
+  --radius-composer: 28px;
 
   --font-display: 'Outfit', system-ui, sans-serif;
   --font-body: 'Figtree', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
@@ -283,7 +287,9 @@ select:focus {
   position: relative;
   z-index: 1;
   display: grid;
-  grid-template-columns: 300px 1fr 320px;
+  /* DnaPanel's column is retired (hidden tool-wide) — the center column takes the
+     freed space instead of leaving it empty. */
+  grid-template-columns: 300px 1fr;
   gap: 14px;
   min-height: 0;
   padding: 14px;
@@ -328,6 +334,65 @@ select:focus {
   padding: 20px;
 }
 
+/* ---------- resizable draft/chat split ---------- */
+
+/* Sits between .draft-area and the chat pane, letting the user drag to
+   reapportion space between "output" (draft canvas) and "search bar" (chat) —
+   App.tsx owns the actual height state, this is just the grab target. */
+.resize-handle-h {
+  flex-shrink: 0;
+  height: 10px;
+  margin: -5px 0;
+  cursor: row-resize;
+  position: relative;
+  z-index: 2;
+  touch-action: none;
+}
+
+.resize-handle-h::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 40px;
+  height: 4px;
+  border-radius: var(--radius-pill);
+  background: var(--border-strong);
+  transition: background 0.15s ease;
+}
+
+.resize-handle-h:hover::after,
+.resize-handle-h:active::after {
+  background: var(--gold);
+}
+
+/* App.tsx sets an explicit inline height here (user-adjustable via the handle
+   above) — the chat-area inside gives up its own fixed max-height/min-height and
+   just fills whatever the wrapper gives it. */
+.chat-pane-wrapper {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  min-height: 0;
+}
+
+.chat-pane-wrapper .chat-area {
+  max-height: none;
+  min-height: 0;
+  height: 100%;
+}
+
+/* Hero (landing) state: no draft canvas above it to split space with, so this
+   wrapper needs to itself grow to fill center-panel's height — a plain
+   flex-shrink:0 block (the non-hero case, sized by App.tsx's inline height)
+   would otherwise just shrink-wrap to its content and sit at the top instead of
+   letting .chat-hero's own centering work. */
+.chat-pane-wrapper.is-hero {
+  flex: 1 1 auto;
+  height: auto;
+}
+
 /* ---------- chat / Teri ---------- */
 
 .chat-area {
@@ -365,15 +430,47 @@ select:focus {
   flex-direction: column;
   align-items: center;
   text-align: center;
-  gap: 0;
+  gap: 28px;
   width: 100%;
   max-width: 680px;
   padding: 0 48px;
 }
 
+.teri-hero-heading {
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: 30px;
+  color: var(--text);
+  margin: 0;
+}
+
 .teri-hero-composer {
   width: 100%;
   max-width: 560px;
+}
+
+.chat-area-header {
+  flex-shrink: 0;
+  display: flex;
+  justify-content: flex-end;
+  padding: 10px 14px 0;
+}
+
+.new-chat-button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  font-size: 12px;
+  border-radius: var(--radius-pill);
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+}
+
+.new-chat-button:hover:not(:disabled) {
+  color: var(--text);
+  border-color: var(--border-strong);
 }
 
 .chat-messages {
@@ -418,13 +515,22 @@ select:focus {
 
 .chat-composer {
   display: flex;
-  align-items: center;
+  /* flex-end, not center: the textarea below grows upward with its content, and
+     flex-end keeps the send button (and the hero variant's "+"/"Ask" label) pinned
+     to its own bottom line instead of drifting to the vertical middle as it grows. */
+  align-items: flex-end;
   gap: 8px;
   padding: 8px 8px 8px 20px;
   margin: 0 16px 16px;
   background: var(--panel-2);
   border: 1px solid var(--border-strong);
-  border-radius: var(--radius-pill);
+  /* Fixed radius, not the pill token: at the short single-line height this still
+     reads as a full stadium/pill (radius > half the box height), but once the
+     textarea grows tall with pasted/multi-line text it settles into a normal
+     rounded rectangle instead of stretching into a distorted oval/racetrack
+     shape — var(--radius-pill) (999px) would round the tall box's corners into
+     near-semicircles regardless of height. */
+  border-radius: var(--radius-composer);
 }
 
 /* Dark pill with a red "+" and "Ask" label baked into the bar itself, then a
@@ -462,17 +568,20 @@ select:focus {
 .hero-composer-glow::after {
   content: '';
   position: absolute;
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-composer);
   /* Animate the gradient's own angle (not a transform: rotate() on the box) —
-     the pill is a wide, short capsule, and rotating the whole rectangle would
-     swing its corners far outside its bounds instead of reading as a ring. */
+     rotating the whole box would swing a wide, short bar's corners far outside
+     its bounds instead of reading as a ring. Red-dominant per the reference
+     design (a soft red spotlight, not a gold/red ring) with just enough gold
+     at the edge to still read as "alive" rather than a flat glow. */
   background: conic-gradient(
     from var(--ai-border-angle),
     var(--teri-red),
-    var(--gold-strong) 25%,
-    var(--gold) 50%,
+    var(--gold-strong) 15%,
+    var(--teri-red) 40%,
     var(--teri-red) 75%,
-    var(--gold-strong) 100%
+    var(--gold-strong) 90%,
+    var(--teri-red) 100%
   );
   animation: ai-border-rotate 7s linear infinite;
   transition: opacity 240ms ease, animation-duration 240ms ease;
@@ -482,14 +591,16 @@ select:focus {
 .hero-composer-glow::before {
   inset: -1.5px;
   z-index: 0;
-  opacity: 0.5;
+  opacity: 0.55;
 }
 
 .hero-composer-glow::after {
-  inset: -10px;
+  /* Wider and softer than the thin ring above — this is the "big soft spotlight
+     behind the bar" layer from the reference design. */
+  inset: -28px;
   z-index: -1;
-  filter: blur(16px);
-  opacity: 0.3;
+  filter: blur(32px);
+  opacity: 0.55;
 }
 
 .hero-composer-glow:focus-within::before {
@@ -519,26 +630,12 @@ select:focus {
   display: flex;
   align-items: center;
   justify-content: center;
+  align-self: center;
   color: var(--teri-red);
   flex-shrink: 0;
 }
 
-.composer-label {
-  color: var(--text);
-  font-weight: 600;
-  font-size: 16px;
-  flex-shrink: 0;
-}
-
-.composer-divider {
-  width: 1.5px;
-  align-self: stretch;
-  margin: 4px 2px;
-  background: var(--teri-red);
-  flex-shrink: 0;
-}
-
-.chat-composer.hero-composer input {
+.chat-composer.hero-composer textarea {
   font-size: 16px;
 }
 
@@ -554,15 +651,20 @@ select:focus {
   color: #7a7a80;
 }
 
-.chat-composer input {
+.chat-composer textarea {
   flex: 1;
   background: transparent;
   border: none;
   padding: 6px 0;
   font-size: 14.5px;
+  font-family: inherit;
+  line-height: 1.4;
+  resize: none;
+  overflow-y: auto;
+  max-height: 200px;
 }
 
-.chat-composer input:focus {
+.chat-composer textarea:focus {
   outline: none;
   box-shadow: none;
 }
@@ -768,7 +870,9 @@ select:focus {
 
 .scheduled-tracker {
   position: absolute;
-  right: 18px;
+  /* Left, not right — right overlapped the chat composer's send button, which
+     also sits in the bottom-right of the viewport. */
+  left: 18px;
   bottom: 18px;
   z-index: 2;
   display: flex;
@@ -803,7 +907,12 @@ select:focus {
 
 .scheduled-tracker-count {
   position: absolute;
-  left: 18px;
+  /* Matches the ring's own offset (container's 8px left padding) and centers
+     vertically against it explicitly — the ring is 48px flex item, the count was
+     drifting right because this used to disagree with that padding. */
+  left: 8px;
+  top: 50%;
+  transform: translateY(-50%);
   font-family: var(--font-mono);
   font-size: 13px;
   font-weight: 400;

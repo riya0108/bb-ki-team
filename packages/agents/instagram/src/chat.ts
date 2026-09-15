@@ -17,6 +17,7 @@ export interface InstagramChatDeps {
 
 export interface InstagramChatContext {
   openContentId?: string | null;
+  sessionId: string;
 }
 
 const InstagramChatActionSchema = z.discriminatedUnion('action', [
@@ -113,8 +114,8 @@ export async function handleInstagramChatMessage(
   context: InstagramChatContext,
   runId: string,
 ): Promise<InstagramChatResult> {
-  const recentHistory = await loadRecentChatHistory(deps.pool, 'instagram');
-  await recordUserChatMessage(deps.pool, 'instagram', message);
+  const recentHistory = await loadRecentChatHistory(deps.pool, context.sessionId);
+  await recordUserChatMessage(deps.pool, context.sessionId, 'instagram', message);
 
   const classified = await classifyChatIntent({
     llm: deps.llm,
@@ -140,7 +141,7 @@ export async function handleInstagramChatMessage(
   }
 
   const { action: actionName, ...params } = classified;
-  await recordAssistantChatMessage(deps.pool, 'instagram', reply, { name: actionName, params });
+  await recordAssistantChatMessage(deps.pool, context.sessionId, 'instagram', reply, { name: actionName, params });
 
   return { reply, action: actionName, result };
 }

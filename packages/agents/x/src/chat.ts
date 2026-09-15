@@ -24,6 +24,7 @@ export interface XChatDeps {
 
 export interface XChatContext {
   openContentId?: string | null;
+  sessionId: string;
 }
 
 const SourceActionSchema = z.union([
@@ -168,8 +169,8 @@ export async function handleXChatMessage(
   context: XChatContext,
   runId: string,
 ): Promise<XChatResult> {
-  const recentHistory = await loadRecentChatHistory(deps.pool, 'x');
-  await recordUserChatMessage(deps.pool, 'x', message);
+  const recentHistory = await loadRecentChatHistory(deps.pool, context.sessionId);
+  await recordUserChatMessage(deps.pool, context.sessionId, 'x', message);
 
   const classified = await classifyChatIntent({
     llm: deps.llm,
@@ -195,7 +196,7 @@ export async function handleXChatMessage(
   }
 
   const { action: actionName, ...params } = classified;
-  await recordAssistantChatMessage(deps.pool, 'x', reply, { name: actionName, params });
+  await recordAssistantChatMessage(deps.pool, context.sessionId, 'x', reply, { name: actionName, params });
 
   return { reply, action: actionName, result };
 }

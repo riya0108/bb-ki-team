@@ -14,6 +14,9 @@ const RawEnvSchema = z.object({
   GROQ_MODEL: z.string().optional(),
   OPENROUTER_API_KEY: z.string().optional(),
   OPENROUTER_MODEL: z.string().optional(),
+  // No API key: Ollama is a local install (brew services start ollama) with no
+  // account, no auth, no billing surface — setting this alone enables it.
+  OLLAMA_MODEL: z.string().optional(),
   X_API_KEY: z.string().optional(),
   X_API_SECRET: z.string().optional(),
   X_ACCESS_TOKEN: z.string().optional(),
@@ -73,6 +76,7 @@ export interface Env {
   gemini?: LlmProviderConfig | undefined;
   groq?: LlmProviderConfig | undefined;
   openrouter?: LlmProviderConfig | undefined;
+  ollama?: LlmProviderConfig | undefined;
   x?: XCredentials | undefined;
   buffer?: BufferCredentials | undefined;
   blogGit?: BlogGitConfig | undefined;
@@ -132,10 +136,14 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
   const gemini = providerConfig(raw.GEMINI_API_KEY, raw.GEMINI_MODEL);
   const groq = providerConfig(raw.GROQ_API_KEY, raw.GROQ_MODEL);
   const openrouter = providerConfig(raw.OPENROUTER_API_KEY, raw.OPENROUTER_MODEL);
+  // No real API key to check — Ollama has no auth, so OLLAMA_MODEL alone enables it.
+  // The placeholder string is never validated by Ollama; it only exists because
+  // callOpenAiCompatible always sends an Authorization header.
+  const ollama = raw.OLLAMA_MODEL ? { apiKey: 'ollama-local', model: raw.OLLAMA_MODEL } : undefined;
 
-  if (!gemini && !groq && !openrouter) {
+  if (!gemini && !groq && !openrouter && !ollama) {
     throw new EnvValidationError([
-      'at least one LLM provider must be configured (GEMINI_API_KEY+GEMINI_MODEL, GROQ_API_KEY+GROQ_MODEL, or OPENROUTER_API_KEY+OPENROUTER_MODEL)',
+      'at least one LLM provider must be configured (GEMINI_API_KEY+GEMINI_MODEL, GROQ_API_KEY+GROQ_MODEL, OPENROUTER_API_KEY+OPENROUTER_MODEL, or OLLAMA_MODEL with `brew services start ollama` running locally)',
     ]);
   }
 
@@ -146,6 +154,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
     gemini,
     groq,
     openrouter,
+    ollama,
     x: xCredentialsConfig(raw),
     buffer: bufferCredentialsConfig(raw),
     blogGit: blogGitConfig(raw),

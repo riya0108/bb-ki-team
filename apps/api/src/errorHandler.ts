@@ -34,6 +34,10 @@ function statusForError(error: unknown): number {
   return 500;
 }
 
+function isMappedError(error: unknown): boolean {
+  return error instanceof Error && error.name in ERROR_STATUS;
+}
+
 export function errorHandler(logger: Logger) {
   return (err: unknown, req: Request, res: Response, next: NextFunction): void => {
     if (res.headersSent) {
@@ -50,16 +54,20 @@ export function errorHandler(logger: Logger) {
     }
 
     // Known/mapped errors (ERROR_STATUS above) throw deliberately worded messages
-    // meant to reach the client. An unmapped error is, by definition, one nothing
-    // anticipated — its message might be a raw DB/provider error containing internal
-    // details, so only the generic "Internal Server Error" ever leaves the process;
-    // the real message is already in the log line above.
-    const message =
-      status >= 500
-        ? 'Internal Server Error'
-        : err instanceof Error
-          ? err.message
-          : 'Unknown error';
+    // meant to reach the client — including the 502s (AllProvidersFailedError,
+    // NoAccessibleSourcesError, ...), which are real, safe-to-share operational
+    // failures ("every LLM provider is rate-limited", "couldn't fetch that source"),
+    // not leaked internals. Only a genuinely UNMAPPED error — one nothing
+    // anticipated, whose message might be a raw DB/provider error containing
+    // internal details — falls back to the generic "Internal Server Error"; the
+    // real message for those is already in the log line above. Checking
+    // "unmapped" directly (not just "status >= 500") matters because several
+    // mapped errors deliberately use a 5xx status themselves.
+    const message = isMappedError(err)
+      ? err instanceof Error
+        ? err.message
+        : 'Unknown error'
+      : 'Internal Server Error';
 
     res.status(status).json({ error: name, message });
   };

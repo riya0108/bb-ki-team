@@ -29,6 +29,7 @@ export interface LinkedinChatDeps {
 // context isolation — the agent only sees what's needed for the requested job).
 export interface LinkedinChatContext {
   openContentId?: string | null;
+  sessionId: string;
 }
 
 const RepurposeSourceActionSchema = z.union([
@@ -178,8 +179,8 @@ export async function handleLinkedinChatMessage(
   context: LinkedinChatContext,
   runId: string,
 ): Promise<LinkedinChatResult> {
-  const recentHistory = await loadRecentChatHistory(deps.pool, 'linkedin');
-  await recordUserChatMessage(deps.pool, 'linkedin', message);
+  const recentHistory = await loadRecentChatHistory(deps.pool, context.sessionId);
+  await recordUserChatMessage(deps.pool, context.sessionId, 'linkedin', message);
 
   const classified = await classifyChatIntent({
     llm: deps.llm,
@@ -205,7 +206,7 @@ export async function handleLinkedinChatMessage(
   }
 
   const { action: actionName, ...params } = classified;
-  await recordAssistantChatMessage(deps.pool, 'linkedin', reply, { name: actionName, params });
+  await recordAssistantChatMessage(deps.pool, context.sessionId, 'linkedin', reply, { name: actionName, params });
 
   return { reply, action: actionName, result };
 }

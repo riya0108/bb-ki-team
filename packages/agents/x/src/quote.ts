@@ -3,7 +3,7 @@ import { loadCurrentDna } from '@bb/content-dna';
 import type { Pool } from '@bb/db';
 import type { FetchTool } from '@bb/mcp-client';
 import { FetchToolError } from '@bb/mcp-client';
-import { runQaGate } from '@bb/qa-gate';
+import { buildQaGateUnavailableResult, runQaGate } from '@bb/qa-gate';
 import type { XPackage } from '@bb/shared-types';
 import { createContentItem, recordQaResult, submitForReview } from '@bb/workflows';
 
@@ -79,7 +79,7 @@ export async function runQuote(input: RunQuoteInput): Promise<XPackage> {
     runId: input.runId,
     stepId: `qa-${item.id}`,
     platform: 'X',
-  });
+  }).catch((error: unknown) => buildQaGateUnavailableResult(error instanceof Error ? error.message : String(error)));
   await recordQaResult(input.pool, item.id, item.currentVersion, qa);
 
   const reviewedItem = await submitForReview(input.pool, item.id);

@@ -52,8 +52,8 @@ describe('classifyChatIntent', () => {
       return JSON.stringify({ action: 'unsupported', reason: 'n/a' });
     });
     const history: ChatMessage[] = [
-      { id: '00000000-0000-0000-0000-000000000001', platform: 'linkedin', role: 'user', content: 'hi', action: null, createdAt: new Date().toISOString() },
-      { id: '00000000-0000-0000-0000-000000000002', platform: 'linkedin', role: 'assistant', content: 'hello', action: null, createdAt: new Date().toISOString() },
+      { id: '00000000-0000-0000-0000-000000000001', sessionId: '00000000-0000-0000-0000-0000000000f1', platform: 'linkedin', role: 'user', content: 'hi', action: null, createdAt: new Date().toISOString() },
+      { id: '00000000-0000-0000-0000-000000000002', sessionId: '00000000-0000-0000-0000-0000000000f1', platform: 'linkedin', role: 'assistant', content: 'hello', action: null, createdAt: new Date().toISOString() },
     ];
 
     await classifyChatIntent({

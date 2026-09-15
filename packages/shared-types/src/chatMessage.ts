@@ -17,6 +17,7 @@ export type ChatActionRecord = z.infer<typeof ChatActionRecordSchema>;
 
 export const ChatMessageSchema = z.object({
   id: z.string().uuid(),
+  sessionId: z.string().uuid(),
   platform: z.string(),
   role: ChatRoleSchema,
   content: z.string(),
@@ -26,9 +27,20 @@ export const ChatMessageSchema = z.object({
 export type ChatMessage = z.infer<typeof ChatMessageSchema>;
 
 export const NewChatMessageInputSchema = z.object({
+  sessionId: z.string().uuid(),
   platform: z.string(),
   role: ChatRoleSchema,
   content: z.string(),
   action: ChatActionRecordSchema.nullable().optional(),
 });
 export type NewChatMessageInput = z.infer<typeof NewChatMessageInputSchema>;
+
+// A distinct conversation thread for a platform (migration 0015) — "New chat" starts
+// one of these; the dashboard's chat pane always shows exactly one session's worth
+// of messages, not a platform's entire history.
+export const ChatSessionSchema = z.object({
+  id: z.string().uuid(),
+  platform: z.string(),
+  createdAt: z.string().datetime(),
+});
+export type ChatSession = z.infer<typeof ChatSessionSchema>;

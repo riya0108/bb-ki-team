@@ -5,10 +5,10 @@ try {
 }
 
 import { createFakeLlmClient } from '@bb/core/testing';
-import { createPool, insertContentDna, listChatMessages } from '@bb/db';
+import { createChatSession, createPool, insertContentDna, listChatMessages } from '@bb/db';
 import type { Pool } from '@bb/db';
 import { ContentNotApprovedError } from '@bb/workflows';
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { handleInstagramChatMessage, NoOpenDraftError } from './chat.js';
 import type { InstagramChatDeps } from './chat.js';
@@ -57,6 +57,7 @@ describeIfDb('packages/agents/instagram chat (integration, real Postgres)', () =
   let pool: Pool;
   let dnaVersion: number;
   let contentIdsThisTest: string[] = [];
+  let sessionId: string;
 
   beforeAll(async () => {
     pool = createPool(databaseUrl ?? '');
@@ -64,8 +65,13 @@ describeIfDb('packages/agents/instagram chat (integration, real Postgres)', () =
     dnaVersion = dna.version;
   });
 
+  beforeEach(async () => {
+    sessionId = (await createChatSession(pool, 'instagram')).id;
+  });
+
   afterEach(async () => {
-    await pool.query("DELETE FROM chat_messages WHERE platform = 'instagram'");
+    // Cascades to that session's chat_messages (migration 0015's FK).
+    await pool.query('DELETE FROM chat_sessions WHERE id = $1', [sessionId]);
     if (contentIdsThisTest.length > 0) {
       await pool.query('DELETE FROM content_items WHERE id = ANY($1::uuid[])', [contentIdsThisTest]);
     }
@@ -86,7 +92,7 @@ describeIfDb('packages/agents/instagram chat (integration, real Postgres)', () =
       buildLlm({ action: 'draft', topic: 'A single stat about UPI', angle: 'One visual idea', format: 'post' }),
     );
 
-    const result = await handleInstagramChatMessage(deps, 'Make me a post about UPI stats', {}, 'test-run');
+    const result = await handleInstagramChatMessage(deps, 'Make me a post about UPI stats', { sessionId }, 'test-run');
     const pkg = result.result as { contentId: string; format: string };
     contentIdsThisTest.push(pkg.contentId);
 
@@ -94,7 +100,7 @@ describeIfDb('packages/agents/instagram chat (integration, real Postgres)', () =
     expect(pkg.format).toBe('post');
     expect(result.reply).toContain('post');
 
-    const history = await listChatMessages(pool, 'instagram');
+    const history = await listChatMessages(pool, sessionId);
     expect(history).toHaveLength(2);
     expect(history[1]?.action?.name).toBe('draft');
   });
@@ -104,7 +110,7 @@ describeIfDb('packages/agents/instagram chat (integration, real Postgres)', () =
       buildLlm({ action: 'unsupported', reason: 'Turning an existing draft into a different format is not supported yet.' }),
     );
 
-    const result = await handleInstagramChatMessage(deps, 'Turn this carousel into a Reel', {}, 'test-run');
+    const result = await handleInstagramChatMessage(deps, 'Turn this carousel into a Reel', { sessionId }, 'test-run');
 
     expect(result.reply).toBe(
       "I can't do that yet: Turning an existing draft into a different format is not supported yet.",
@@ -114,7 +120,7 @@ describeIfDb('packages/agents/instagram chat (integration, real Postgres)', () =
   it('surfaces a clear message instead of throwing when publish is requested with no open draft', async () => {
     const deps = buildDeps(buildLlm({ action: 'publish' }));
 
-    const result = await handleInstagramChatMessage(deps, 'Publish this', {}, 'test-run');
+    const result = await handleInstagramChatMessage(deps, 'Publish this', { sessionId }, 'test-run');
 
     expect(result.reply).toBe(new NoOpenDraftError().message);
   });
@@ -123,13 +129,13 @@ describeIfDb('packages/agents/instagram chat (integration, real Postgres)', () =
     const draftDeps = buildDeps(
       buildLlm({ action: 'draft', topic: 'A single stat about UPI', angle: 'One visual idea', format: 'post' }),
     );
-    const draftResult = await handleInstagramChatMessage(draftDeps, 'Make me a post about UPI stats', {}, 'test-run');
+    const draftResult = await handleInstagramChatMessage(draftDeps, 'Make me a post about UPI stats', { sessionId }, 'test-run');
     const pkg = draftResult.result as { contentId: string };
     contentIdsThisTest.push(pkg.contentId);
 
     const publishDeps = buildDeps(buildLlm({ action: 'publish' }));
     await expect(
-      handleInstagramChatMessage(publishDeps, 'Publish this', { openContentId: pkg.contentId }, 'test-run'),
+      handleInstagramChatMessage(publishDeps, 'Publish this', { sessionId, openContentId: pkg.contentId }, 'test-run'),
     ).rejects.toBeInstanceOf(ContentNotApprovedError);
   });
 });

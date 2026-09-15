@@ -6,13 +6,13 @@ try {
 
 import type { Logger } from '@bb/core';
 import { createFakeLlmClient } from '@bb/core/testing';
-import { createPool, insertContentDna, listChatMessages } from '@bb/db';
+import { createChatSession, createPool, insertContentDna, listChatMessages } from '@bb/db';
 import type { Pool } from '@bb/db';
 import { FetchToolError } from '@bb/mcp-client';
 import type { FetchTool, YoutubeTranscriptTool } from '@bb/mcp-client';
 import type { FetchResult } from '@bb/shared-types';
 import { ContentNotApprovedError } from '@bb/workflows';
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { handleLinkedinChatMessage, NoOpenDraftError } from './chat.js';
 import type { LinkedinChatDeps } from './chat.js';
@@ -77,6 +77,7 @@ describeIfDb('packages/agents/linkedin chat (integration, real Postgres)', () =>
   let pool: Pool;
   let dnaVersion: number;
   let contentIdsThisTest: string[] = [];
+  let sessionId: string;
 
   beforeAll(async () => {
     pool = createPool(databaseUrl ?? '');
@@ -84,8 +85,13 @@ describeIfDb('packages/agents/linkedin chat (integration, real Postgres)', () =>
     dnaVersion = dna.version;
   });
 
+  beforeEach(async () => {
+    sessionId = (await createChatSession(pool, 'linkedin')).id;
+  });
+
   afterEach(async () => {
-    await pool.query("DELETE FROM chat_messages WHERE platform = 'linkedin'");
+    // Cascades to that session's chat_messages (migration 0015's FK).
+    await pool.query('DELETE FROM chat_sessions WHERE id = $1', [sessionId]);
     if (contentIdsThisTest.length > 0) {
       await pool.query('DELETE FROM content_items WHERE id = ANY($1::uuid[])', [contentIdsThisTest]);
     }
@@ -112,14 +118,14 @@ describeIfDb('packages/agents/linkedin chat (integration, real Postgres)', () =>
   it('drafts a post from a chat message and persists both chat turns', async () => {
     const deps = buildDeps(buildLlm({ action: 'draft', topic: 'UPI adoption', angle: 'A merchant-fee problem' }));
 
-    const result = await handleLinkedinChatMessage(deps, 'Draft me a post about UPI adoption', {}, 'test-run');
+    const result = await handleLinkedinChatMessage(deps, 'Draft me a post about UPI adoption', { sessionId }, 'test-run');
     const pkg = result.result as { contentId: string };
     contentIdsThisTest.push(pkg.contentId);
 
     expect(result.action).toBe('draft');
     expect(result.reply).toContain('UPI adoption');
 
-    const history = await listChatMessages(pool, 'linkedin');
+    const history = await listChatMessages(pool, sessionId);
     expect(history).toHaveLength(2);
     expect(history[0]?.role).toBe('user');
     expect(history[1]?.role).toBe('assistant');
@@ -131,7 +137,7 @@ describeIfDb('packages/agents/linkedin chat (integration, real Postgres)', () =>
       buildLlm({ action: 'unsupported', reason: 'Cross-agent repurposing is not supported yet.' }),
     );
 
-    const result = await handleLinkedinChatMessage(deps, 'Turn this into an Instagram Reel', {}, 'test-run');
+    const result = await handleLinkedinChatMessage(deps, 'Turn this into an Instagram Reel', { sessionId }, 'test-run');
 
     expect(result.reply).toBe("I can't do that yet: Cross-agent repurposing is not supported yet.");
   });
@@ -139,20 +145,20 @@ describeIfDb('packages/agents/linkedin chat (integration, real Postgres)', () =>
   it('surfaces a clear message instead of throwing when an edit is requested with no open draft', async () => {
     const deps = buildDeps(buildLlm({ action: 'edit', instruction: 'Make it punchier' }));
 
-    const result = await handleLinkedinChatMessage(deps, 'Make it punchier', {}, 'test-run');
+    const result = await handleLinkedinChatMessage(deps, 'Make it punchier', { sessionId }, 'test-run');
 
     expect(result.reply).toBe(new NoOpenDraftError().message);
   });
 
   it('never fabricates a publish for a draft that has not been approved', async () => {
     const draftDeps = buildDeps(buildLlm({ action: 'draft', topic: 'UPI adoption', angle: 'A merchant-fee problem' }));
-    const draftResult = await handleLinkedinChatMessage(draftDeps, 'Draft me a post about UPI adoption', {}, 'test-run');
+    const draftResult = await handleLinkedinChatMessage(draftDeps, 'Draft me a post about UPI adoption', { sessionId }, 'test-run');
     const pkg = draftResult.result as { contentId: string };
     contentIdsThisTest.push(pkg.contentId);
 
     const publishDeps = buildDeps(buildLlm({ action: 'publish' }));
     await expect(
-      handleLinkedinChatMessage(publishDeps, 'Publish this', { openContentId: pkg.contentId }, 'test-run'),
+      handleLinkedinChatMessage(publishDeps, 'Publish this', { sessionId, openContentId: pkg.contentId }, 'test-run'),
     ).rejects.toBeInstanceOf(ContentNotApprovedError);
   });
 });

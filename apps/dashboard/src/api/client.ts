@@ -127,10 +127,21 @@ export interface ChatResponse {
   result: unknown;
 }
 
-export function listChatMessages(platform: Platform): Promise<{ messages: ChatMessage[] }> {
+// Resolves to the platform's currently active session (auto-creating its very
+// first one) — call startNewChatSession to explicitly begin a fresh thread instead.
+export function listChatMessages(platform: Platform): Promise<{ sessionId: string; messages: ChatMessage[] }> {
   return request(`/${platform}/chat`);
 }
 
-export function sendChatMessage(platform: Platform, message: string, openContentId: string | null): Promise<ChatResponse> {
-  return post(`/${platform}/chat`, { message, openContentId });
+export function startNewChatSession(platform: Platform): Promise<{ sessionId: string; messages: ChatMessage[] }> {
+  return post(`/${platform}/chat/new-session`);
+}
+
+export function sendChatMessage(
+  platform: Platform,
+  sessionId: string,
+  message: string,
+  openContentId: string | null,
+): Promise<ChatResponse> {
+  return post(`/${platform}/chat`, { message, sessionId, openContentId });
 }

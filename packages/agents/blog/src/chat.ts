@@ -6,6 +6,7 @@ import type { PublishConnector, ScheduleConnector } from '@bb/workflows';
 import { ContentItemNotFoundError, getContentItem, requestPublish, requestSchedule } from '@bb/workflows';
 import { z } from 'zod';
 
+import { reviseBlogArticle } from './editArticle.js';
 import { runBlogArticle } from './headAgent.js';
 import { runBlogArticleFromSource } from './repurpose.js';
 
@@ -19,6 +20,7 @@ export interface BlogChatDeps {
 
 export interface BlogChatContext {
   openContentId?: string | null;
+  sessionId: string;
 }
 
 const SourceActionSchema = z.union([
@@ -30,6 +32,7 @@ const BlogChatActionSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('draft'), topic: z.string().min(1), articleType: z.string().min(1).default('New article') }),
   z.object({ action: z.literal('from_source'), source: SourceActionSchema, topic: z.string().min(1) }),
   z.object({ action: z.literal('show_html') }),
+  z.object({ action: z.literal('edit'), instruction: z.string().min(1) }),
   z.object({ action: z.literal('publish') }),
   z.object({ action: z.literal('schedule'), scheduledFor: z.string().datetime() }),
   z.object({ action: z.literal('unsupported'), reason: z.string() }),
@@ -40,9 +43,9 @@ const CATALOG_DESCRIPTION = `Supported actions:
 - draft { topic, articleType }: write a new Bull or Bear blog article on a topic. articleType is a framing label (e.g. "Explainer", "How-to guide", "Comparison/review") — default to "New article" if the user doesn't specify one.
 - from_source { source: { kind: 'url', url } | { kind: 'text', label, text }, topic }: write a source-led article from an article/PDF/transcript.
 - show_html {}: show the generated HTML file for the draft that is CURRENTLY OPEN in the dashboard.
+- edit { instruction }: revise the draft that is CURRENTLY OPEN in the dashboard per a natural-language instruction — any text, section, tone, length, or formatting/component change (e.g. "shorten the second section", "add a pull quote after the intro", "make the title punchier"). There is no separate "which draft" parameter — it always means the open one. Never tell the user to edit the HTML themselves; this action does it.
 - publish {}: publish the currently open draft (only works if it has already been approved).
-- schedule { scheduledFor }: schedule the currently open draft for an ISO 8601 datetime (only works if it has already been approved).
-There is no support yet for natural-language edit instructions on an existing draft — treat those as unsupported.`;
+- schedule { scheduledFor }: schedule the currently open draft for an ISO 8601 datetime (only works if it has already been approved).`;
 
 export interface BlogChatResult {
   reply: string;
@@ -94,6 +97,18 @@ async function dispatch(
       if (!item.currentText) return { reply: "This draft doesn't have a generated HTML file yet.", result: null };
       return { reply: 'Here is the HTML file for the open draft.', result: { htmlFile: item.currentText } };
     }
+    case 'edit': {
+      const contentId = needsOpenDraft(context);
+      const { package: pkg, learningEvent } = await reviseBlogArticle({
+        pool: deps.pool,
+        llm: deps.llm,
+        contentId,
+        instruction: action.instruction,
+        runId,
+      });
+      const learningNote = learningEvent ? ' I also noticed a possible voice preference — check the DNA panel to confirm it.' : '';
+      return { reply: `Updated the article.${learningNote}`, result: { package: pkg, learningEvent } };
+    }
     case 'publish': {
       const contentId = needsOpenDraft(context);
       const { item, event } = await requestPublish(deps.pool, contentId, deps.publishConnectors);
@@ -128,8 +143,8 @@ export async function handleBlogChatMessage(
   context: BlogChatContext,
   runId: string,
 ): Promise<BlogChatResult> {
-  const recentHistory = await loadRecentChatHistory(deps.pool, 'blog');
-  await recordUserChatMessage(deps.pool, 'blog', message);
+  const recentHistory = await loadRecentChatHistory(deps.pool, context.sessionId);
+  await recordUserChatMessage(deps.pool, context.sessionId, 'blog', message);
 
   const classified = await classifyChatIntent({
     llm: deps.llm,
@@ -155,7 +170,7 @@ export async function handleBlogChatMessage(
   }
 
   const { action: actionName, ...params } = classified;
-  await recordAssistantChatMessage(deps.pool, 'blog', reply, { name: actionName, params });
+  await recordAssistantChatMessage(deps.pool, context.sessionId, 'blog', reply, { name: actionName, params });
 
   return { reply, action: actionName, result };
 }

@@ -2,7 +2,7 @@ import type { LlmClient } from '@bb/core';
 import { loadCurrentDna } from '@bb/content-dna';
 import { attachContentIds, createInterviewSession, getInterviewSession, recordAnswerAndNextQuestion } from '@bb/db';
 import type { InterviewSession, Pool } from '@bb/db';
-import { runQaGate } from '@bb/qa-gate';
+import { buildQaGateUnavailableResult, runQaGate } from '@bb/qa-gate';
 import type { ContentDnaRecord, LinkedinPackage } from '@bb/shared-types';
 import { createContentItem, recordQaResult, submitForReview } from '@bb/workflows';
 import { z } from 'zod';
@@ -245,7 +245,7 @@ export async function draftPostcastIdea(input: DraftPostcastIdeaInput): Promise<
     runId: input.runId,
     stepId: `qa-${item.id}`,
     platform: 'LinkedIn',
-  });
+  }).catch((error: unknown) => buildQaGateUnavailableResult(error instanceof Error ? error.message : String(error)));
   await recordQaResult(input.pool, item.id, item.currentVersion, qa);
 
   const reviewedItem = await submitForReview(input.pool, item.id);

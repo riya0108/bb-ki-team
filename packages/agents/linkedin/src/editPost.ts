@@ -2,7 +2,7 @@ import type { LlmClient } from '@bb/core';
 import { BRAND_BRAIN } from '@bb/core';
 import { classifyEditInstruction, classifyLearningSignal, loadCurrentDna, recordLearningEvent } from '@bb/content-dna';
 import type { Pool } from '@bb/db';
-import { runQaGate } from '@bb/qa-gate';
+import { buildQaGateUnavailableResult, runQaGate } from '@bb/qa-gate';
 import type { ContentDnaRecord, LearningEvent, LinkedinPackage } from '@bb/shared-types';
 import { ContentItemNotFoundError, addRevision, getContentItem, recordQaResult } from '@bb/workflows';
 
@@ -102,10 +102,14 @@ export async function reviseLinkedinPost(input: ReviseLinkedinPostInput): Promis
     runId: input.runId,
     stepId: `qa-${revisedItem.id}-v${revisedItem.currentVersion}`,
     platform: 'LinkedIn',
-  });
+  }).catch((error: unknown) => buildQaGateUnavailableResult(error instanceof Error ? error.message : String(error)));
   await recordQaResult(input.pool, revisedItem.id, revisedItem.currentVersion, qa);
 
-  const classification = await classifyEditInstruction(input.instruction, dna, input.llm, input.runId);
+  // Best-effort: a failure here only costs the Learning Loop's voice-signal
+  // detection for this one edit, never the edit itself (already persisted above).
+  const classification = await classifyEditInstruction(input.instruction, dna, input.llm, input.runId).catch(
+    () => ({ isVoiceLevelInstruction: false as const, summary: '', proposedChange: null }),
+  );
   let learningEvent: LearningEvent | null = null;
   if (classification.isVoiceLevelInstruction) {
     learningEvent = await recordLearningEvent(input.pool, {

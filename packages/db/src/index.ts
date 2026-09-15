@@ -9,3 +9,4 @@ export * from './repositories/qaResults.js';
 export * from './repositories/interviewSessions.js';
 export * from './repositories/publishEvents.js';
 export * from './repositories/chatMessages.js';
+export * from './repositories/chatSessions.js';

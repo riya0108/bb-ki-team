@@ -1,7 +1,7 @@
 import type { LlmClient } from '@bb/core';
 import { loadCurrentDna } from '@bb/content-dna';
 import type { Pool } from '@bb/db';
-import { runQaGate } from '@bb/qa-gate';
+import { buildQaGateUnavailableResult, runQaGate } from '@bb/qa-gate';
 import type { BlogPackage } from '@bb/shared-types';
 import { createContentItem, recordQaResult, submitForReview } from '@bb/workflows';
 
@@ -97,6 +97,11 @@ export async function runBlogArticle(input: RunBlogArticleInput): Promise<BlogPa
     .filter((s) => s.length > 0)
     .join('\n\n');
 
+  // A QA gate failure (e.g. every LLM provider down at once — observed live,
+  // 2026-09-15) must not strand this item in "draft" forever: createContentItem
+  // above already persisted it, and submitForReview below is the only thing that
+  // gets it into a human's review queue at all. Falling back to an honest
+  // "QA didn't run" BLOCKED result (never a fabricated PASS) keeps that path open.
   const qa = await runQaGate({
     finalPost: plainText,
     sourceReferences,
@@ -107,7 +112,7 @@ export async function runBlogArticle(input: RunBlogArticleInput): Promise<BlogPa
     runId: input.runId,
     stepId: `qa-${item.id}`,
     platform: QA_PLATFORM_LABEL,
-  });
+  }).catch((error: unknown) => buildQaGateUnavailableResult(error instanceof Error ? error.message : String(error)));
   await recordQaResult(input.pool, item.id, item.currentVersion, qa);
 
   const reviewedItem = await submitForReview(input.pool, item.id);

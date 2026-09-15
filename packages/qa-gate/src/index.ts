@@ -133,3 +133,35 @@ export async function runQaGate(input: RunQaGateInput): Promise<QaResult> {
     publishAllowed: false,
   };
 }
+
+// A stand-in QaResult for when runQaGate itself throws (e.g. every configured LLM
+// provider was down/rate-limited — a real, observed failure mode, not hypothetical:
+// see the 2026-09-15 incident). Callers use this so a draft/edit still reaches
+// in_review instead of getting permanently stranded before submitForReview ever
+// runs — content_items has no "QA errored" state to fall back to otherwise, and a
+// human still needs a normal review queue entry to act on. Deliberately BLOCKED
+// (never PASS/PASS_WITH_WARNINGS) so it can never be mistaken for a real QA
+// verdict and never permits a publish — every dimension's notes say plainly that
+// QA did not run, not that content issues were found.
+export function buildQaGateUnavailableResult(errorMessage: string): QaResult {
+  const notes = `QA gate could not run: ${errorMessage}. Not a content judgment — review manually before approving.`;
+  const unavailable: QaDimensionResult = { status: 'FAIL', notes };
+  return {
+    overallStatus: 'BLOCKED',
+    claimIntegrity: unavailable,
+    sourceIntegrity: unavailable,
+    voiceMatch: unavailable,
+    originality: unavailable,
+    platformFit: unavailable,
+    clarity: unavailable,
+    hookHonesty: unavailable,
+    privacy: unavailable,
+    personalExperience: unavailable,
+    editability: unavailable,
+    approvalState: unavailable,
+    publishing: unavailable,
+    riskFlags: [],
+    requiredUserActions: ['QA gate did not run — review this version manually before approving.'],
+    publishAllowed: false,
+  };
+}

@@ -20,6 +20,7 @@ export interface YoutubeShortsChatDeps {
 
 export interface YoutubeShortsChatContext {
   openContentId?: string | null;
+  sessionId: string;
 }
 
 const SourceActionSchema = z.union([
@@ -118,8 +119,8 @@ export async function handleYoutubeShortsChatMessage(
   context: YoutubeShortsChatContext,
   runId: string,
 ): Promise<YoutubeShortsChatResult> {
-  const recentHistory = await loadRecentChatHistory(deps.pool, 'youtube-shorts');
-  await recordUserChatMessage(deps.pool, 'youtube-shorts', message);
+  const recentHistory = await loadRecentChatHistory(deps.pool, context.sessionId);
+  await recordUserChatMessage(deps.pool, context.sessionId, 'youtube-shorts', message);
 
   const classified = await classifyChatIntent({
     llm: deps.llm,
@@ -145,7 +146,7 @@ export async function handleYoutubeShortsChatMessage(
   }
 
   const { action: actionName, ...params } = classified;
-  await recordAssistantChatMessage(deps.pool, 'youtube-shorts', reply, { name: actionName, params });
+  await recordAssistantChatMessage(deps.pool, context.sessionId, 'youtube-shorts', reply, { name: actionName, params });
 
   return { reply, action: actionName, result };
 }

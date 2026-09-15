@@ -5,12 +5,12 @@ try {
 }
 
 import { createFakeLlmClient } from '@bb/core/testing';
-import { createPool, insertContentDna, listChatMessages } from '@bb/db';
+import { createChatSession, createPool, insertContentDna, listChatMessages } from '@bb/db';
 import type { Pool } from '@bb/db';
 import type { FetchTool } from '@bb/mcp-client';
 import type { FetchResult } from '@bb/shared-types';
 import { ContentNotApprovedError } from '@bb/workflows';
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { handleBlogChatMessage, NoOpenDraftError } from './chat.js';
 import type { BlogChatDeps } from './chat.js';
@@ -75,6 +75,7 @@ describeIfDb('packages/agents/blog chat (integration, real Postgres)', () => {
   let pool: Pool;
   let dnaVersion: number;
   let contentIdsThisTest: string[] = [];
+  let sessionId: string;
 
   beforeAll(async () => {
     pool = createPool(databaseUrl ?? '');
@@ -82,8 +83,13 @@ describeIfDb('packages/agents/blog chat (integration, real Postgres)', () => {
     dnaVersion = dna.version;
   });
 
+  beforeEach(async () => {
+    sessionId = (await createChatSession(pool, 'blog')).id;
+  });
+
   afterEach(async () => {
-    await pool.query("DELETE FROM chat_messages WHERE platform = 'blog'");
+    // Cascades to that session's chat_messages (migration 0015's FK).
+    await pool.query('DELETE FROM chat_sessions WHERE id = $1', [sessionId]);
     if (contentIdsThisTest.length > 0) {
       await pool.query('DELETE FROM content_items WHERE id = ANY($1::uuid[])', [contentIdsThisTest]);
     }
@@ -102,26 +108,26 @@ describeIfDb('packages/agents/blog chat (integration, real Postgres)', () => {
   it('drafts an article from a chat message and persists both chat turns', async () => {
     const deps = buildDeps(buildLlm({ action: 'draft', topic: 'RBI UPI fee proposal', articleType: 'Explainer' }));
 
-    const result = await handleBlogChatMessage(deps, 'Write a blog on the RBI UPI fee proposal', {}, 'test-run');
+    const result = await handleBlogChatMessage(deps, 'Write a blog on the RBI UPI fee proposal', { sessionId }, 'test-run');
     const pkg = result.result as { contentId: string; title: string };
     contentIdsThisTest.push(pkg.contentId);
 
     expect(result.action).toBe('draft');
     expect(result.reply).toContain(pkg.title);
 
-    const history = await listChatMessages(pool, 'blog');
+    const history = await listChatMessages(pool, sessionId);
     expect(history).toHaveLength(2);
     expect(history[1]?.action?.name).toBe('draft');
   });
 
   it('shows the HTML file for the currently open draft', async () => {
     const draftDeps = buildDeps(buildLlm({ action: 'draft', topic: 'RBI UPI fee proposal', articleType: 'Explainer' }));
-    const draftResult = await handleBlogChatMessage(draftDeps, 'Write a blog on the RBI UPI fee proposal', {}, 'test-run');
+    const draftResult = await handleBlogChatMessage(draftDeps, 'Write a blog on the RBI UPI fee proposal', { sessionId }, 'test-run');
     const pkg = draftResult.result as { contentId: string };
     contentIdsThisTest.push(pkg.contentId);
 
     const showDeps = buildDeps(buildLlm({ action: 'show_html' }));
-    const result = await handleBlogChatMessage(showDeps, 'Show me the HTML file', { openContentId: pkg.contentId }, 'test-run');
+    const result = await handleBlogChatMessage(showDeps, 'Show me the HTML file', { sessionId, openContentId: pkg.contentId }, 'test-run');
 
     const shown = result.result as { htmlFile: string };
     expect(shown.htmlFile).toContain('<h1>');
@@ -130,7 +136,7 @@ describeIfDb('packages/agents/blog chat (integration, real Postgres)', () => {
   it('replies honestly when the classifier cannot map the request to a supported action', async () => {
     const deps = buildDeps(buildLlm({ action: 'unsupported', reason: 'Editing an existing article is not supported yet.' }));
 
-    const result = await handleBlogChatMessage(deps, 'Make it snappier', {}, 'test-run');
+    const result = await handleBlogChatMessage(deps, 'Make it snappier', { sessionId }, 'test-run');
 
     expect(result.reply).toBe("I can't do that yet: Editing an existing article is not supported yet.");
   });
@@ -138,20 +144,20 @@ describeIfDb('packages/agents/blog chat (integration, real Postgres)', () => {
   it('surfaces a clear message instead of throwing when show_html is requested with no open draft', async () => {
     const deps = buildDeps(buildLlm({ action: 'show_html' }));
 
-    const result = await handleBlogChatMessage(deps, 'Show me the HTML file', {}, 'test-run');
+    const result = await handleBlogChatMessage(deps, 'Show me the HTML file', { sessionId }, 'test-run');
 
     expect(result.reply).toBe(new NoOpenDraftError().message);
   });
 
   it('never fabricates a publish for a draft that has not been approved', async () => {
     const draftDeps = buildDeps(buildLlm({ action: 'draft', topic: 'RBI UPI fee proposal', articleType: 'Explainer' }));
-    const draftResult = await handleBlogChatMessage(draftDeps, 'Write a blog on the RBI UPI fee proposal', {}, 'test-run');
+    const draftResult = await handleBlogChatMessage(draftDeps, 'Write a blog on the RBI UPI fee proposal', { sessionId }, 'test-run');
     const pkg = draftResult.result as { contentId: string };
     contentIdsThisTest.push(pkg.contentId);
 
     const publishDeps = buildDeps(buildLlm({ action: 'publish' }));
     await expect(
-      handleBlogChatMessage(publishDeps, 'Publish this', { openContentId: pkg.contentId }, 'test-run'),
+      handleBlogChatMessage(publishDeps, 'Publish this', { sessionId, openContentId: pkg.contentId }, 'test-run'),
     ).rejects.toBeInstanceOf(ContentNotApprovedError);
   });
 });

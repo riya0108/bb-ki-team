@@ -4,7 +4,7 @@ import type { Pool } from '@bb/db';
 import { listSources, markSourceAccessed, updateSourceStatus } from '@bb/db';
 import type { FetchTool } from '@bb/mcp-client';
 import { FetchToolError } from '@bb/mcp-client';
-import { runQaGate } from '@bb/qa-gate';
+import { buildQaGateUnavailableResult, runQaGate } from '@bb/qa-gate';
 import type { ContentDnaRecord, LinkedinPackage, Source } from '@bb/shared-types';
 import { RiskLevelSchema } from '@bb/shared-types';
 import { createContentItem, listContentItems, recordQaResult, submitForReview } from '@bb/workflows';
@@ -215,7 +215,7 @@ export async function runSourceDiscovery(deps: RunSourceDiscoveryDeps): Promise<
       runId,
       stepId: `qa-${item.id}`,
       platform: 'LinkedIn',
-    });
+    }).catch((error: unknown) => buildQaGateUnavailableResult(error instanceof Error ? error.message : String(error)));
     await recordQaResult(pool, item.id, item.currentVersion, qa);
 
     const reviewedItem = await submitForReview(pool, item.id);

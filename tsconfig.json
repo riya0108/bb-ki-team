@@ -45,5 +45,8 @@
   // ("bundler", no .js extensions on relative imports) and tsconfig.json —
   // it's typechecked separately (see root package.json's "typecheck" script)
   // rather than mixed into this Node-oriented compilation unit.
-  "exclude": ["node_modules", "apps/dashboard"]
+  // supabase/functions is Deno code (jsr: imports, the global Deno namespace, its
+  // own module resolution) — not part of this Node/npm-workspace TypeScript
+  // project. It's checked separately via `supabase functions deploy`'s own bundler.
+  "exclude": ["node_modules", "apps/dashboard", "supabase"]
 }

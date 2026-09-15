@@ -75,3 +75,12 @@ export function SendIcon() {
     </svg>
   );
 }
+
+export function NewChatIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+      <path d="M4 5h16v10H9.5L5 18.5V15H4V5Z" strokeLinejoin="round" />
+      <path d="M9 8.5h6M9 11.5h4" strokeLinecap="round" />
+    </svg>
+  );
+}

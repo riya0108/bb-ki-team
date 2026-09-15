@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import { handleYoutubeShortsChatMessage, runYoutubeShort, runYoutubeShortFromSource } from '@bb/agent-youtube-shorts';
-import { listChatMessages } from '@bb/db';
+import { createChatSession, getOrCreateLatestChatSession, listChatMessages } from '@bb/db';
 import { Router } from 'express';
 import { z } from 'zod';
 
@@ -56,18 +56,29 @@ export function createYoutubeShortsRouter(deps: AppDeps): Router {
   });
 
   router.get('/chat', async (_req, res) => {
-    const messages = await listChatMessages(deps.pool, 'youtube-shorts');
-    res.status(200).json({ messages });
+    const session = await getOrCreateLatestChatSession(deps.pool, 'youtube-shorts');
+    const messages = await listChatMessages(deps.pool, session.id);
+    res.status(200).json({ sessionId: session.id, messages });
   });
 
-  const ChatSchema = z.object({ message: z.string().min(1), openContentId: z.string().uuid().nullable().optional() });
+  router.post('/chat/new-session', async (_req, res) => {
+    const session = await createChatSession(deps.pool, 'youtube-shorts');
+    res.status(201).json({ sessionId: session.id, messages: [] });
+  });
+
+  const ChatSchema = z.object({
+    message: z.string().min(1),
+    sessionId: z.string().uuid().optional(),
+    openContentId: z.string().uuid().nullable().optional(),
+  });
   router.post('/chat', async (req, res) => {
     const body = parseWith(ChatSchema, req.body);
     const runId = randomUUID();
+    const sessionId = body.sessionId ?? (await getOrCreateLatestChatSession(deps.pool, 'youtube-shorts')).id;
     const chatResult = await handleYoutubeShortsChatMessage(
       deps,
       body.message,
-      { openContentId: body.openContentId ?? null },
+      { openContentId: body.openContentId ?? null, sessionId },
       runId,
     );
     res.status(200).json({ runId, ...chatResult });

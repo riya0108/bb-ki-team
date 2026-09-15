@@ -5,4 +5,5 @@ export * from './draftArticle.js';
 export * from './packaging.js';
 export * from './headAgent.js';
 export * from './repurpose.js';
+export * from './editArticle.js';
 export * from './chat.js';

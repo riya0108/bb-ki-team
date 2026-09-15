@@ -6,7 +6,10 @@ import globals from 'globals';
 
 export default tseslint.config(
   {
-    ignores: ['**/dist/**', '**/node_modules/**', '**/coverage/**', '**/.next/**'],
+    // supabase/functions is Deno code, type-checked/linted by its own toolchain at
+    // deploy time (`supabase functions deploy`) — not part of this project's
+    // type-aware ESLint setup (see tsconfig.json's matching exclude).
+    ignores: ['**/dist/**', '**/node_modules/**', '**/coverage/**', '**/.next/**', 'supabase/**'],
   },
   js.configs.recommended,
   {

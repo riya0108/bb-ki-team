@@ -1,3 +1,8 @@
+-- Lives here (not packages/db/migrations) because pg_cron/pg_net only exist on
+-- Supabase — packages/db/migrate.ts runs against local/test Postgres too (which
+-- doesn't have these extensions), so this can't be a normal app-schema migration.
+-- Apply by hand against the hosted project (not part of `npm run db:migrate`).
+--
 -- pg_cron + pg_net replacement for apps/worker's local poll loop, scoped to the
 -- "fire due blog schedules" Edge Function (supabase/functions/fire-due-schedules).
 -- Runs every minute regardless of whether any machine is online, which is the whole
