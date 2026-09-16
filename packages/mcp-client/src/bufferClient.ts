@@ -1,11 +1,9 @@
-import { createRequire } from 'node:module';
-import { fileURLToPath } from 'node:url';
-
 import type { BufferCredentials, Logger } from '@bb/core';
+import { createBufferApiClient, createBufferMcpServer } from '@bb/mcp-buffer';
 import type { ContentItem } from '@bb/shared-types';
 import type { PublishConnector } from '@bb/workflows';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 
 import { tweetsForItem } from './xClient.js';
 
@@ -16,11 +14,6 @@ export class BufferPublishError extends Error {
   }
 }
 
-const require = createRequire(import.meta.url);
-const BUFFER_SERVER_ENTRY = fileURLToPath(
-  new URL('../../mcp-servers/buffer/src/index.ts', import.meta.url),
-);
-const REPO_ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 const IMMEDIATE_PUBLISH_LEAD_MS = 60_000;
 
 interface ToolTextContent {
@@ -53,14 +46,16 @@ export function tweetIdFromUrl(url: string): string {
   return last;
 }
 
-// Wraps the Buffer MCP server (packages/mcp-servers/buffer) the same way
-// createXPublishConnector wraps packages/mcp-servers/x — a dedicated child process,
-// spawned with ONLY the two Buffer credential env vars explicitly passed through
-// (StdioClientTransport does NOT inherit the parent's full env by default;
-// CLAUDE.md: never expose API keys). This is platform "x"'s real publish connector:
-// X's own direct API (xClient.ts) demands paid credits per post on this account, so
-// Buffer — which schedules/publishes to X on this account's behalf for free — is
-// what apps/api and apps/worker actually register (see apps/api/src/deps.ts).
+// Wraps the Buffer MCP server (packages/mcp-servers/buffer) via an in-process
+// InMemoryTransport pair — see blogGitClient.ts's equivalent comment for why (cuts
+// memory overhead, keeps the MCP tool-boundary but drops the OS-process isolation
+// a spawned subprocess added on top). `credentials` is passed directly rather than
+// via subprocess env vars, achieving the same "only pass what's needed" scoping
+// (CLAUDE.md: never expose API keys) without needing a child process. This is
+// platform "x"'s real publish connector: X's own direct API (xClient.ts) demands
+// paid credits per post on this account, so Buffer — which schedules/publishes to
+// X on this account's behalf for free — is what apps/api and apps/worker actually
+// register (see apps/api/src/deps.ts).
 export function createBufferPublishConnector(
   credentials: BufferCredentials,
   _logger: Logger,
@@ -70,16 +65,12 @@ export function createBufferPublishConnector(
 
   function ensureConnected(): Promise<void> {
     if (!connected) {
-      const transport = new StdioClientTransport({
-        command: require.resolve('tsx/cli'),
-        args: [BUFFER_SERVER_ENTRY],
-        cwd: REPO_ROOT,
-        env: {
-          BUFFER_ACCESS_TOKEN: credentials.accessToken,
-          BUFFER_CHANNEL_ID: credentials.channelId,
-        },
-      });
-      connected = client.connect(transport);
+      const apiClient = createBufferApiClient(credentials);
+      const server = createBufferMcpServer({ apiClient });
+      const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+      connected = Promise.all([client.connect(clientTransport), server.connect(serverTransport)]).then(
+        () => undefined,
+      );
     }
     return connected;
   }

@@ -1,6 +1,7 @@
 import express from 'express';
 import type { Express } from 'express';
 
+import { sharedSecretAuth } from './auth.js';
 import type { AppDeps } from './deps.js';
 import { errorHandler } from './errorHandler.js';
 import { createBlogRouter } from './routes/blog.js';
@@ -21,6 +22,11 @@ export function createApp(deps: AppDeps): Express {
   app.get('/health', (_req, res) => {
     res.status(200).json({ status: 'ok' });
   });
+
+  // No-op locally (DASHBOARD_SHARED_SECRET unset) — see auth.ts. Applied after
+  // /health (which must stay reachable for host health checks without a token) and
+  // before every real route.
+  app.use(sharedSecretAuth(deps.env.dashboardSharedSecret));
 
   app.use('/linkedin', createLinkedinRouter(deps));
   app.use('/x', createXRouter(deps));

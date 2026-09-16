@@ -8,6 +8,20 @@ import type {
   Revision,
 } from '@bb/shared-types';
 
+import { clearStoredToken, getStoredToken } from './authToken';
+
+// '/api' (Vite's dev-only proxy to localhost:4000, see vite.config.ts) unless a real
+// deployed API URL is baked in at build time — Netlify builds set this so the
+// static production bundle knows where apps/api actually lives.
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api';
+
+// Set by App.tsx when a 401 comes back — lets the login gate re-prompt without this
+// module needing to import React/hold component state itself.
+let onUnauthorized: (() => void) | null = null;
+export function setUnauthorizedHandler(handler: () => void): void {
+  onUnauthorized = handler;
+}
+
 // Agent selector (spec 17.1) — one tab per head agent. Instagram's three
 // specialists (Posts/Carousels/Reels) aren't separate tabs: the head agent routes
 // format internally (spec 7.1), same as the REST API.
@@ -34,12 +48,25 @@ export class ApiError extends Error {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`/api${path}`, {
+  const token = getStoredToken();
+  const response = await fetch(`${API_BASE_URL}${path}`, {
     ...init,
-    headers: { 'content-type': 'application/json', ...init?.headers },
+    headers: {
+      'content-type': 'application/json',
+      ...(token ? { authorization: `Bearer ${token}` } : {}),
+      ...init?.headers,
+    },
   });
   const body: unknown = await response.json().catch(() => null);
   if (!response.ok) {
+    // A deployed API returns 401 only for a missing/wrong shared-secret token
+    // (apps/api/src/auth.ts) — never for local dev, where DASHBOARD_SHARED_SECRET
+    // is unset and this branch can't be hit. Clear the stale token and let the
+    // login gate re-prompt rather than surfacing this as a generic error bubble.
+    if (response.status === 401) {
+      clearStoredToken();
+      onUnauthorized?.();
+    }
     const errorBody = body as { error?: string; message?: string } | null;
     throw new ApiError(
       response.status,

@@ -1,9 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
+import { getContentDna, setUnauthorizedHandler } from './api/client';
 import type { Platform } from './api/client';
 import { ChatPane } from './components/ChatPane';
 import { ContentQueue } from './components/ContentQueue';
 import { DraftCanvas } from './components/DraftCanvas';
+import { LoginGate } from './components/LoginGate';
 import { PlatformTabs } from './components/PlatformTabs';
 import { ResizeHandle } from './components/ResizeHandle';
 import { ScheduledTracker } from './components/ScheduledTracker';
@@ -21,6 +23,14 @@ export function App() {
   const [refreshToken, setRefreshToken] = useState(0);
   const [chatIsHero, setChatIsHero] = useState(true);
   const [chatPaneHeight, setChatPaneHeight] = useState(CHAT_PANE_DEFAULT_HEIGHT_PX);
+  const [locked, setLocked] = useState(false);
+
+  // Fires only when a request actually 401s (client.ts) — which only happens
+  // against a deployed apps/api with DASHBOARD_SHARED_SECRET set. Never triggers
+  // in local dev.
+  useEffect(() => {
+    setUnauthorizedHandler(() => setLocked(true));
+  }, []);
 
   function resizeChatPane(deltaY: number) {
     // Dragging the handle up (negative deltaY) should grow the chat pane below it —
@@ -46,6 +56,10 @@ export function App() {
     // draft canvas are the same conversation, not two disconnected surfaces).
     if (hasContentId(result)) setOpenContentId(result.contentId);
     handleChanged();
+  }
+
+  if (locked) {
+    return <LoginGate verify={async () => { await getContentDna(); }} />;
   }
 
   return (

@@ -1,11 +1,9 @@
-import { createRequire } from 'node:module';
-import { fileURLToPath } from 'node:url';
-
 import type { Logger, XCredentials } from '@bb/core';
+import { createXApiClient, createXMcpServer } from '@bb/mcp-x';
 import type { ContentItem } from '@bb/shared-types';
 import type { PublishConnector, ScheduleConnector } from '@bb/workflows';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 
 export class XPublishError extends Error {
   constructor(message: string) {
@@ -13,10 +11,6 @@ export class XPublishError extends Error {
     this.name = 'XPublishError';
   }
 }
-
-const require = createRequire(import.meta.url);
-const X_SERVER_ENTRY = fileURLToPath(new URL('../../mcp-servers/x/src/index.ts', import.meta.url));
-const REPO_ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 
 interface ToolTextContent {
   type: 'text';
@@ -48,10 +42,12 @@ interface PostTweetThreadResult {
   url: string;
 }
 
-// Wraps the X MCP server (packages/mcp-servers/x) the same way createLinkedinMcpClient
-// wraps the fetch server — a dedicated child process per connector, spawned with ONLY
-// the four X credential env vars explicitly passed through (StdioClientTransport does
-// NOT inherit the parent's full env by default; CLAUDE.md: never expose API keys).
+// Wraps the X MCP server (packages/mcp-servers/x) via an in-process InMemoryTransport
+// pair — see blogGitClient.ts's equivalent comment for the full reasoning (cuts
+// memory overhead, keeps the MCP tool-boundary, drops the OS-process isolation a
+// spawned subprocess added on top). `credentials` is passed directly rather than
+// via subprocess env vars, achieving the same scoping (CLAUDE.md: never expose API
+// keys) without a child process.
 export function createXPublishConnector(
   credentials: XCredentials,
   _logger: Logger,
@@ -61,18 +57,17 @@ export function createXPublishConnector(
 
   function ensureConnected(): Promise<void> {
     if (!connected) {
-      const transport = new StdioClientTransport({
-        command: require.resolve('tsx/cli'),
-        args: [X_SERVER_ENTRY],
-        cwd: REPO_ROOT,
-        env: {
-          X_API_KEY: credentials.apiKey,
-          X_API_SECRET: credentials.apiSecret,
-          X_ACCESS_TOKEN: credentials.accessToken,
-          X_ACCESS_TOKEN_SECRET: credentials.accessTokenSecret,
-        },
+      const apiClient = createXApiClient({
+        apiKey: credentials.apiKey,
+        apiSecret: credentials.apiSecret,
+        accessToken: credentials.accessToken,
+        accessTokenSecret: credentials.accessTokenSecret,
       });
-      connected = client.connect(transport);
+      const server = createXMcpServer({ apiClient });
+      const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+      connected = Promise.all([client.connect(clientTransport), server.connect(serverTransport)]).then(
+        () => undefined,
+      );
     }
     return connected;
   }

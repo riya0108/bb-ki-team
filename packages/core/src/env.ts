@@ -3,11 +3,17 @@ import { z } from 'zod';
 const RawEnvSchema = z.object({
   DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
   API_PORT: z.coerce.number().int().positive().default(4000),
-  // Loopback-only by default: this API has no authentication (spec 17's dashboard is
-  // a trusted local operator tool, not a deployed service), so it must not be
-  // reachable from the network by default. Only widen this deliberately, e.g. inside
-  // a container where a reverse proxy in front of it enforces auth.
+  // Loopback-only by default: this API has no authentication unless
+  // DASHBOARD_SHARED_SECRET is set (see auth.ts) — spec 17's dashboard was designed
+  // as a trusted local operator tool, not a deployed service, so it must not be
+  // reachable from the network by default. Only widen this deliberately (2026-09-16:
+  // deploying apps/api so the dashboard works from a phone) alongside setting that
+  // secret — never widen API_HOST without it.
   API_HOST: z.string().min(1).default('127.0.0.1'),
+  // Single-operator shared-secret gate (apps/api/src/auth.ts) — required once
+  // API_HOST is widened beyond loopback. Unset locally; a real deployment (Render,
+  // etc.) must set this to a long random value.
+  DASHBOARD_SHARED_SECRET: z.string().optional(),
   GEMINI_API_KEY: z.string().optional(),
   GEMINI_MODEL: z.string().optional(),
   GROQ_API_KEY: z.string().optional(),
@@ -73,6 +79,7 @@ export interface Env {
   databaseUrl: string;
   apiPort: number;
   apiHost: string;
+  dashboardSharedSecret?: string | undefined;
   gemini?: LlmProviderConfig | undefined;
   groq?: LlmProviderConfig | undefined;
   openrouter?: LlmProviderConfig | undefined;
@@ -151,6 +158,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
     databaseUrl: raw.DATABASE_URL,
     apiPort: raw.API_PORT,
     apiHost: raw.API_HOST,
+    dashboardSharedSecret: raw.DASHBOARD_SHARED_SECRET,
     gemini,
     groq,
     openrouter,

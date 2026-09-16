@@ -10,6 +10,11 @@
   },
   "dependencies": {
     "@bb/core": "0.1.0",
+    "@bb/mcp-blog-git": "0.1.0",
+    "@bb/mcp-buffer": "0.1.0",
+    "@bb/mcp-fetch": "0.1.0",
+    "@bb/mcp-x": "0.1.0",
+    "@bb/mcp-youtube-transcript": "0.1.0",
     "@bb/shared-types": "0.1.0",
     "@bb/workflows": "0.1.0",
     "@modelcontextprotocol/sdk": "^1.24.1",

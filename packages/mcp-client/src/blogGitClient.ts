@@ -1,11 +1,9 @@
-import { createRequire } from 'node:module';
-import { fileURLToPath } from 'node:url';
-
 import type { BlogGitConfig, Logger } from '@bb/core';
+import { createBlogGitMcpServer } from '@bb/mcp-blog-git';
 import type { ContentItem } from '@bb/shared-types';
 import type { PublishConnector, ScheduleConnector } from '@bb/workflows';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 
 import { blogPostFragmentFromHtml, slugify } from './blogPost.js';
 
@@ -15,12 +13,6 @@ export class BlogGitPublishError extends Error {
     this.name = 'BlogGitPublishError';
   }
 }
-
-const require = createRequire(import.meta.url);
-const BLOG_GIT_SERVER_ENTRY = fileURLToPath(
-  new URL('../../mcp-servers/blog-git/src/index.ts', import.meta.url),
-);
-const REPO_ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 
 const DEFAULT_AUTHOR_NAME = 'Bull or Bear Blogs';
 const DEFAULT_AUTHOR_BIO =
@@ -46,14 +38,21 @@ interface PublishPostResult {
   categoryExactMatch: boolean;
 }
 
-// Wraps the blog-git MCP server (packages/mcp-servers/blog-git) the same way
-// bufferClient.ts wraps the Buffer MCP server — a dedicated child process, spawned
-// with only the repo config it needs (StdioClientTransport does not inherit the
-// parent's full env by default). This is platform "blog"'s real publish connector:
-// the live site (bullorbear.in) is a static Astro site deployed by its own GitHub
-// Actions workflow on every push to its default branch, so "publishing" means
-// committing an MDX file into that repo and pushing — there is no platform API to
-// call (see apps/api/src/deps.ts).
+// Wraps the blog-git MCP server (packages/mcp-servers/blog-git) via an in-process
+// InMemoryTransport pair rather than spawning it as a child process — a
+// deliberate 2026-09-16 change (see packages/mcp-client/README or the commit that
+// added this comment) to cut memory overhead on resource-constrained hosting and
+// keep porting to environments without process-spawning (e.g. Cloudflare Workers)
+// possible later. The MCP tool boundary itself — this connector can only ever call
+// blog-git's own registered tools, never reach into arbitrary code — is unchanged;
+// what's given up is the OS-process-level isolation a spawned subprocess added on
+// top of that. `config` is passed directly as a plain object instead of via
+// subprocess env vars, which achieves the same "only pass what's needed" scoping
+// (CLAUDE.md: never expose API keys) without needing a child process to enforce it.
+// This is platform "blog"'s real publish connector: the live site (bullorbear.in)
+// is a static Astro site deployed by its own GitHub Actions workflow on every push
+// to its default branch, so "publishing" means committing an MDX file into that
+// repo and pushing — there is no platform API to call (see apps/api/src/deps.ts).
 export function createBlogGitPublishConnector(
   config: BlogGitConfig,
   _logger: Logger,
@@ -63,17 +62,15 @@ export function createBlogGitPublishConnector(
 
   function ensureConnected(): Promise<void> {
     if (!connected) {
-      const transport = new StdioClientTransport({
-        command: require.resolve('tsx/cli'),
-        args: [BLOG_GIT_SERVER_ENTRY],
-        cwd: REPO_ROOT,
-        env: {
-          BLOG_REPO_PATH: config.repoPath,
-          BLOG_REPO_BRANCH: config.branch,
-          BLOG_SITE_BASE_URL: config.siteBaseUrl,
-        },
+      const server = createBlogGitMcpServer({
+        repoPath: config.repoPath,
+        branch: config.branch,
+        siteBaseUrl: config.siteBaseUrl,
       });
-      connected = client.connect(transport);
+      const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+      connected = Promise.all([client.connect(clientTransport), server.connect(serverTransport)]).then(
+        () => undefined,
+      );
     }
     return connected;
   }

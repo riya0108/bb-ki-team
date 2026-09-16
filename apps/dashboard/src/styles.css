@@ -813,6 +813,55 @@ select:focus {
   font-size: 13px;
 }
 
+/* ---------- login gate ---------- */
+
+.login-gate {
+  height: 100vh;
+  width: 100vw;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+}
+
+.login-gate-card {
+  width: 100%;
+  max-width: 340px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 32px 28px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+
+.login-gate-title {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 20px;
+  color: var(--text);
+}
+
+.login-gate-sub {
+  margin: -6px 0 4px;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+.login-gate-card input {
+  width: 100%;
+}
+
+.login-gate-error {
+  font-size: 12.5px;
+  color: var(--red);
+}
+
+.login-gate-card button.primary {
+  width: 100%;
+}
+
 /* ---------- DNA / learning ---------- */
 
 .dna-summary {
