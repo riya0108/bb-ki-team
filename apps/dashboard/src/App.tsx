@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { getContentDna, setUnauthorizedHandler } from './api/client';
 import type { Platform } from './api/client';
 import { ChatPane } from './components/ChatPane';
+import { CloseIcon, MenuIcon } from './components/icons';
 import { ContentQueue } from './components/ContentQueue';
 import { DraftCanvas } from './components/DraftCanvas';
 import { LoginGate } from './components/LoginGate';
@@ -24,6 +25,10 @@ export function App() {
   const [chatIsHero, setChatIsHero] = useState(true);
   const [chatPaneHeight, setChatPaneHeight] = useState(CHAT_PANE_DEFAULT_HEIGHT_PX);
   const [locked, setLocked] = useState(false);
+  // Platform tabs + content queue collapse into a slide-out drawer under 768px
+  // (small-screen chrome has no room for a permanent 300px sidebar) — a single
+  // toggle covers both, since a phone screen can't fit two separate nav affordances.
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   // Fires only when a request actually 401s (client.ts) — which only happens
   // against a deployed apps/api with DASHBOARD_SHARED_SECRET set. Never triggers
@@ -44,6 +49,12 @@ export function App() {
   function selectPlatform(next: Platform) {
     setPlatform(next);
     setOpenContentId(null);
+    setMobileNavOpen(false);
+  }
+
+  function selectContent(id: string) {
+    setOpenContentId(id);
+    setMobileNavOpen(false);
   }
 
   function handleChanged() {
@@ -66,14 +77,27 @@ export function App() {
     <div className="app-shell">
       <div className="bottom-glow" aria-hidden="true" />
       <div className="topbar">
+        <button
+          type="button"
+          className="mobile-nav-toggle"
+          aria-label={mobileNavOpen ? 'Close menu' : 'Open menu'}
+          onClick={() => setMobileNavOpen((open) => !open)}
+        >
+          {mobileNavOpen ? <CloseIcon /> : <MenuIcon />}
+        </button>
         <div className="brand">
           Teri<span className="brand-dot" />
         </div>
         <PlatformTabs selected={platform} onSelect={selectPlatform} />
         <div className="topbar-right">BB ki Team</div>
       </div>
-      <div className="main-layout">
-        <ContentQueue platform={platform} selectedId={openContentId} onSelect={setOpenContentId} refreshToken={refreshToken} />
+      <div className={`main-layout${mobileNavOpen ? ' mobile-nav-open' : ''}`}>
+        <div className="queue-panel">
+          <div className="mobile-drawer-tabs">
+            <PlatformTabs selected={platform} onSelect={selectPlatform} />
+          </div>
+          <ContentQueue platform={platform} selectedId={openContentId} onSelect={selectContent} refreshToken={refreshToken} />
+        </div>
         <div className="center-panel">
           <DraftCanvas contentId={openContentId} onChanged={handleChanged} />
           {!chatIsHero && <ResizeHandle onResize={resizeChatPane} />}
@@ -91,6 +115,7 @@ export function App() {
           </div>
         </div>
       </div>
+      {mobileNavOpen && <div className="mobile-nav-backdrop" onClick={() => setMobileNavOpen(false)} />}
       <ScheduledTracker refreshToken={refreshToken} />
     </div>
   );

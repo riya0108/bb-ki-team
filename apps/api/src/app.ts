@@ -1,3 +1,4 @@
+import cors from 'cors';
 import express from 'express';
 import type { Express } from 'express';
 
@@ -22,6 +23,15 @@ export function createApp(deps: AppDeps): Express {
   app.get('/health', (_req, res) => {
     res.status(200).json({ status: 'ok' });
   });
+
+  // Browser CORS check runs before the shared-secret check below, and before
+  // Express even reaches route handlers for preflight OPTIONS requests — the `cors`
+  // package answers those directly. Locked to exactly one origin (not `*`) since
+  // this now sits in front of real (if single-operator) data. When unset (local
+  // dev), cross-origin requests are denied outright, matching this app's original
+  // loopback-only default — local dev never needs it since the Vite proxy makes
+  // requests same-origin.
+  app.use(cors({ origin: deps.env.corsAllowedOrigin ?? false }));
 
   // No-op locally (DASHBOARD_SHARED_SECRET unset) — see auth.ts. Applied after
   // /health (which must stay reachable for host health checks without a token) and

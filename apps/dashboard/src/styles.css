@@ -238,6 +238,25 @@ select:focus {
   white-space: nowrap;
 }
 
+/* Hamburger toggle for the mobile nav drawer — hidden on desktop, where the
+   platform tabs already sit inline in the topbar with room to spare. */
+.mobile-nav-toggle {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  flex-shrink: 0;
+  border-radius: var(--radius-sm);
+}
+
+/* Second, stacked copy of the platform tabs rendered inside the drawer — hidden
+   on desktop where the topbar's inline copy is already reachable. */
+.mobile-drawer-tabs {
+  display: none;
+}
+
 /* ---------- platform chips ---------- */
 
 .platform-tabs {
@@ -293,6 +312,21 @@ select:focus {
   gap: 14px;
   min-height: 0;
   padding: 14px;
+}
+
+/* Transparent on desktop so its children (the mobile-only tabs, hidden via
+   display:none, and ContentQueue's own .panel) act as the grid's direct items —
+   keeps the existing 300px/1fr column split unchanged. Mobile overrides this to
+   become the actual sliding drawer container (see the max-width:768px block). */
+.queue-panel {
+  display: contents;
+}
+
+.mobile-nav-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 25;
 }
 
 .panel {
@@ -1013,4 +1047,124 @@ select:focus {
 .scheduled-tracker-platform .platform-icon svg {
   width: 9px;
   height: 9px;
+}
+
+/* ---------- mobile (<=768px) ---------- */
+
+@media (max-width: 768px) {
+  /* iOS Safari's 100vh includes the address bar; dvh tracks the actual visible
+     viewport. Kept as a second declaration (not a replacement) so browsers
+     without dvh support silently keep the vh fallback above. */
+  .app-shell {
+    height: 100dvh;
+  }
+
+  .topbar {
+    gap: 10px;
+    padding: 12px 14px;
+  }
+
+  .mobile-nav-toggle {
+    display: flex;
+  }
+
+  /* The topbar's inline tabs and the "BB ki Team" label both assume desktop
+     width — on a phone they either get replaced by the drawer copy or just
+     don't fit, so both drop out here. */
+  .topbar > .platform-tabs,
+  .topbar-right {
+    display: none;
+  }
+
+  .main-layout {
+    grid-template-columns: 1fr;
+    padding: 10px;
+  }
+
+  /* Switches from display:contents (desktop) to a real fixed-position drawer
+     that slides in from the left, independent of the single-column grid flow
+     below it. */
+  .queue-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 86vw;
+    max-width: 320px;
+    z-index: 30;
+    padding: 70px 14px 16px;
+    background: rgba(10, 11, 13, 0.98);
+    backdrop-filter: blur(20px);
+    border-right: 1px solid var(--border);
+    box-shadow: 24px 0 48px rgba(0, 0, 0, 0.4);
+    overflow-y: auto;
+    transform: translateX(-100%);
+    transition: transform 240ms cubic-bezier(0.165, 0.84, 0.44, 1);
+  }
+
+  .main-layout.mobile-nav-open .queue-panel {
+    transform: translateX(0);
+  }
+
+  .mobile-drawer-tabs {
+    display: block;
+    flex-shrink: 0;
+  }
+
+  .mobile-drawer-tabs .platform-tabs {
+    flex-direction: column;
+  }
+
+  .mobile-drawer-tabs .platform-chip {
+    width: 100%;
+  }
+
+  .queue-panel .panel {
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+
+  .teri-hero {
+    padding: 0 20px;
+    gap: 20px;
+  }
+
+  .teri-hero-heading {
+    font-size: 22px;
+  }
+
+  /* Full-width composer at this size makes the always-expanded detail column
+     (title + per-platform breakdown) too cramped, and the bottom-left position
+     sits right where the hero composer's edge is — collapse to a compact
+     count-only badge parked under the topbar instead. */
+  .scheduled-tracker {
+    left: auto;
+    right: 12px;
+    bottom: auto;
+    top: 66px;
+    padding: 4px;
+  }
+
+  .scheduled-tracker-ring {
+    width: 34px;
+    height: 34px;
+  }
+
+  .scheduled-tracker-count {
+    width: 34px;
+    font-size: 11px;
+  }
+
+  .scheduled-tracker-detail {
+    display: none;
+  }
+
+  /* Prevents iOS Safari's auto-zoom-on-focus, which otherwise triggers on any
+     text input sized under 16px. */
+  .chat-composer textarea {
+    font-size: 16px;
+  }
 }

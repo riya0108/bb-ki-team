@@ -14,6 +14,12 @@ const RawEnvSchema = z.object({
   // API_HOST is widened beyond loopback. Unset locally; a real deployment (Render,
   // etc.) must set this to a long random value.
   DASHBOARD_SHARED_SECRET: z.string().optional(),
+  // Browser-enforced allowlist for cross-origin dashboard requests (apps/api/src/app.ts).
+  // Unset locally — the Vite dev proxy makes requests same-origin so CORS never
+  // applies. Once apps/api is deployed separately from the dashboard (2026-09-16:
+  // Render + Netlify), the two live on different origins and the browser blocks
+  // every fetch without this set to the dashboard's exact origin.
+  CORS_ALLOWED_ORIGIN: z.string().optional(),
   GEMINI_API_KEY: z.string().optional(),
   GEMINI_MODEL: z.string().optional(),
   GROQ_API_KEY: z.string().optional(),
@@ -80,6 +86,7 @@ export interface Env {
   apiPort: number;
   apiHost: string;
   dashboardSharedSecret?: string | undefined;
+  corsAllowedOrigin?: string | undefined;
   gemini?: LlmProviderConfig | undefined;
   groq?: LlmProviderConfig | undefined;
   openrouter?: LlmProviderConfig | undefined;
@@ -159,6 +166,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
     apiPort: raw.API_PORT,
     apiHost: raw.API_HOST,
     dashboardSharedSecret: raw.DASHBOARD_SHARED_SECRET,
+    corsAllowedOrigin: raw.CORS_ALLOWED_ORIGIN,
     gemini,
     groq,
     openrouter,
