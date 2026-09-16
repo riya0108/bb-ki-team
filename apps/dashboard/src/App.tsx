@@ -89,7 +89,10 @@ export function App() {
           Teri<span className="brand-dot" />
         </div>
         <PlatformTabs selected={platform} onSelect={selectPlatform} />
-        <div className="topbar-right">BB ki Team</div>
+        <div className="topbar-right">
+          <ScheduledTracker refreshToken={refreshToken} />
+          <span className="topbar-label">BB ki Team</span>
+        </div>
       </div>
       <div className={`main-layout${mobileNavOpen ? ' mobile-nav-open' : ''}`}>
         <div className="queue-panel">
@@ -98,6 +101,7 @@ export function App() {
           </div>
           <ContentQueue platform={platform} selectedId={openContentId} onSelect={selectContent} refreshToken={refreshToken} />
         </div>
+        {mobileNavOpen && <div className="mobile-nav-backdrop" onClick={() => setMobileNavOpen(false)} />}
         <div className="center-panel">
           <DraftCanvas contentId={openContentId} onChanged={handleChanged} />
           {!chatIsHero && <ResizeHandle onResize={resizeChatPane} />}
@@ -115,8 +119,6 @@ export function App() {
           </div>
         </div>
       </div>
-      {mobileNavOpen && <div className="mobile-nav-backdrop" onClick={() => setMobileNavOpen(false)} />}
-      <ScheduledTracker refreshToken={refreshToken} />
     </div>
   );
 }

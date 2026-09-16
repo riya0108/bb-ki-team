@@ -143,19 +143,9 @@ select:focus {
   grid-template-rows: auto 1fr;
   height: 100vh;
   overflow: hidden;
-  background-color: var(--bg);
-  background-image:
-    linear-gradient(180deg, rgba(0, 0, 0, 0.55) 0%, rgba(0, 0, 0, 0.72) 55%, rgba(0, 0, 0, 0.94) 100%),
-    url('/hero-bg.png');
-  background-size:
-    cover,
-    cover;
-  background-position:
-    center,
-    center;
-  background-repeat:
-    no-repeat,
-    no-repeat;
+  /* Plain black on desktop — the textured hero-bg.png pattern is kept only for
+     the mobile breakpoint below, where it's already the established look. */
+  background: var(--bg);
 }
 
 /* A visibly bright, slowly-drifting bloom anchored to the bottom edge — moves
@@ -230,6 +220,13 @@ select:focus {
 
 .topbar-right {
   margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-shrink: 0;
+}
+
+.topbar-label {
   font-family: var(--font-mono);
   font-size: 12px;
   letter-spacing: 0.08em;
@@ -579,6 +576,10 @@ select:focus {
   margin: 0;
   padding: 8px 10px 8px 22px;
   min-height: 64px;
+  /* Overrides the base .chat-composer's flex-end: at this fixed 64px height a
+     single-line placeholder/value otherwise hugs the bottom of the pill instead
+     of sitting in the middle of it. */
+  align-items: center;
   border: 1px solid var(--border-strong);
   background: #0c0c0d;
 }
@@ -949,28 +950,33 @@ select:focus {
   color: var(--gold-strong);
 }
 
-/* ---------- scheduled tracker (bottom-right corner) ---------- */
+/* ---------- scheduled tracker (topbar, right side) ---------- */
 
 .scheduled-tracker {
-  position: absolute;
-  /* Left, not right — right overlapped the chat composer's send button, which
-     also sits in the bottom-right of the viewport. */
-  left: 18px;
-  bottom: 18px;
-  z-index: 2;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 14px 8px 8px;
-  background: rgba(15, 16, 19, 0.82);
-  backdrop-filter: blur(14px);
+  background: var(--panel-2);
   border: 1px solid var(--border);
   border-radius: var(--radius-pill);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  padding: 3px;
+}
+
+/* Ring and count are both absolutely stacked to fill this exact box, so the
+   count is always dead-centered on the ring regardless of container padding —
+   no hardcoded offset to fall out of sync when sizes change. */
+.scheduled-tracker-ring-wrap {
+  position: relative;
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
 }
 
 .scheduled-tracker-ring {
-  flex-shrink: 0;
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
   transform: rotate(-90deg);
 }
 
@@ -990,63 +996,15 @@ select:focus {
 
 .scheduled-tracker-count {
   position: absolute;
-  /* Matches the ring's own offset (container's 8px left padding) and centers
-     vertically against it explicitly — the ring is 48px flex item, the count was
-     drifting right because this used to disagree with that padding. */
-  left: 8px;
-  top: 50%;
-  transform: translateY(-50%);
-  font-family: var(--font-mono);
-  font-size: 13px;
-  font-weight: 400;
-  color: var(--text);
-  width: 48px;
-  text-align: center;
-  pointer-events: none;
-}
-
-.scheduled-tracker-detail {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.scheduled-tracker-title {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--text-faint);
-}
-
-.scheduled-tracker-empty {
-  font-size: 12px;
-  color: var(--text-dim);
-}
-
-.scheduled-tracker-platforms {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-
-.scheduled-tracker-platform {
+  inset: 0;
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  color: var(--text-dim);
-}
-
-.scheduled-tracker-platform .platform-icon {
-  width: 16px;
-  height: 16px;
-  border-radius: 4px;
-}
-
-.scheduled-tracker-platform .platform-icon svg {
-  width: 9px;
-  height: 9px;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--text);
+  pointer-events: none;
 }
 
 /* ---------- mobile (<=768px) ---------- */
@@ -1057,6 +1015,19 @@ select:focus {
      without dvh support silently keep the vh fallback above. */
   .app-shell {
     height: 100dvh;
+    background-color: var(--bg);
+    background-image:
+      linear-gradient(180deg, rgba(0, 0, 0, 0.55) 0%, rgba(0, 0, 0, 0.72) 55%, rgba(0, 0, 0, 0.94) 100%),
+      url('/hero-bg.png');
+    background-size:
+      cover,
+      cover;
+    background-position:
+      center,
+      center;
+    background-repeat:
+      no-repeat,
+      no-repeat;
   }
 
   .topbar {
@@ -1068,11 +1039,11 @@ select:focus {
     display: flex;
   }
 
-  /* The topbar's inline tabs and the "BB ki Team" label both assume desktop
-     width — on a phone they either get replaced by the drawer copy or just
-     don't fit, so both drop out here. */
+  /* The topbar's inline tabs assume desktop width and get replaced by the
+     drawer copy on a phone. The "BB ki Team" text label has no room either,
+     but the scheduled-tracker widget next to it stays visible. */
   .topbar > .platform-tabs,
-  .topbar-right {
+  .topbar-label {
     display: none;
   }
 
@@ -1134,32 +1105,6 @@ select:focus {
 
   .teri-hero-heading {
     font-size: 22px;
-  }
-
-  /* Full-width composer at this size makes the always-expanded detail column
-     (title + per-platform breakdown) too cramped, and the bottom-left position
-     sits right where the hero composer's edge is — collapse to a compact
-     count-only badge parked under the topbar instead. */
-  .scheduled-tracker {
-    left: auto;
-    right: 12px;
-    bottom: auto;
-    top: 66px;
-    padding: 4px;
-  }
-
-  .scheduled-tracker-ring {
-    width: 34px;
-    height: 34px;
-  }
-
-  .scheduled-tracker-count {
-    width: 34px;
-    font-size: 11px;
-  }
-
-  .scheduled-tracker-detail {
-    display: none;
   }
 
   /* Prevents iOS Safari's auto-zoom-on-focus, which otherwise triggers on any

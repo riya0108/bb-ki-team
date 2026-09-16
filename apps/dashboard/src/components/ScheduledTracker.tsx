@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 
 import type { Platform } from '../api/client';
 import { PLATFORM_LABELS, listContent, listPublishEvents } from '../api/client';
-import { PlatformIcon } from './icons';
 
 interface PlatformCount {
   platform: Platform;
@@ -73,34 +72,27 @@ export function ScheduledTracker({ refreshToken }: { refreshToken: number }) {
   const fraction = Math.min(total / RING_VISUAL_MAX, 1);
   const dashOffset = RING_CIRCUMFERENCE * (1 - fraction);
 
+  // Header widget is compact (ring + count only) — the per-platform breakdown
+  // that used to render inline lives in the title tooltip instead, since the
+  // topbar has no room for a multi-line detail column.
+  const detail =
+    total === 0 ? 'Nothing scheduled yet' : counts.map((c) => `${PLATFORM_LABELS[c.platform]} · ${c.count}`).join(', ');
+
   return (
-    <div className="scheduled-tracker">
-      <svg width="48" height="48" viewBox="0 0 48 48" className="scheduled-tracker-ring">
-        <circle cx="24" cy="24" r={RING_RADIUS} className="ring-track" />
-        <circle
-          cx="24"
-          cy="24"
-          r={RING_RADIUS}
-          className="ring-fill"
-          strokeDasharray={RING_CIRCUMFERENCE}
-          strokeDashoffset={dashOffset}
-        />
-      </svg>
-      <span className="scheduled-tracker-count">{total}</span>
-      <div className="scheduled-tracker-detail">
-        <div className="scheduled-tracker-title">Scheduled today</div>
-        {total === 0 ? (
-          <div className="scheduled-tracker-empty">Nothing scheduled yet</div>
-        ) : (
-          <div className="scheduled-tracker-platforms">
-            {counts.map((c) => (
-              <span key={c.platform} className="scheduled-tracker-platform">
-                <PlatformIcon platform={c.platform} />
-                {PLATFORM_LABELS[c.platform]} · {c.count}
-              </span>
-            ))}
-          </div>
-        )}
+    <div className="scheduled-tracker" title={`Scheduled today: ${total}${total === 0 ? '' : ` (${detail})`}`}>
+      <div className="scheduled-tracker-ring-wrap">
+        <svg viewBox="0 0 48 48" className="scheduled-tracker-ring">
+          <circle cx="24" cy="24" r={RING_RADIUS} className="ring-track" />
+          <circle
+            cx="24"
+            cy="24"
+            r={RING_RADIUS}
+            className="ring-fill"
+            strokeDasharray={RING_CIRCUMFERENCE}
+            strokeDashoffset={dashOffset}
+          />
+        </svg>
+        <span className="scheduled-tracker-count">{total}</span>
       </div>
     </div>
   );
