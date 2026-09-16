@@ -8,14 +8,16 @@ import { createPool, insertContentDna } from '@bb/db';
 import type { Pool } from '@bb/db';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
-import { createContentItem, recordApproval, submitForReview } from './ledger.js';
+import { addRevision, createContentItem, recordApproval, submitForReview } from './ledger.js';
 import {
+  cancelSchedule,
   ContentNotApprovedError,
   ContentNotScheduledError,
   firePendingSchedule,
   publishDueSchedules,
   requestPublish,
   requestSchedule,
+  rescheduleContent,
 } from './publishing.js';
 import type { PublishConnector, ScheduleConnector } from './publishing.js';
 
@@ -254,5 +256,70 @@ describeIfDb('packages/workflows publishing (integration, real Postgres)', () =>
 
     const second = await publishDueSchedules(pool, { x: fakeConnector }, new Date());
     expect(second.map((outcome) => outcome.item.id)).not.toContain(contentId);
+  });
+
+  it('rescheduleContent moves the target time and stays scheduled, superseding the old due time', async () => {
+    const originalTime = new Date(Date.now() - 1000);
+    const contentId = await createScheduledItem(originalTime);
+    const newTime = new Date(Date.now() + 60 * 60 * 1000);
+    const noopScheduleConnector: ScheduleConnector = { name: 'fake-x-scheduler', schedule: () => Promise.resolve() };
+
+    const { item, event } = await rescheduleContent(pool, contentId, newTime, { x: noopScheduleConnector });
+
+    expect(item.status).toBe('scheduled');
+    expect(event.result).toBe('success');
+    expect(event.scheduledFor).toBe(newTime.toISOString());
+
+    // The original due time already passed, but the newer schedule event now wins
+    // (listDueSchedules picks the latest per item) — so this must NOT be due yet.
+    const outcomes = await publishDueSchedules(pool, { x: { name: 'x', publish: () => Promise.resolve({ platformPostId: '1', platformUrl: 'https://x.com/i/web/status/1' }) } }, new Date());
+    expect(outcomes.map((o) => o.item.id)).not.toContain(contentId);
+  });
+
+  it('cancelSchedule returns the item to approved and stops it from ever firing', async () => {
+    const contentId = await createScheduledItem(new Date(Date.now() - 1000));
+
+    const { item, event } = await cancelSchedule(pool, contentId);
+
+    expect(item.status).toBe('approved');
+    expect(event.result).toBe('cancelled');
+
+    const fakeConnector: PublishConnector = {
+      name: 'fake-x-connector',
+      publish: () => Promise.resolve({ platformPostId: 'abc', platformUrl: 'https://x.com/i/web/status/abc' }),
+    };
+    const outcomes = await publishDueSchedules(pool, { x: fakeConnector }, new Date());
+    expect(outcomes.map((o) => o.item.id)).not.toContain(contentId);
+  });
+
+  it('cancelSchedule refuses content that is not scheduled', async () => {
+    const contentId = await createApprovedItem();
+    await expect(cancelSchedule(pool, contentId)).rejects.toBeInstanceOf(ContentNotScheduledError);
+  });
+
+  // Regression: editing a scheduled+approved item used to leave status='scheduled'
+  // with a stale approvedVersion, so apps/worker's poll loop would still fire and
+  // publish the PRE-edit text at the original due time (ledger.ts's addRevision
+  // needsReReview was missing 'scheduled').
+  it('editing a scheduled item forces it back to in_review and stops it from firing the old text', async () => {
+    const contentId = await createScheduledItem(new Date(Date.now() - 1000));
+
+    const { item } = await addRevision(pool, contentId, {
+      changeType: 'user_edit',
+      newText: 'Edited after scheduling.',
+      changedBy: 'user',
+      changedById: 'riya',
+    });
+
+    expect(item.status).toBe('in_review');
+    expect(item.approvedVersion).toBeNull();
+    expect(item.currentText).toBe('Edited after scheduling.');
+
+    const fakeConnector: PublishConnector = {
+      name: 'fake-x-connector',
+      publish: () => Promise.resolve({ platformPostId: 'abc', platformUrl: 'https://x.com/i/web/status/abc' }),
+    };
+    const outcomes = await publishDueSchedules(pool, { x: fakeConnector }, new Date());
+    expect(outcomes.map((o) => o.item.id)).not.toContain(contentId);
   });
 });

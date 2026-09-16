@@ -1,30 +1,10 @@
 import type { PublishEvent } from '@bb/shared-types';
-import { useEffect, useState } from 'react';
-
-import { listPublishEvents } from '../api/client';
 
 interface ActivityLogProps {
-  contentId: string;
-  refreshToken: number;
+  events: PublishEvent[];
 }
 
-export function ActivityLog({ contentId, refreshToken }: ActivityLogProps) {
-  const [events, setEvents] = useState<PublishEvent[]>([]);
-
-  useEffect(() => {
-    let cancelled = false;
-    listPublishEvents(contentId)
-      .then((res) => {
-        if (!cancelled) setEvents(res.events);
-      })
-      .catch(() => {
-        if (!cancelled) setEvents([]);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [contentId, refreshToken]);
-
+export function ActivityLog({ events }: ActivityLogProps) {
   if (events.length === 0) {
     return (
       <div>
@@ -42,13 +22,18 @@ export function ActivityLog({ contentId, refreshToken }: ActivityLogProps) {
           <div>
             {event.scheduledFor ? 'Schedule' : 'Publish'} via {event.connector} — {event.result}
           </div>
+          {event.scheduledFor && (
+            <div className="activity-log-scheduled-for">
+              Scheduled for {new Date(event.scheduledFor).toLocaleString()}
+            </div>
+          )}
           {event.error && <div>{event.error}</div>}
           {event.platformUrl && (
             <a className="html-preview-link" href={event.platformUrl} target="_blank" rel="noreferrer">
               {event.platformUrl}
             </a>
           )}
-          <div>{new Date(event.createdAt).toLocaleString()}</div>
+          <div>Logged {new Date(event.createdAt).toLocaleString()}</div>
         </div>
       ))}
     </div>

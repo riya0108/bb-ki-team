@@ -12,7 +12,7 @@ import { z } from 'zod';
 
 import { draftXPost } from './draftPost.js';
 import { InsufficientDistinctTopicsError, NoAccessibleSourcesError, NoTrustedSourcesError } from './errors.js';
-import { buildXPackage } from './packaging.js';
+import { buildXPackage, enforceXLengthLimit } from './packaging.js';
 
 const CREATED_BY_AGENT = 'agent-02-x';
 const RECENT_TOPICS_LIMIT = 20;
@@ -173,16 +173,18 @@ export async function runSourceDiscovery(deps: RunSourceDiscoveryDeps): Promise<
     const fetchedSource = fetchedByUrl.get(candidate.sourceUrl);
     if (!fetchedSource) throw new NoAccessibleSourcesError();
 
-    const draft = await draftXPost({
-      topic: candidate.topic,
-      angle: candidate.angle,
-      coreClaim: candidate.coreClaim,
-      sourceTexts: [fetchedSource.text],
-      contentDna: dna,
-      llm,
-      runId,
-      stepId: `draft-${candidate.sourceUrl}`,
-    });
+    const draft = enforceXLengthLimit(
+      await draftXPost({
+        topic: candidate.topic,
+        angle: candidate.angle,
+        coreClaim: candidate.coreClaim,
+        sourceTexts: [fetchedSource.text],
+        contentDna: dna,
+        llm,
+        runId,
+        stepId: `draft-${candidate.sourceUrl}`,
+      }),
+    );
 
     const item = await createContentItem(pool, {
       platform: 'x',

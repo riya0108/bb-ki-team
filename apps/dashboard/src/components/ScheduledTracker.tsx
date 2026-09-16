@@ -72,9 +72,6 @@ export function ScheduledTracker({ refreshToken }: { refreshToken: number }) {
   const fraction = Math.min(total / RING_VISUAL_MAX, 1);
   const dashOffset = RING_CIRCUMFERENCE * (1 - fraction);
 
-  // Header widget is compact (ring + count only) — the per-platform breakdown
-  // that used to render inline lives in the title tooltip instead, since the
-  // topbar has no room for a multi-line detail column.
   const detail =
     total === 0 ? 'Nothing scheduled yet' : counts.map((c) => `${PLATFORM_LABELS[c.platform]} · ${c.count}`).join(', ');
 
@@ -94,6 +91,19 @@ export function ScheduledTracker({ refreshToken }: { refreshToken: number }) {
         </svg>
         <span className="scheduled-tracker-count">{total}</span>
       </div>
+      {/* Which platform(s) the number covers, right in the widget — the tooltip
+          above still carries the same text for anyone hovering, but the whole
+          point of "which platform" shouldn't require a hover to discover. */}
+      {total > 0 && (
+        <div className="scheduled-tracker-breakdown">
+          {counts.map((c, i) => (
+            <span key={c.platform}>
+              {i > 0 && <span className="scheduled-tracker-dot"> · </span>}
+              {PLATFORM_LABELS[c.platform]} <b>{c.count}</b>
+            </span>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

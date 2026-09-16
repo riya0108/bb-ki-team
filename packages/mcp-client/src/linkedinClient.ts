@@ -6,6 +6,8 @@ import { FetchResultSchema } from '@bb/shared-types';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 
+import { isToolTextContent, toolErrorMessage } from './mcpToolResponse.js';
+
 export class FetchToolError extends Error {
   constructor(
     public readonly url: string,
@@ -19,20 +21,6 @@ export class FetchToolError extends Error {
 export interface FetchTool {
   fetchUrl(url: string): Promise<FetchResult>;
   close(): Promise<void>;
-}
-
-interface ToolTextContent {
-  type: 'text';
-  text: string;
-}
-
-function isToolTextContent(value: unknown): value is ToolTextContent {
-  return (
-    typeof value === 'object' &&
-    value !== null &&
-    (value as { type?: unknown }).type === 'text' &&
-    typeof (value as { text?: unknown }).text === 'string'
-  );
 }
 
 // Exposes ONLY fetchUrl — this is the per-agent MCP tool-scope allowlist enforced
@@ -66,14 +54,11 @@ export function createLinkedinMcpClient(_logger: Logger): FetchTool {
         throw new FetchToolError(url, 'fetch_url tool returned no text content');
       }
 
-      const parsed: unknown = JSON.parse(textContent.text);
       if (response.isError) {
-        const message = typeof (parsed as { message?: unknown }).message === 'string'
-          ? (parsed as { message: string }).message
-          : 'fetch_url tool reported an error';
-        throw new FetchToolError(url, message);
+        throw new FetchToolError(url, toolErrorMessage(textContent.text));
       }
 
+      const parsed: unknown = JSON.parse(textContent.text);
       return FetchResultSchema.parse(parsed);
     },
     async close(): Promise<void> {
@@ -116,15 +101,11 @@ export function createYoutubeTranscriptMcpClient(_logger: Logger): YoutubeTransc
         throw new FetchToolError(url, 'fetch_youtube_transcript tool returned no text content');
       }
 
-      const parsed: unknown = JSON.parse(textContent.text);
       if (response.isError) {
-        const message =
-          typeof (parsed as { message?: unknown }).message === 'string'
-            ? (parsed as { message: string }).message
-            : 'fetch_youtube_transcript tool reported an error';
-        throw new FetchToolError(url, message);
+        throw new FetchToolError(url, toolErrorMessage(textContent.text));
       }
 
+      const parsed: unknown = JSON.parse(textContent.text);
       return FetchResultSchema.parse(parsed);
     },
     async close(): Promise<void> {

@@ -5,6 +5,7 @@ import type { PublishConnector } from '@bb/workflows';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 
+import { isToolTextContent, toolErrorMessage } from './mcpToolResponse.js';
 import { tweetsForItem } from './xClient.js';
 
 export class BufferPublishError extends Error {
@@ -15,20 +16,7 @@ export class BufferPublishError extends Error {
 }
 
 const IMMEDIATE_PUBLISH_LEAD_MS = 60_000;
-
-interface ToolTextContent {
-  type: 'text';
-  text: string;
-}
-
-function isToolTextContent(value: unknown): value is ToolTextContent {
-  return (
-    typeof value === 'object' &&
-    value !== null &&
-    (value as { type?: unknown }).type === 'text' &&
-    typeof (value as { text?: unknown }).text === 'string'
-  );
-}
+const X_MAX_POST_LENGTH = 280;
 
 interface CreateBufferPostResult {
   id: string;
@@ -80,6 +68,15 @@ export function createBufferPublishConnector(
     async publish(item: ContentItem): Promise<{ platformPostId: string; platformUrl: string }> {
       await ensureConnected();
       const posts = tweetsForItem(item);
+      // Fail fast with an actionable message rather than letting Buffer's own
+      // schema validation reject it (which the SDK surfaces as a raw protocol-error
+      // string, not a normal tool error — see mcpToolResponse.ts's toolErrorMessage).
+      const tooLong = posts.find((post) => post.length > X_MAX_POST_LENGTH);
+      if (tooLong) {
+        throw new BufferPublishError(
+          `Post exceeds X's ${X_MAX_POST_LENGTH}-character limit (${tooLong.length} characters): "${tooLong.slice(0, 60)}..."`,
+        );
+      }
       // Verified live: Buffer's createPost rejects a dueAt that isn't strictly in
       // the future ("Scheduled time must be in the future"), so "now" for an
       // on-demand publish is now + a small buffer, not Date.now() itself.
@@ -95,15 +92,11 @@ export function createBufferPublishConnector(
         throw new BufferPublishError('create_buffer_post returned no text content');
       }
 
-      const parsed: unknown = JSON.parse(textContent.text);
       if (response.isError) {
-        const message =
-          typeof (parsed as { message?: unknown }).message === 'string'
-            ? (parsed as { message: string }).message
-            : 'create_buffer_post reported an error';
-        throw new BufferPublishError(message);
+        throw new BufferPublishError(toolErrorMessage(textContent.text));
       }
 
+      const parsed: unknown = JSON.parse(textContent.text);
       const result = parsed as CreateBufferPostResult;
       if (!result.externalLink) {
         throw new BufferPublishError(`Buffer post ${result.id} has no externalLink after sending`);

@@ -30,6 +30,11 @@ const LEGAL_EDGES: [ContentStatus, ContentStatus][] = [
   ['approved', 'scheduled'],
   ['approved', 'published'],
   ['scheduled', 'published'],
+  // Cancelling a pending schedule (packages/workflows' cancelSchedule) returns to
+  // 'approved' without touching the content; editing a scheduled item (addRevision's
+  // needsReReview) forces it back to 'in_review' instead — see stateMachine.ts.
+  ['scheduled', 'approved'],
+  ['scheduled', 'in_review'],
 ];
 
 describe('canTransition', () => {
@@ -51,8 +56,8 @@ describe('canTransition', () => {
   });
 
   it('has no outgoing edges from the truly terminal states', () => {
-    // scheduled is excluded here: it has exactly one legal edge, to published
-    // (spec 0.3: "SCHEDULED ... Yes, at scheduled time" it becomes published).
+    // scheduled is excluded here: it can move to published, approved (cancel), or
+    // in_review (edited while scheduled) — see the next test.
     for (const terminal of ['published', 'rejected'] as ContentStatus[]) {
       for (const to of ALL_STATUSES) {
         if (to === terminal) continue;
@@ -61,9 +66,9 @@ describe('canTransition', () => {
     }
   });
 
-  it('scheduled can only ever advance to published', () => {
+  it('scheduled can only advance to published, approved (cancel), or in_review (edited)', () => {
     for (const to of ALL_STATUSES) {
-      const expected = to === 'published';
+      const expected = to === 'published' || to === 'approved' || to === 'in_review';
       expect(canTransition('scheduled', to)).toBe(expected);
     }
   });

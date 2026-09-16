@@ -1,7 +1,9 @@
 import { z } from 'zod';
 
-// Mirrors the PUBLISH_EVENT record, spec section 15.3.
-export const PublishResultSchema = z.enum(['success', 'failed']);
+// Mirrors the PUBLISH_EVENT record, spec section 15.3. 'cancelled' (migration 0016)
+// is a human cancelling a pending schedule — never a connector attempt, so it's kept
+// distinct from 'failed'.
+export const PublishResultSchema = z.enum(['success', 'failed', 'cancelled']);
 export type PublishResult = z.infer<typeof PublishResultSchema>;
 
 export const PublishEventSchema = z.object({

@@ -80,10 +80,14 @@ export interface AddRevisionResult {
 }
 
 // The single most load-bearing function in Phase 1 (spec 15.2): every edit gets
-// its own revision row, and if the item being edited was approved (or already
-// back in changes_requested), the new text always resubmits it to in_review —
-// an edited version can never coast on a prior approval. All of this happens in
-// one transaction so the invariant can never be observed half-applied.
+// its own revision row, and if the item being edited was approved, scheduled (or
+// already back in changes_requested), the new text always resubmits it to
+// in_review — an edited version can never coast on a prior approval, and a
+// pending schedule can never fire the pre-edit text (apps/worker's
+// listDueSchedules only picks up content_items.status = 'scheduled', so flipping
+// out of that status here is what actually stops the stale version from
+// publishing). All of this happens in one transaction so the invariant can never
+// be observed half-applied.
 export async function addRevision(
   pool: Pool,
   contentId: string,
@@ -96,11 +100,12 @@ export async function addRevision(
   return withTransaction(pool, async (client) => {
     const current = await requireContentItem(client, contentId);
     const newVersion = current.currentVersion + 1;
-    const needsReReview = current.status === 'approved' || current.status === 'changes_requested';
+    const hadApproval = current.status === 'approved' || current.status === 'scheduled';
+    const needsReReview = hadApproval || current.status === 'changes_requested';
 
     const revision = await insertRevision(client, contentId, newVersion, current.currentText, {
       ...input,
-      approvalInvalidated: current.status === 'approved',
+      approvalInvalidated: hadApproval,
     });
 
     // Clear the approval / flip status to in_review BEFORE bumping current_version
@@ -110,7 +115,7 @@ export async function addRevision(
     // bumping current_version first would transiently violate it.
     if (needsReReview) {
       assertTransition(current.status, 'in_review');
-      if (current.status === 'approved') {
+      if (hadApproval) {
         await setContentItemApproval(client, contentId, null);
       } else {
         await setContentItemStatus(client, contentId, 'in_review');
@@ -123,7 +128,7 @@ export async function addRevision(
       ...(input.package !== undefined ? { package: input.package } : {}),
     });
 
-    if (current.status === 'approved') {
+    if (hadApproval) {
       const openApproval = await getOpenApprovalForContent(client, contentId);
       if (openApproval) {
         await closeApproval(client, openApproval.id, revision.id);

@@ -704,7 +704,13 @@ select:focus {
   flex: 1;
   background: transparent;
   border: none;
-  padding: 6px 0;
+  /* Matches the 38px send button's height at a single line (9 + 20.3 line-height + 9
+     ≈ 38.3px) so flex-end's bottom-alignment (needed so the button stays pinned to
+     the last line as the textarea grows multi-line, see .chat-composer's own
+     comment) has no slack left to sit in — otherwise the shorter single-line
+     textarea's placeholder floats a few px above true center while the button next
+     to it sits dead-center, reading as visibly misaligned. */
+  padding: 9px 0;
   font-size: 14.5px;
   font-family: inherit;
   line-height: 1.4;
@@ -835,6 +841,49 @@ select:focus {
   flex-wrap: wrap;
 }
 
+.thread-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.thread-post {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 8px;
+}
+
+.thread-post-textarea {
+  min-height: 100px;
+  border: none;
+  padding: 4px;
+}
+
+.thread-post-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 4px;
+}
+
+.char-count {
+  font-size: 11.5px;
+  color: var(--text-faint);
+}
+
+.char-count.over {
+  color: var(--red);
+  font-weight: 600;
+}
+
+.link-button {
+  align-self: flex-start;
+  background: transparent;
+  border: 1px dashed var(--border);
+  font-size: 12.5px;
+  padding: 6px 12px;
+}
+
 .meta-row {
   display: flex;
   gap: 10px;
@@ -954,6 +1003,22 @@ select:focus {
   border-left-color: var(--red);
 }
 
+.activity-log-item.cancelled {
+  border-left-color: var(--amber);
+}
+
+.activity-log-scheduled-for {
+  color: var(--text);
+  font-weight: 500;
+}
+
+.schedule-status-note {
+  display: flex;
+  align-items: center;
+  color: var(--text-dim);
+  font-size: 12.5px;
+}
+
 .section-divider {
   border-top: 1px solid var(--border);
   margin: 18px 0;
@@ -967,13 +1032,40 @@ select:focus {
 /* ---------- scheduled tracker (topbar, right side) ---------- */
 
 .scheduled-tracker {
-  flex-shrink: 0;
+  flex-shrink: 1;
+  min-width: 0;
   display: flex;
   align-items: center;
   background: var(--panel-2);
   border: 1px solid var(--border);
   border-radius: var(--radius-pill);
   padding: 3px;
+}
+
+.scheduled-tracker-breakdown {
+  min-width: 0;
+  max-width: 260px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  padding: 0 12px 0 4px;
+  font-size: 11.5px;
+  color: var(--text-dim);
+}
+
+.scheduled-tracker-breakdown b {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.scheduled-tracker-dot {
+  color: var(--text-faint);
+}
+
+@media (max-width: 640px) {
+  .scheduled-tracker-breakdown {
+    max-width: 120px;
+  }
 }
 
 /* Ring and count are both absolutely stacked to fill this exact box, so the

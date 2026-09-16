@@ -1,10 +1,13 @@
-import type { ContentItem } from '@bb/shared-types';
+import type { ContentItem, PublishEvent } from '@bb/shared-types';
 import { useEffect, useState } from 'react';
 
 import {
   ApiError,
   approveContent,
+  cancelSchedule,
   getContent,
+  listPublishEvents,
+  modifySchedule,
   publishContent,
   rejectContent,
   requestChanges,
@@ -19,29 +22,51 @@ interface DraftCanvasProps {
   onChanged: () => void;
 }
 
+// Mirrors X_MAX_POST_LENGTH in packages/mcp-client/src/xClient.ts — duplicated here
+// since the dashboard only depends on @bb/shared-types, not the backend-only
+// mcp-client package that owns the real publish-time check.
+const X_MAX_POST_LENGTH = 280;
+
+// Reads the saved thread shape (spec 6.1 / tweetsForItem in xClient.ts) back out of
+// an X content item so the editor can start from whatever was last saved, whether
+// that's a single post or an existing thread.
+function postsFromXItem(item: ContentItem): string[] {
+  const pkg = item.package as { mode?: string; threadPosts?: unknown } | null;
+  if (pkg?.mode === 'thread' && Array.isArray(pkg.threadPosts) && pkg.threadPosts.length > 0) {
+    const posts = pkg.threadPosts.filter((post): post is string => typeof post === 'string');
+    if (posts.length > 0) return posts;
+  }
+  return [item.currentText];
+}
+
 export function DraftCanvas({ contentId, onChanged }: DraftCanvasProps) {
   const [item, setItem] = useState<ContentItem | null>(null);
   const [text, setText] = useState('');
+  // X-only: one entry per tweet in the thread (length 1 == single post). Lets a post
+  // that's too long for one tweet be split into a thread right in the dashboard
+  // instead of only discovering the 280-char limit as a publish-time error.
+  const [posts, setPosts] = useState<string[]>(['']);
   const [scheduledFor, setScheduledFor] = useState('');
+  const [modifyScheduledFor, setModifyScheduledFor] = useState('');
+  const [events, setEvents] = useState<PublishEvent[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [operatorName, setOperatorName] = useOperatorName();
-  // A failed publish/schedule attempt leaves the content item's row (and therefore
-  // updatedAt) untouched — only the publish_events table gets a new row — so the
-  // activity log needs its own bump on every attempt rather than keying off item state.
-  const [activityRefreshToken, setActivityRefreshToken] = useState(0);
 
   useEffect(() => {
     if (!contentId) {
       setItem(null);
+      setEvents([]);
       return;
     }
     let cancelled = false;
-    getContent(contentId)
-      .then((res) => {
+    Promise.all([getContent(contentId), listPublishEvents(contentId)])
+      .then(([contentRes, eventsRes]) => {
         if (cancelled) return;
-        setItem(res.item);
-        setText(res.item.currentText);
+        setItem(contentRes.item);
+        setText(contentRes.item.currentText);
+        setPosts(contentRes.item.platform === 'x' ? postsFromXItem(contentRes.item) : ['']);
+        setEvents(eventsRes.events);
         setError(null);
       })
       .catch((err: unknown) => {
@@ -54,9 +79,11 @@ export function DraftCanvas({ contentId, onChanged }: DraftCanvasProps) {
 
   async function reload() {
     if (!contentId) return;
-    const res = await getContent(contentId);
-    setItem(res.item);
-    setText(res.item.currentText);
+    const [contentRes, eventsRes] = await Promise.all([getContent(contentId), listPublishEvents(contentId)]);
+    setItem(contentRes.item);
+    setText(contentRes.item.currentText);
+    setPosts(contentRes.item.platform === 'x' ? postsFromXItem(contentRes.item) : ['']);
+    setEvents(eventsRes.events);
   }
 
   async function runAction(action: () => Promise<unknown>) {
@@ -65,7 +92,6 @@ export function DraftCanvas({ contentId, onChanged }: DraftCanvasProps) {
     try {
       await action();
       await reload();
-      setActivityRefreshToken((t) => t + 1);
       onChanged();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : err instanceof Error ? err.message : String(err));
@@ -78,8 +104,19 @@ export function DraftCanvas({ contentId, onChanged }: DraftCanvasProps) {
     return null;
   }
 
-  const dirty = text !== item.currentText;
+  const isX = item.platform === 'x';
+  const originalPosts = isX ? postsFromXItem(item) : null;
+  const trimmedPosts = posts.map((post) => post.trim()).filter((post) => post.length > 0);
+  const xDirty = originalPosts ? JSON.stringify(posts) !== JSON.stringify(originalPosts) : false;
+  const dirty = isX ? xDirty : text !== item.currentText;
   const htmlFile = item.platform === 'blog' ? item.currentText : null;
+  // The item itself carries no scheduled-time column (spec 15's ledger is the only
+  // source of truth for that) — the active schedule is whichever schedule attempt
+  // most recently succeeded, per the same "latest success wins" rule apps/worker's
+  // listDueSchedules applies (a reschedule supersedes the original by inserting a
+  // newer row, never by mutating it).
+  const activeSchedule =
+    item.status === 'scheduled' ? (events.find((e) => e.result === 'success' && e.scheduledFor)?.scheduledFor ?? null) : null;
 
   return (
     <div className="draft-area">
@@ -117,14 +154,55 @@ export function DraftCanvas({ contentId, onChanged }: DraftCanvasProps) {
             </button>
           </div>
         </>
+      ) : isX ? (
+        <div className="thread-editor">
+          {posts.map((post, i) => (
+            <div className="thread-post" key={i}>
+              <textarea
+                className="draft-textarea thread-post-textarea"
+                value={post}
+                placeholder={i === 0 ? 'First post (must work standalone)' : `Post ${i + 1}`}
+                onChange={(e) => {
+                  const next = [...posts];
+                  next[i] = e.target.value;
+                  setPosts(next);
+                }}
+              />
+              <div className="thread-post-footer">
+                <span className={`char-count ${post.length > X_MAX_POST_LENGTH ? 'over' : ''}`}>
+                  {post.length}/{X_MAX_POST_LENGTH}
+                </span>
+                {posts.length > 1 && (
+                  <button className="link-button danger" onClick={() => setPosts(posts.filter((_, j) => j !== i))}>
+                    Remove
+                  </button>
+                )}
+              </div>
+            </div>
+          ))}
+          <button className="link-button" onClick={() => setPosts([...posts, ''])}>
+            + Add post to thread
+          </button>
+        </div>
       ) : (
         <textarea className="draft-textarea" value={text} onChange={(e) => setText(e.target.value)} />
       )}
 
       <div className="action-row">
         <button
-          disabled={busy || !dirty || !operatorName}
-          onClick={() => void runAction(() => saveManualRevision(item.id, text, operatorName))}
+          disabled={
+            busy ||
+            !dirty ||
+            !operatorName ||
+            (isX ? trimmedPosts.length === 0 || posts.some((post) => post.length > X_MAX_POST_LENGTH) : false)
+          }
+          onClick={() =>
+            void runAction(() =>
+              isX
+                ? saveManualRevision(item.id, trimmedPosts[0] ?? '', operatorName, trimmedPosts.length > 1 ? trimmedPosts : null)
+                : saveManualRevision(item.id, text, operatorName),
+            )
+          }
         >
           Save edit
         </button>
@@ -168,8 +246,32 @@ export function DraftCanvas({ contentId, onChanged }: DraftCanvasProps) {
         </button>
       </div>
 
+      {item.status === 'scheduled' && (
+        <div className="action-row">
+          <span className="schedule-status-note">
+            {activeSchedule ? `Scheduled for ${new Date(activeSchedule).toLocaleString()}` : 'Scheduled'}
+          </span>
+          <input
+            type="datetime-local"
+            value={modifyScheduledFor}
+            onChange={(e) => setModifyScheduledFor(e.target.value)}
+          />
+          <button
+            disabled={busy || !modifyScheduledFor}
+            onClick={() =>
+              void runAction(() => modifySchedule(item.id, new Date(modifyScheduledFor).toISOString()))
+            }
+          >
+            Modify schedule
+          </button>
+          <button className="danger" disabled={busy} onClick={() => void runAction(() => cancelSchedule(item.id))}>
+            Cancel schedule
+          </button>
+        </div>
+      )}
+
       <div className="section-divider" />
-      <ActivityLog contentId={item.id} refreshToken={activityRefreshToken} />
+      <ActivityLog events={events} />
     </div>
   );
 }

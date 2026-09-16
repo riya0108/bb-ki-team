@@ -5,6 +5,8 @@ import type { PublishConnector, ScheduleConnector } from '@bb/workflows';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 
+import { isToolTextContent, toolErrorMessage } from './mcpToolResponse.js';
+
 export class XPublishError extends Error {
   constructor(message: string) {
     super(message);
@@ -12,19 +14,7 @@ export class XPublishError extends Error {
   }
 }
 
-interface ToolTextContent {
-  type: 'text';
-  text: string;
-}
-
-function isToolTextContent(value: unknown): value is ToolTextContent {
-  return (
-    typeof value === 'object' &&
-    value !== null &&
-    (value as { type?: unknown }).type === 'text' &&
-    typeof (value as { text?: unknown }).text === 'string'
-  );
-}
+const X_MAX_POST_LENGTH = 280;
 
 // A thread (spec 6.1) is posted as its threadPosts array, in order; every other X
 // mode (single/quote) is one post carrying item.currentText (packaging.ts: finalCopy
@@ -77,6 +67,12 @@ export function createXPublishConnector(
     async publish(item: ContentItem): Promise<{ platformPostId: string; platformUrl: string }> {
       await ensureConnected();
       const posts = tweetsForItem(item);
+      const tooLong = posts.find((post) => post.length > X_MAX_POST_LENGTH);
+      if (tooLong) {
+        throw new XPublishError(
+          `Post exceeds X's ${X_MAX_POST_LENGTH}-character limit (${tooLong.length} characters): "${tooLong.slice(0, 60)}..."`,
+        );
+      }
       const response = await client.callTool({ name: 'post_tweet_thread', arguments: { posts } });
 
       const content = Array.isArray(response.content) ? response.content : [];
@@ -85,15 +81,11 @@ export function createXPublishConnector(
         throw new XPublishError('post_tweet_thread returned no text content');
       }
 
-      const parsed: unknown = JSON.parse(textContent.text);
       if (response.isError) {
-        const message =
-          typeof (parsed as { message?: unknown }).message === 'string'
-            ? (parsed as { message: string }).message
-            : 'post_tweet_thread reported an error';
-        throw new XPublishError(message);
+        throw new XPublishError(toolErrorMessage(textContent.text));
       }
 
+      const parsed: unknown = JSON.parse(textContent.text);
       const result = parsed as PostTweetThreadResult;
       const first = result.posts[0];
       if (!first) {

@@ -7,7 +7,7 @@ import { createContentItem, recordQaResult, submitForReview } from '@bb/workflow
 import { z } from 'zod';
 
 import { draftXPost } from './draftPost.js';
-import { buildXPackage } from './packaging.js';
+import { buildXPackage, enforceXLengthLimit } from './packaging.js';
 
 const CREATED_BY_AGENT = 'agent-02-x';
 
@@ -68,17 +68,19 @@ export async function draftXTopicPost(input: DraftXTopicPostInput): Promise<XPac
   const dna = await loadCurrentDna(input.pool);
   const forceMode = input.mode === 'thread' ? 'thread' : 'single';
 
-  const draft = await draftXPost({
-    topic: input.topic,
-    angle: input.angle,
-    coreClaim: null,
-    sourceTexts: [],
-    contentDna: dna,
-    llm: input.llm,
-    runId: input.runId,
-    stepId: `draft-x-${input.mode}`,
-    forceMode,
-  });
+  const draft = enforceXLengthLimit(
+    await draftXPost({
+      topic: input.topic,
+      angle: input.angle,
+      coreClaim: null,
+      sourceTexts: [],
+      contentDna: dna,
+      llm: input.llm,
+      runId: input.runId,
+      stepId: `draft-x-${input.mode}`,
+      forceMode,
+    }),
+  );
 
   const item = await createContentItem(input.pool, {
     platform: 'x',

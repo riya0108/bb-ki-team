@@ -21,13 +21,18 @@ const TRANSITIONS: Record<ContentStatus, ContentStatus[]> = {
   researched: ['draft'],
   draft: ['in_review'],
   in_review: ['changes_requested', 'approved', 'rejected'],
-  // Any edit to a changes_requested or approved item resubmits it for review
-  // (spec 15.2's "editing an approved post invalidates approval and returns it
-  // to review", generalized to changes_requested for the same reason: edited
-  // text always needs fresh eyes before it can be approved).
+  // Any edit to a changes_requested, approved, or scheduled item resubmits it for
+  // review (spec 15.2's "editing an approved post invalidates approval and returns
+  // it to review", generalized to changes_requested/scheduled for the same reason:
+  // edited text always needs fresh eyes before it can be approved, and a pending
+  // schedule can never be allowed to fire the pre-edit text — see addRevision's
+  // needsReReview in ledger.ts).
   changes_requested: ['in_review', 'rejected'],
   approved: ['in_review', 'rejected', 'scheduled', 'published'],
-  scheduled: ['published'],
+  // 'approved' is a human cancelling a pending schedule (packages/workflows/src/
+  // publishing.ts's cancelSchedule) without touching the content itself — distinct
+  // from 'in_review', which is what an edit to a scheduled item forces instead.
+  scheduled: ['published', 'approved', 'in_review'],
   published: [],
   rejected: [],
 };

@@ -6,6 +6,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 
 import { blogPostFragmentFromHtml, slugify } from './blogPost.js';
+import { isToolTextContent, toolErrorMessage } from './mcpToolResponse.js';
 
 export class BlogGitPublishError extends Error {
   constructor(message: string) {
@@ -17,20 +18,6 @@ export class BlogGitPublishError extends Error {
 const DEFAULT_AUTHOR_NAME = 'Bull or Bear Blogs';
 const DEFAULT_AUTHOR_BIO =
   'The editorial desk at Bull or Bear Blogs, covering markets, money, and the news that moves them.';
-
-interface ToolTextContent {
-  type: 'text';
-  text: string;
-}
-
-function isToolTextContent(value: unknown): value is ToolTextContent {
-  return (
-    typeof value === 'object' &&
-    value !== null &&
-    (value as { type?: unknown }).type === 'text' &&
-    typeof (value as { text?: unknown }).text === 'string'
-  );
-}
 
 interface PublishPostResult {
   commitSha: string;
@@ -104,15 +91,11 @@ export function createBlogGitPublishConnector(
         throw new BlogGitPublishError('publish_post returned no text content');
       }
 
-      const parsed: unknown = JSON.parse(textContent.text);
       if (response.isError) {
-        const message =
-          typeof (parsed as { message?: unknown }).message === 'string'
-            ? (parsed as { message: string }).message
-            : 'publish_post reported an error';
-        throw new BlogGitPublishError(message);
+        throw new BlogGitPublishError(toolErrorMessage(textContent.text));
       }
 
+      const parsed: unknown = JSON.parse(textContent.text);
       const result = parsed as PublishPostResult;
       return { platformPostId: result.commitSha, platformUrl: result.url };
     },

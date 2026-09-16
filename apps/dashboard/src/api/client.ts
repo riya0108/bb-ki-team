@@ -115,12 +115,32 @@ export function scheduleContent(id: string, scheduledFor: string): Promise<{ ite
   return post(`/content/${id}/schedule`, { scheduledFor });
 }
 
+export function modifySchedule(id: string, scheduledFor: string): Promise<{ item: ContentItem; event: PublishEvent }> {
+  return post(`/content/${id}/schedule/modify`, { scheduledFor });
+}
+
+export function cancelSchedule(id: string): Promise<{ item: ContentItem; event: PublishEvent }> {
+  return post(`/content/${id}/schedule/cancel`);
+}
+
 export function listRevisions(id: string): Promise<{ revisions: Revision[] }> {
   return request(`/content/${id}/revisions`);
 }
 
-export function saveManualRevision(id: string, newText: string, changedById: string): Promise<{ item: ContentItem; revision: Revision }> {
-  return post(`/content/${id}/revisions`, { newText, changedById });
+// `threadPosts` is X-only (spec 6.1): pass the full ordered array to save/keep a
+// thread, an array of length 1 (or omit) to save as a single post, or leave
+// undefined entirely for non-X platforms whose package shape this doesn't apply to.
+export function saveManualRevision(
+  id: string,
+  newText: string,
+  changedById: string,
+  threadPosts?: string[] | null,
+): Promise<{ item: ContentItem; revision: Revision }> {
+  return post(`/content/${id}/revisions`, {
+    newText,
+    changedById,
+    ...(threadPosts !== undefined ? { threadPosts } : {}),
+  });
 }
 
 export function listPublishEvents(id: string): Promise<{ events: PublishEvent[] }> {

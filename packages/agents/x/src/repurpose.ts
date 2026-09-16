@@ -11,7 +11,7 @@ import { z } from 'zod';
 
 import { draftXPost } from './draftPost.js';
 import { RepurposeSourceInaccessibleError } from './errors.js';
-import { buildXPackage } from './packaging.js';
+import { buildXPackage, enforceXLengthLimit } from './packaging.js';
 import { selectDistinctTopics } from './sourceDiscovery.js';
 import type { CandidateTopic } from './sourceDiscovery.js';
 
@@ -115,16 +115,18 @@ export async function runRepurpose(input: RunRepurposeInput): Promise<XPackage[]
 
   const packages: XPackage[] = [];
   for (const candidate of selected) {
-    const draft = await draftXPost({
-      topic: candidate.topic,
-      angle: candidate.angle,
-      coreClaim: candidate.coreClaim,
-      sourceTexts: [sourceText],
-      contentDna: dna,
-      llm,
-      runId,
-      stepId: `draft-repurpose-${candidate.topic}`,
-    });
+    const draft = enforceXLengthLimit(
+      await draftXPost({
+        topic: candidate.topic,
+        angle: candidate.angle,
+        coreClaim: candidate.coreClaim,
+        sourceTexts: [sourceText],
+        contentDna: dna,
+        llm,
+        runId,
+        stepId: `draft-repurpose-${candidate.topic}`,
+      }),
+    );
 
     const item = await createContentItem(pool, {
       platform: 'x',

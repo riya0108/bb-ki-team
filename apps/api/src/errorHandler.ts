@@ -23,6 +23,7 @@ const ERROR_STATUS: Record<string, number> = {
   IllegalTransitionError: 409,
   StaleApprovalVersionError: 409,
   ContentNotApprovedError: 409,
+  ContentNotScheduledError: 409,
   AllProvidersFailedError: 502,
   LlmOutputValidationError: 502,
 };

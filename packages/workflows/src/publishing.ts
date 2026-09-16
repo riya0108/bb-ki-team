@@ -2,9 +2,12 @@ import {
   getContentItemById,
   insertPublishEvent,
   listDueSchedules,
+  listPublishEventsForContent,
+  setContentItemApproval,
   setContentItemStatus,
+  withTransaction,
 } from '@bb/db';
-import type { Pool } from '@bb/db';
+import type { Pool, Queryable } from '@bb/db';
 import type { ContentItem, PublishEvent } from '@bb/shared-types';
 
 import { ContentItemNotFoundError } from './ledger.js';
@@ -58,7 +61,7 @@ interface ApprovedContentItem extends ContentItem {
   approvedAt: string;
 }
 
-async function requireApprovedItem(db: Pool, contentId: string): Promise<ApprovedContentItem> {
+async function requireApprovedItem(db: Queryable, contentId: string): Promise<ApprovedContentItem> {
   const item = await getContentItemById(db, contentId);
   if (!item) throw new ContentItemNotFoundError(contentId);
   if (item.status !== 'approved' || !item.approvedVersion || !item.approvedBy || !item.approvedAt) {
@@ -70,7 +73,7 @@ async function requireApprovedItem(db: Pool, contentId: string): Promise<Approve
 // scheduled -> published (stateMachine.ts) reuses the same approvedVersion/approvedBy
 // /approvedAt trail scheduling left intact — a scheduled item never loses its
 // approval, it just waits for apps/worker to actually fire it.
-async function requireScheduledItem(db: Pool, contentId: string): Promise<ApprovedContentItem> {
+async function requireScheduledItem(db: Queryable, contentId: string): Promise<ApprovedContentItem> {
   const item = await getContentItemById(db, contentId);
   if (!item) throw new ContentItemNotFoundError(contentId);
   if (
@@ -179,6 +182,116 @@ export async function publishDueSchedules(
     outcomes.push(await firePendingSchedule(pool, contentId, connectors));
   }
   return outcomes;
+}
+
+// The dashboard's "modify schedule" action. requireScheduledItem (not
+// requireApprovedItem) — unlike requestSchedule this never touches item.status,
+// it stays 'scheduled' throughout — so it's callable any number of times while a
+// schedule is still pending. Both registered ScheduleConnectors (x, blog) are
+// no-ops that only let requestSchedule record a time in the first place (see
+// xClient.ts/blogGitClient.ts), so calling .schedule() again here is side-effect-free;
+// what actually moves the target time is the new publish_event row below —
+// listDueSchedules (packages/db) picks the most recent successful schedule event
+// per content item, so this one supersedes whatever was recorded before it.
+export async function rescheduleContent(
+  pool: Pool,
+  contentId: string,
+  scheduledFor: Date,
+  connectors: Record<string, ScheduleConnector>,
+): Promise<PublishOutcome> {
+  const item = await requireScheduledItem(pool, contentId);
+  const connector = connectors[item.platform];
+
+  if (!connector) {
+    const event = await insertPublishEvent(pool, {
+      contentId: item.id,
+      platform: item.platform,
+      version: item.approvedVersion,
+      approvedBy: item.approvedBy,
+      approvedAt: item.approvedAt,
+      scheduledFor: scheduledFor.toISOString(),
+      connector: 'none',
+      result: 'failed',
+      error: `No schedule connector is configured for platform "${item.platform}" yet.`,
+    });
+    return { item, event };
+  }
+
+  try {
+    await connector.schedule(item, scheduledFor);
+    const event = await insertPublishEvent(pool, {
+      contentId: item.id,
+      platform: item.platform,
+      version: item.approvedVersion,
+      approvedBy: item.approvedBy,
+      approvedAt: item.approvedAt,
+      scheduledFor: scheduledFor.toISOString(),
+      connector: connector.name,
+      result: 'success',
+    });
+    return { item, event };
+  } catch (error) {
+    const event = await insertPublishEvent(pool, {
+      contentId: item.id,
+      platform: item.platform,
+      version: item.approvedVersion,
+      approvedBy: item.approvedBy,
+      approvedAt: item.approvedAt,
+      scheduledFor: scheduledFor.toISOString(),
+      connector: connector.name,
+      result: 'failed',
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return { item, event };
+  }
+}
+
+// The dashboard's "cancel schedule" action: normally returns the item to 'approved'
+// (its approval, unlike an edit's, is still valid — the content itself never
+// changed, only the decision to publish it automatically) so apps/worker's
+// listDueSchedules (which only fires content_items.status = 'scheduled') stops
+// picking it up. A human can re-schedule or publish on demand from 'approved' same
+// as any other approved item.
+//
+// Guards against a real inconsistent state a pre-fix version of addRevision could
+// leave behind: an item edited while scheduled that kept status='scheduled' with
+// approvedVersion still pinned to the pre-edit version instead of being cleared
+// (fixed in ledger.ts, but rows created before that fix can still carry it). Setting
+// status to 'approved' in that state would violate the approved_matches_current
+// CHECK constraint (packages/db migration 0005) and, worse, would be a lie — the
+// CURRENT version was never actually approved. Route those to 'in_review' instead,
+// clearing the stale approval — exactly what the fixed addRevision would have done
+// at edit time.
+export async function cancelSchedule(pool: Pool, contentId: string): Promise<PublishOutcome> {
+  // One transaction: the status change and its audit event must land together —
+  // a partial write here (e.g. status flips but the event insert fails) would
+  // silently strand the item in a state with no record of why, exactly the kind of
+  // inconsistency this function's own defensive branch above exists to clean up.
+  return withTransaction(pool, async (client) => {
+    const item = await requireScheduledItem(client, contentId);
+    const approvalStillValid = item.approvedVersion === item.currentVersion;
+    const targetStatus = approvalStillValid ? 'approved' : 'in_review';
+    assertTransition(item.status, targetStatus);
+    const cancelledItem = approvalStillValid
+      ? await setContentItemStatus(client, item.id, 'approved')
+      : await setContentItemApproval(client, item.id, null);
+
+    const priorEvents = await listPublishEventsForContent(client, contentId);
+    const activeSchedule = priorEvents.find((e) => e.result === 'success' && e.scheduledFor !== null);
+
+    const event = await insertPublishEvent(client, {
+      contentId: item.id,
+      platform: item.platform,
+      version: item.approvedVersion,
+      approvedBy: item.approvedBy,
+      approvedAt: item.approvedAt,
+      scheduledFor: activeSchedule?.scheduledFor ?? null,
+      connector: 'dashboard',
+      result: 'cancelled',
+    });
+
+    return { item: cancelledItem, event };
+  });
 }
 
 export async function requestSchedule(

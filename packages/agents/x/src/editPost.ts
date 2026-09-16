@@ -7,7 +7,7 @@ import type { ContentDnaRecord, LearningEvent, XPackage } from '@bb/shared-types
 import { ContentItemNotFoundError, addRevision, getContentItem, recordQaResult } from '@bb/workflows';
 
 import { DraftXOutputSchema, X_NATIVE_PRINCIPLES } from './draftPost.js';
-import { buildXPackage } from './packaging.js';
+import { buildXPackage, enforceXLengthLimit } from './packaging.js';
 
 const CREATED_BY_AGENT = 'agent-02-x';
 
@@ -60,14 +60,16 @@ export async function reviseXPost(input: ReviseXPostInput): Promise<ReviseXPostR
   const dna = await loadCurrentDna(input.pool);
   const wasThread = (item.package as { mode?: string } | null)?.mode === 'thread';
 
-  const revised = await input.llm.completeStructured(
-    {
-      system: buildReviseSystemPrompt(dna, wasThread),
-      messages: [{ role: 'user', content: buildReviseUserPrompt(item.currentText, input.instruction) }],
-      runId: input.runId,
-      stepId: `revise-${item.id}`,
-    },
-    DraftXOutputSchema,
+  const revised = enforceXLengthLimit(
+    await input.llm.completeStructured(
+      {
+        system: buildReviseSystemPrompt(dna, wasThread),
+        messages: [{ role: 'user', content: buildReviseUserPrompt(item.currentText, input.instruction) }],
+        runId: input.runId,
+        stepId: `revise-${item.id}`,
+      },
+      DraftXOutputSchema,
+    ),
   );
 
   const { item: revisedItem } = await addRevision(input.pool, input.contentId, {
