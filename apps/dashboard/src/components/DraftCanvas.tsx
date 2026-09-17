@@ -196,6 +196,15 @@ export function DraftCanvas({ contentId, onChanged }: DraftCanvasProps) {
             !operatorName ||
             (isX ? trimmedPosts.length === 0 || posts.some((post) => post.length > X_MAX_POST_LENGTH) : false)
           }
+          title={
+            !operatorName
+              ? 'Enter your name above first'
+              : !dirty
+                ? 'No changes to save'
+                : isX && posts.some((post) => post.length > X_MAX_POST_LENGTH)
+                  ? 'A post in the thread is over the character limit'
+                  : undefined
+          }
           onClick={() =>
             void runAction(() =>
               isX
@@ -209,19 +218,30 @@ export function DraftCanvas({ contentId, onChanged }: DraftCanvasProps) {
         <button
           className="primary"
           disabled={busy || dirty || item.status !== 'in_review' || !operatorName}
+          title={
+            !operatorName
+              ? 'Enter your name above first'
+              : dirty
+                ? 'Save or discard your edit first'
+                : item.status !== 'in_review'
+                  ? `Cannot approve from status "${item.status.replace('_', ' ')}"`
+                  : undefined
+          }
           onClick={() => void runAction(() => approveContent(item.id, item.currentVersion, operatorName))}
         >
           Approve
         </button>
         <button
-          disabled={busy || item.status === 'changes_requested'}
+          disabled={busy || dirty || item.status === 'changes_requested'}
+          title={dirty ? 'Save or discard your edit first' : undefined}
           onClick={() => void runAction(() => requestChanges(item.id, 'Changes requested from dashboard.'))}
         >
           Request changes
         </button>
         <button
           className="danger"
-          disabled={busy || item.status === 'rejected'}
+          disabled={busy || dirty || item.status === 'rejected'}
+          title={dirty ? 'Save or discard your edit first' : undefined}
           onClick={() => void runAction(() => rejectContent(item.id, 'Rejected from dashboard.'))}
         >
           Reject
