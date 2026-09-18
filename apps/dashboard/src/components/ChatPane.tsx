@@ -143,6 +143,21 @@ export function ChatPane({ platform, openContentId, onActionResult, onHeroChange
     return (
       <div className="chat-area chat-hero">
         <div className="teri-hero">
+          <video
+            className="teri-hero-animation"
+            autoPlay
+            loop
+            muted
+            playsInline
+            disablePictureInPicture
+            aria-hidden="true"
+          >
+            {/* HEVC+alpha first: Safari picks it (it can't decode webm/vp9), everyone
+                else falls through to the vp9 source below. Keeps real transparency
+                on both engines instead of a black box on whichever goes second. */}
+            <source src="/teri-hero-alpha.mov" type="video/mp4; codecs=hvc1" />
+            <source src="/teri-hero.webm" type="video/webm; codecs=vp9" />
+          </video>
           <h1 className="teri-hero-heading">I am Teri, BB ki Team Lead</h1>
           <div className="teri-hero-composer">{renderComposer('hero')}</div>
         </div>

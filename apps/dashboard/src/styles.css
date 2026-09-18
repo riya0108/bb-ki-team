@@ -474,6 +474,15 @@ select:focus {
   padding: 0 48px;
 }
 
+.teri-hero-animation {
+  width: min(240px, 45vw);
+  aspect-ratio: 9 / 16;
+  height: auto;
+  max-height: 40vh;
+  object-fit: contain;
+  pointer-events: none;
+}
+
 .teri-hero-heading {
   font-family: var(--font-display);
   font-weight: 500;
@@ -1207,6 +1216,11 @@ select:focus {
   .teri-hero {
     padding: 0 20px;
     gap: 20px;
+  }
+
+  .teri-hero-animation {
+    width: min(180px, 55vw);
+    max-height: 32vh;
   }
 
   .teri-hero-heading {
