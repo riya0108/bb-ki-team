@@ -81,10 +81,20 @@ export function createBufferPublishConnector(
       // the future ("Scheduled time must be in the future"), so "now" for an
       // on-demand publish is now + a small buffer, not Date.now() itself.
       const dueAt = new Date(Date.now() + IMMEDIATE_PUBLISH_LEAD_MS).toISOString();
-      const response = await client.callTool({
-        name: 'create_buffer_post',
-        arguments: { posts, dueAt },
-      });
+      // create_buffer_post blocks server-side on waitForSent (packages/mcp-servers/buffer/
+      // src/postPolling.ts), which polls Buffer for up to 6 minutes before giving up. The
+      // MCP SDK's own request timeout defaults to 60s, far shorter than that — left
+      // unset, the client throws "Request timed out" and this gets logged as a failed
+      // publish even though Buffer goes on to actually send the post (verified live:
+      // the tweet went out, but the PUBLISH_EVENT ledger recorded "failed" and the
+      // content item never left "scheduled", which would make the next worker tick
+      // retry and create a duplicate post). Match the server's own budget plus margin.
+      const CREATE_POST_TIMEOUT_MS = 400_000;
+      const response = await client.callTool(
+        { name: 'create_buffer_post', arguments: { posts, dueAt } },
+        undefined,
+        { timeout: CREATE_POST_TIMEOUT_MS },
+      );
 
       const content = Array.isArray(response.content) ? response.content : [];
       const textContent = content.find(isToolTextContent);

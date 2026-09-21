@@ -171,6 +171,36 @@ export async function firePendingSchedule(
 // What apps/worker calls on each tick: find every scheduled item whose target time
 // has arrived and actually publish it, one at a time, logging every attempt via
 // firePendingSchedule/attemptPublish regardless of outcome (spec 15.3/15.4).
+//
+// A connector's publish() can legitimately take minutes to return (Buffer's
+// create_buffer_post blocks on its own send confirmation — see bufferClient.ts) but a
+// tick can be triggered on a fixed cadence shorter than that (apps/worker's setInterval
+// doesn't wait for the prior tick; the pg_cron-driven /internal/scheduler/tick endpoint
+// fires every minute regardless of how long the last invocation is taking). Without a
+// guard, a still-in-flight attempt for a content item would still show status
+// "scheduled" to the next tick, which would call connector.publish() on it again —
+// same content, same dueAt logic, but Buffer has no idempotency key here, so that's a
+// second real tweet. pg_try_advisory_lock keyed by content_id makes "already being
+// attempted" visible across ticks/processes sharing this database, however they're
+// triggered; a tick that can't get the lock skips the item rather than double-publishing.
+async function withContentLock<T>(pool: Pool, contentId: string, fn: () => Promise<T>): Promise<T | undefined> {
+  const lockClient = await pool.connect();
+  try {
+    const { rows } = await lockClient.query<{ locked: boolean }>(
+      'SELECT pg_try_advisory_lock(hashtext($1)) AS locked',
+      [contentId],
+    );
+    if (!rows[0]?.locked) return undefined;
+    try {
+      return await fn();
+    } finally {
+      await lockClient.query('SELECT pg_advisory_unlock(hashtext($1))', [contentId]);
+    }
+  } finally {
+    lockClient.release();
+  }
+}
+
 export async function publishDueSchedules(
   pool: Pool,
   connectors: Record<string, PublishConnector>,
@@ -179,7 +209,8 @@ export async function publishDueSchedules(
   const due = await listDueSchedules(pool, asOf);
   const outcomes: PublishOutcome[] = [];
   for (const { contentId } of due) {
-    outcomes.push(await firePendingSchedule(pool, contentId, connectors));
+    const outcome = await withContentLock(pool, contentId, () => firePendingSchedule(pool, contentId, connectors));
+    if (outcome) outcomes.push(outcome);
   }
   return outcomes;
 }
