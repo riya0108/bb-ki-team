@@ -151,13 +151,14 @@ export function ChatPane({ platform, openContentId, onActionResult, onHeroChange
             playsInline
             disablePictureInPicture
             aria-hidden="true"
-          >
-            {/* HEVC+alpha first: Safari picks it (it can't decode webm/vp9), everyone
-                else falls through to the vp9 source below. Keeps real transparency
-                on both engines instead of a black box on whichever goes second. */}
-            <source src="/teri-hero-alpha.mov" type="video/mp4; codecs=hvc1" />
-            <source src="/teri-hero.webm" type="video/webm; codecs=vp9" />
-          </video>
+            src="/teri-hero.mp4"
+          />
+          {/* iOS Safari renders HEVC-alpha <video> as opaque, exposing the raw
+              (non-alpha) color plane, which doesn't quite match the app background.
+              So instead of relying on per-browser alpha support, the background is
+              pre-composited into this H.264 file at the exact --bg color — it reads
+              as transparent everywhere without depending on codec/browser alpha
+              support at all. */}
           <h1 className="teri-hero-heading">I am Teri, BB ki Team Lead</h1>
           <div className="teri-hero-composer">{renderComposer('hero')}</div>
         </div>
