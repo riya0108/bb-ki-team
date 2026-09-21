@@ -1,3 +1,4 @@
+import { sendPublishNotification } from '@bb/core';
 import { publishDueSchedules } from '@bb/workflows';
 import { Router } from 'express';
 
@@ -31,6 +32,13 @@ export function createSchedulerRouter(deps: AppDeps): Router {
           },
           'Published a scheduled content item',
         );
+        if (deps.email) {
+          await sendPublishNotification(
+            deps.email,
+            { platform: outcome.item.platform, topic: outcome.item.topic, platformUrl: outcome.event.platformUrl },
+            deps.logger,
+          );
+        }
       } else {
         deps.logger.error(
           { contentId: outcome.item.id, platform: outcome.item.platform, error: outcome.event.error },

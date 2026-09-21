@@ -1,3 +1,4 @@
+import { sendPublishNotification } from '@bb/core';
 import { publishDueSchedules } from '@bb/workflows';
 
 import type { WorkerDeps } from './deps.js';
@@ -18,6 +19,13 @@ export async function runSchedulerTick(deps: WorkerDeps, asOf: Date = new Date()
         },
         'Published a scheduled content item',
       );
+      if (deps.email) {
+        await sendPublishNotification(
+          deps.email,
+          { platform: outcome.item.platform, topic: outcome.item.topic, platformUrl: outcome.event.platformUrl },
+          deps.logger,
+        );
+      }
     } else {
       deps.logger.error(
         { contentId: outcome.item.id, platform: outcome.item.platform, error: outcome.event.error },

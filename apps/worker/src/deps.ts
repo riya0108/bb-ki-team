@@ -1,4 +1,4 @@
-import type { Env, Logger } from '@bb/core';
+import type { EmailConfig, Env, Logger } from '@bb/core';
 import { createLogger, loadEnv } from '@bb/core';
 import type { Pool } from '@bb/db';
 import { createPool } from '@bb/db';
@@ -26,6 +26,7 @@ export interface WorkerDeps {
   pool: Pool;
   logger: Logger;
   publishConnectors: Record<string, PublishConnector>;
+  email?: EmailConfig | undefined;
 }
 
 export function createWorkerDeps(): WorkerDeps {
@@ -38,7 +39,7 @@ export function createWorkerDeps(): WorkerDeps {
     publishConnectors.x = createBufferPublishConnector(env.buffer, logger);
   }
 
-  return { env, pool, logger, publishConnectors };
+  return { env, pool, logger, publishConnectors, email: env.email };
 }
 
 function closeable(

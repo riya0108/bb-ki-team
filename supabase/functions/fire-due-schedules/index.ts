@@ -24,6 +24,7 @@ interface ContentItemRow {
   platform: string;
   status: string;
   current_text: string;
+  topic: string | null;
   approved_version: number | null;
   approved_by: string | null;
   approved_at: string | null;
@@ -39,6 +40,41 @@ function requiredEnv(name: string): string {
   const value = Deno.env.get(name);
   if (!value) throw new Error(`Missing required env var ${name}`);
   return value;
+}
+
+// Mirrors packages/core/src/notify.ts's sendPublishNotification for the one
+// runtime that can't import a workspace package (a stateless Deno Edge Function).
+// Optional — RESEND_API_KEY/NOTIFY_EMAIL_TO unset means no email is sent, same
+// "unset = honestly not configured" pattern as every other connector in this repo.
+// Never thrown from: a notification failure must not turn an already-successful,
+// already-recorded publish into an error response.
+async function sendPublishNotification(topic: string | null, platformUrl: string | null): Promise<void> {
+  const apiKey = Deno.env.get('RESEND_API_KEY');
+  const to = Deno.env.get('NOTIFY_EMAIL_TO');
+  if (!apiKey || !to) return;
+  const from = Deno.env.get('NOTIFY_EMAIL_FROM') ?? 'Bull or Bear <onboarding@resend.dev>';
+
+  const subject = `Published to blog${topic ? `: ${topic}` : ''}`;
+  const linkHtml = platformUrl
+    ? `<p><a href="${platformUrl}">${platformUrl}</a></p>`
+    : '<p>(no link was recorded for this publish)</p>';
+  const html = `<p>Your scheduled blog post ${topic ? `"${topic}" ` : ''}just went live.</p>${linkHtml}`;
+
+  try {
+    const response = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ from, to: [to], subject, html }),
+    });
+    if (!response.ok) {
+      console.error(`Resend publish notification email was rejected: ${response.status}`);
+    }
+  } catch (error) {
+    console.error(`Failed to send publish notification email: ${error instanceof Error ? error.message : String(error)}`);
+  }
 }
 
 Deno.serve(async (req) => {
@@ -82,7 +118,7 @@ Deno.serve(async (req) => {
   for (const [contentId] of latestByContentId) {
     const { data: item, error: itemError } = await supabase
       .from('content_items')
-      .select('id, platform, status, current_text, approved_version, approved_by, approved_at')
+      .select('id, platform, status, current_text, topic, approved_version, approved_by, approved_at')
       .eq('id', contentId)
       .single<ContentItemRow>();
 
@@ -153,6 +189,7 @@ Deno.serve(async (req) => {
         result: 'success',
       });
 
+      await sendPublishNotification(item.topic, url);
       results.push({ contentId, result: 'success', detail: url });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

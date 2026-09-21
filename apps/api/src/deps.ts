@@ -1,4 +1,4 @@
-import type { Env, LlmClient, Logger } from '@bb/core';
+import type { EmailConfig, Env, LlmClient, Logger } from '@bb/core';
 import { createFallbackLlmClient, createLogger, loadEnv } from '@bb/core';
 import type { Pool } from '@bb/db';
 import { createPool } from '@bb/db';
@@ -38,6 +38,7 @@ export interface AppDeps {
   // publish connector once that time arrives (see apps/worker/src/deps.ts).
   publishConnectors: Record<string, PublishConnector>;
   scheduleConnectors: Record<string, ScheduleConnector>;
+  email?: EmailConfig | undefined;
 }
 
 export function createAppDeps(): AppDeps {
@@ -68,6 +69,7 @@ export function createAppDeps(): AppDeps {
     logger,
     publishConnectors,
     scheduleConnectors,
+    email: env.email,
   };
 }
 

@@ -38,6 +38,9 @@ const RawEnvSchema = z.object({
   BLOG_REPO_PATH: z.string().optional(),
   BLOG_REPO_BRANCH: z.string().optional(),
   BLOG_SITE_BASE_URL: z.string().optional(),
+  RESEND_API_KEY: z.string().optional(),
+  NOTIFY_EMAIL_TO: z.string().optional(),
+  NOTIFY_EMAIL_FROM: z.string().optional(),
 });
 
 export interface LlmProviderConfig {
@@ -81,6 +84,18 @@ export interface BlogGitConfig {
   siteBaseUrl: string;
 }
 
+// Resend (https://resend.com) email config (packages/core/src/notify.ts) — tells a
+// human "your scheduled post just published, here's the link" once a PUBLISH_EVENT
+// records success. RESEND_API_KEY + NOTIFY_EMAIL_TO together enable it
+// (NOTIFY_EMAIL_FROM defaults to Resend's no-verification-needed sandbox sender);
+// unset leaves this undefined and no email is ever sent, same "unset = honestly
+// not configured" pattern as every other connector here.
+export interface EmailConfig {
+  apiKey: string;
+  to: string;
+  from: string;
+}
+
 export interface Env {
   databaseUrl: string;
   apiPort: number;
@@ -94,6 +109,7 @@ export interface Env {
   x?: XCredentials | undefined;
   buffer?: BufferCredentials | undefined;
   blogGit?: BlogGitConfig | undefined;
+  email?: EmailConfig | undefined;
 }
 
 export class EnvValidationError extends Error {
@@ -138,6 +154,15 @@ function blogGitConfig(raw: z.infer<typeof RawEnvSchema>): BlogGitConfig | undef
   };
 }
 
+function emailConfig(raw: z.infer<typeof RawEnvSchema>): EmailConfig | undefined {
+  if (!raw.RESEND_API_KEY || !raw.NOTIFY_EMAIL_TO) return undefined;
+  return {
+    apiKey: raw.RESEND_API_KEY,
+    to: raw.NOTIFY_EMAIL_TO,
+    from: raw.NOTIFY_EMAIL_FROM || 'Bull or Bear <onboarding@resend.dev>',
+  };
+}
+
 export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
   const parsed = RawEnvSchema.safeParse(source);
   if (!parsed.success) {
@@ -174,5 +199,6 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
     x: xCredentialsConfig(raw),
     buffer: bufferCredentialsConfig(raw),
     blogGit: blogGitConfig(raw),
+    email: emailConfig(raw),
   };
 }
