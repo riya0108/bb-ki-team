@@ -12,8 +12,24 @@
 // doesn't fit a request/response Edge Function invocation cleanly.
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 
-import { createFile, getFileContent, type GitHubRepoConfig } from '../_shared/githubContents.ts';
+import {
+  createFile,
+  getFileContent,
+  getLatestCommitShaForPath,
+  waitForWorkflowRun,
+  type GitHubRepoConfig,
+} from '../_shared/githubContents.ts';
 import { blogPostFragmentFromHtml, buildMdxFileContents, parseCategorySlugs, resolveCategorySlug, slugify } from '../_shared/blogPost.ts';
+
+// How long to wait, per invocation, for the site repo's Deploy workflow (lint ->
+// build -> Cloudflare deploy) to conclude after a commit lands. Observed runs take
+// 30-45s; this leaves generous margin while staying well inside an Edge Function's
+// execution budget. If the workflow hasn't concluded within this window, the item is
+// left "scheduled" (not falsely marked published) and the next pg_cron tick re-checks
+// the same commit's status via getLatestCommitShaForPath, rather than re-attempting
+// the commit.
+const DEPLOY_WAIT_TIMEOUT_MS = 100_000;
+const DEPLOY_POLL_INTERVAL_MS = 5_000;
 
 const DEFAULT_AUTHOR_NAME = 'Bull or Bear Blogs';
 const DEFAULT_AUTHOR_BIO =
@@ -77,6 +93,50 @@ async function sendPublishNotification(topic: string | null, platformUrl: string
   }
 }
 
+// Alerts a human that a publish attempt did NOT result in a live post — the
+// counterpart to sendPublishNotification for the failure path, which previously had
+// no email at all (the only signal was a `result: 'failed'` row in publish_events
+// that nobody was watching). Same "unset env = not configured, don't throw" pattern.
+async function sendPublishFailureAlert(topic: string | null, detail: string, runUrl: string | null): Promise<void> {
+  const apiKey = Deno.env.get('RESEND_API_KEY');
+  const to = Deno.env.get('NOTIFY_EMAIL_TO');
+  if (!apiKey || !to) return;
+  const from = Deno.env.get('NOTIFY_EMAIL_FROM') ?? 'Bull or Bear <onboarding@resend.dev>';
+
+  const subject = `Blog publish FAILED${topic ? `: ${topic}` : ''} — not live, needs attention`;
+  const runHtml = runUrl ? `<p><a href="${runUrl}">View the failed deploy run</a></p>` : '';
+  const html = `<p>A scheduled blog post ${topic ? `"${topic}" ` : ''}did not go live.</p><p>${detail}</p>${runHtml}`;
+
+  try {
+    const response = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ from, to: [to], subject, html }),
+    });
+    if (!response.ok) {
+      console.error(`Resend publish failure alert email was rejected: ${response.status}`);
+    }
+  } catch (error) {
+    console.error(`Failed to send publish failure alert email: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+function unescapeYamlDoubleQuoted(value: string): string {
+  return value.replace(/\\(.)/g, (_match, ch: string) => ch);
+}
+
+// Reads the `title:` frontmatter field back out of an already-committed MDX file, so
+// a retry can tell "this is my own prior attempt at the same post" (safe to skip
+// re-committing, just re-check deploy status) apart from "a different post happens to
+// slugify to the same filename" (must keep refusing to overwrite).
+function extractFrontmatterTitle(mdx: string): string | null {
+  const match = mdx.match(/^title: "((?:[^"\\]|\\.)*)"/m);
+  return match ? unescapeYamlDoubleQuoted(match[1]) : null;
+}
+
 Deno.serve(async (req) => {
   const cronSecret = Deno.env.get('CRON_SECRET');
   if (cronSecret && req.headers.get('x-cron-secret') !== cronSecret) {
@@ -137,30 +197,84 @@ Deno.serve(async (req) => {
       const slug = slugify(fragment.title);
       const relativePath = `src/content/posts/${slug}.mdx`;
 
-      const existing = await getFileContent(github, relativePath);
-      if (existing !== null) {
-        throw new Error(`${relativePath} already exists in the repo — refusing to overwrite it.`);
-      }
-
       const categoriesJson = await getFileContent(github, 'src/content/categories.json');
       if (categoriesJson === null) throw new Error('src/content/categories.json not found in target repo');
       const category = resolveCategorySlug(fragment.categoryRaw, parseCategorySlugs(categoriesJson));
-
-      const mdx = buildMdxFileContents(
-        {
-          title: fragment.title,
-          description: fragment.metaDescription,
-          categorySlug: category.slug,
-          tags: [],
-          pubDateIso: nowIso,
-          authorName: DEFAULT_AUTHOR_NAME,
-          authorBio: DEFAULT_AUTHOR_BIO,
-        },
-        fragment.bodyMdx,
-      );
-
-      const { commitSha } = await createFile(github, relativePath, mdx, `Add blog post: ${fragment.title}`);
       const url = `${siteBaseUrl.replace(/\/$/, '')}/${category.slug}/${slug}/`;
+
+      const existing = await getFileContent(github, relativePath);
+      let commitSha: string;
+      if (existing === null) {
+        const mdx = buildMdxFileContents(
+          {
+            title: fragment.title,
+            description: fragment.metaDescription,
+            categorySlug: category.slug,
+            tags: [],
+            pubDateIso: nowIso,
+            authorName: DEFAULT_AUTHOR_NAME,
+            authorBio: DEFAULT_AUTHOR_BIO,
+          },
+          fragment.bodyMdx,
+        );
+        commitSha = (await createFile(github, relativePath, mdx, `Add blog post: ${fragment.title}`)).commitSha;
+      } else if (extractFrontmatterTitle(existing) === fragment.title) {
+        // Same title at this path — this is our own earlier attempt (its deploy
+        // verification didn't conclude last tick, or failed). Re-check that
+        // commit's deploy status instead of erroring or double-committing.
+        const sha = await getLatestCommitShaForPath(github, relativePath);
+        if (sha === null) throw new Error(`${relativePath} exists but has no commit history — unexpected GitHub state`);
+        commitSha = sha;
+      } else {
+        throw new Error(`${relativePath} already exists in the repo with a different title — refusing to overwrite it.`);
+      }
+
+      // A green commit only means the MDX landed in git — the site's own Deploy
+      // workflow (lint -> build -> Cloudflare deploy) still has to pass before the
+      // post is reachable at `url`. Spec 15.4: never claim published, or record a
+      // URL, unless the connector confirms it.
+      const runOutcome = await waitForWorkflowRun(github, commitSha, {
+        timeoutMs: DEPLOY_WAIT_TIMEOUT_MS,
+        intervalMs: DEPLOY_POLL_INTERVAL_MS,
+      });
+
+      if (runOutcome === 'timeout' || runOutcome.conclusion !== 'success') {
+        const detail =
+          runOutcome === 'timeout'
+            ? `Deploy workflow for commit ${commitSha} had not completed after ${DEPLOY_WAIT_TIMEOUT_MS / 1000}s — will re-check next tick.`
+            : `Deploy workflow for commit ${commitSha} concluded "${runOutcome.conclusion}" — post is NOT live.`;
+        const runUrl = runOutcome === 'timeout' ? null : runOutcome.htmlUrl;
+
+        await supabase.from('publish_events').insert({
+          content_id: contentId,
+          platform: 'blog',
+          version: item.approved_version,
+          approved_by: item.approved_by,
+          approved_at: item.approved_at,
+          platform_post_id: commitSha,
+          connector: 'blog-git-github-api',
+          result: 'failed',
+          error: runUrl ? `${detail} ${runUrl}` : detail,
+        });
+
+        // Only alert once per item — otherwise every 1-minute retry re-sends the
+        // same email until a human fixes the underlying deploy failure. The insert
+        // above already counts as one, so > 1 means an earlier tick already alerted.
+        const { count: failureCount } = await supabase
+          .from('publish_events')
+          .select('id', { count: 'exact', head: true })
+          .eq('content_id', contentId)
+          .eq('result', 'failed');
+        if ((failureCount ?? 1) <= 1) {
+          await sendPublishFailureAlert(item.topic, detail, runUrl);
+        }
+
+        // Deliberately NOT flipping content_items.status — it stays "scheduled" so
+        // the item is neither falsely reported as published nor silently dropped;
+        // the next tick retries via the `existing` branch above.
+        results.push({ contentId, result: 'failed', detail });
+        continue;
+      }
 
       // Conditional update — only flips status if it's still "scheduled", so two
       // overlapping invocations (shouldn't happen at a 1/minute cadence, but cheap

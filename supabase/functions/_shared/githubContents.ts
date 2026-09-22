@@ -78,3 +78,56 @@ export async function createFile(
   const body = (await response.json()) as { commit: { sha: string } };
   return { commitSha: body.commit.sha };
 }
+
+// Finds the most recent commit SHA touching `path` on `config.branch`. Used to
+// re-locate a prior attempt's commit when the MDX file already exists — so a retry
+// after a not-yet-concluded or failed deploy re-checks that same commit's workflow
+// status instead of erroring on "file already exists" or attempting a duplicate PUT.
+export async function getLatestCommitShaForPath(config: GitHubRepoConfig, path: string): Promise<string | null> {
+  const url = `https://api.github.com/repos/${config.owner}/${config.repo}/commits?path=${encodeURIComponent(path)}&sha=${encodeURIComponent(config.branch)}&per_page=1`;
+  const response = await fetch(url, { headers: authHeaders(config) });
+  if (!response.ok) {
+    throw new GitHubApiError(
+      response.status,
+      `GET commits for ${path} failed: HTTP ${response.status} ${await response.text()}`,
+    );
+  }
+  const body = (await response.json()) as { sha: string }[];
+  return body[0]?.sha ?? null;
+}
+
+export interface WorkflowRunOutcome {
+  conclusion: string;
+  htmlUrl: string;
+}
+
+// Polls GitHub Actions for the run triggered by `commitSha` until it completes, or
+// `timeoutMs` elapses. A successful `createFile`/`PUT` only means the MDX landed in
+// git — the site repo's own Deploy workflow (lint -> build -> Cloudflare deploy)
+// still has to pass before the post is reachable at its computed URL. Spec 15.4:
+// "never claim a post was published unless the connector confirms it" — this is
+// that confirmation step; without it, the caller would be reporting a git commit as
+// a live publish.
+export async function waitForWorkflowRun(
+  config: GitHubRepoConfig,
+  commitSha: string,
+  options: { timeoutMs: number; intervalMs: number },
+): Promise<WorkflowRunOutcome | 'timeout'> {
+  const deadline = Date.now() + options.timeoutMs;
+  const url = `https://api.github.com/repos/${config.owner}/${config.repo}/actions/runs?head_sha=${encodeURIComponent(commitSha)}&per_page=5`;
+
+  while (Date.now() < deadline) {
+    const response = await fetch(url, { headers: authHeaders(config) });
+    if (response.ok) {
+      const body = (await response.json()) as {
+        workflow_runs: { status: string; conclusion: string | null; html_url: string }[];
+      };
+      const run = body.workflow_runs[0];
+      if (run && run.status === 'completed' && run.conclusion) {
+        return { conclusion: run.conclusion, htmlUrl: run.html_url };
+      }
+    }
+    await new Promise((resolve) => setTimeout(resolve, options.intervalMs));
+  }
+  return 'timeout';
+}
