@@ -27,6 +27,11 @@ interface ChatPaneProps {
 
 const COMPOSER_MAX_HEIGHT_PX = 200;
 
+// iOS WebKit (Safari and every other iOS browser, which all wrap it) renders
+// HEVC-alpha <video> as opaque instead of honoring its alpha channel — true
+// everywhere else, so only iOS needs the pre-composited fallback.
+const isIOS = typeof navigator !== 'undefined' && /iP(hone|od|ad)/.test(navigator.userAgent);
+
 export function ChatPane({ platform, openContentId, onActionResult, onHeroChange, onNewChat }: ChatPaneProps) {
   const [messages, setMessages] = useState<LocalMessage[]>([]);
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -143,22 +148,39 @@ export function ChatPane({ platform, openContentId, onActionResult, onHeroChange
     return (
       <div className="chat-area chat-hero">
         <div className="teri-hero">
-          <video
-            className="teri-hero-animation"
-            autoPlay
-            loop
-            muted
-            playsInline
-            disablePictureInPicture
-            aria-hidden="true"
-            src="/teri-hero.mp4"
-          />
-          {/* iOS Safari renders HEVC-alpha <video> as opaque, exposing the raw
-              (non-alpha) color plane, which doesn't quite match the app background.
-              So instead of relying on per-browser alpha support, the background is
-              pre-composited into this H.264 file at the exact --bg color — it reads
-              as transparent everywhere without depending on codec/browser alpha
-              support at all. */}
+          {/* True per-pixel alpha (HEVC .mov for Safari, VP9 webm for everyone
+              else) reads as transparent against any background, including the
+              animated bottom-glow bloom — unlike a flat pre-composited matte,
+              which only matches a static, uniform --bg. The one place real
+              alpha doesn't work is iOS, where WebKit renders HEVC-alpha video
+              as opaque instead of honoring its alpha channel, so iOS alone
+              falls back to an H.264 file with the background pre-composited
+              onto it. */}
+          {isIOS ? (
+            <video
+              className="teri-hero-animation"
+              autoPlay
+              loop
+              muted
+              playsInline
+              disablePictureInPicture
+              aria-hidden="true"
+              src="/teri-hero.mp4"
+            />
+          ) : (
+            <video
+              className="teri-hero-animation"
+              autoPlay
+              loop
+              muted
+              playsInline
+              disablePictureInPicture
+              aria-hidden="true"
+            >
+              <source src="/teri-hero-alpha.mov" type="video/mp4; codecs=hvc1" />
+              <source src="/teri-hero.webm" type="video/webm; codecs=vp9" />
+            </video>
+          )}
           <h1 className="teri-hero-heading">I am Teri, BB ki Team Lead</h1>
           <div className="teri-hero-composer">{renderComposer('hero')}</div>
         </div>
