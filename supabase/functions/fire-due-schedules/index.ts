@@ -15,7 +15,9 @@ import { createClient } from 'jsr:@supabase/supabase-js@2';
 import {
   createFile,
   getFileContent,
+  getFileContentWithSha,
   getLatestCommitShaForPath,
+  updateFile,
   waitForWorkflowRun,
   type GitHubRepoConfig,
 } from '../_shared/githubContents.ts';
@@ -129,12 +131,22 @@ function unescapeYamlDoubleQuoted(value: string): string {
 }
 
 // Reads the `title:` frontmatter field back out of an already-committed MDX file, so
-// a retry can tell "this is my own prior attempt at the same post" (safe to skip
-// re-committing, just re-check deploy status) apart from "a different post happens to
-// slugify to the same filename" (must keep refusing to overwrite).
+// a retry can tell "this is (at least) a prior attempt at the same post" apart from
+// "a different post happens to slugify to the same filename" (must keep refusing to
+// overwrite the latter).
 function extractFrontmatterTitle(mdx: string): string | null {
   const match = mdx.match(/^title: "((?:[^"\\]|\\.)*)"/m);
   return match ? unescapeYamlDoubleQuoted(match[1]) : null;
+}
+
+// Reads the `pubDate:` frontmatter field back out of an already-committed MDX file,
+// so a same-title retry can reproduce the ORIGINAL commit's content for comparison
+// (buildMdxFileContents always stamps the pubDate it's given, so reproducing with a
+// freshly-generated `nowIso` would make even byte-identical prior content look
+// "changed" on every single retry).
+function extractPubDate(mdx: string): string | null {
+  const match = mdx.match(/^pubDate: (\S+)$/m);
+  return match ? match[1] : null;
 }
 
 Deno.serve(async (req) => {
@@ -202,7 +214,7 @@ Deno.serve(async (req) => {
       const category = resolveCategorySlug(fragment.categoryRaw, parseCategorySlugs(categoriesJson));
       const url = `${siteBaseUrl.replace(/\/$/, '')}/${category.slug}/${slug}/`;
 
-      const existing = await getFileContent(github, relativePath);
+      const existing = await getFileContentWithSha(github, relativePath);
       let commitSha: string;
       if (existing === null) {
         const mdx = buildMdxFileContents(
@@ -218,13 +230,56 @@ Deno.serve(async (req) => {
           fragment.bodyMdx,
         );
         commitSha = (await createFile(github, relativePath, mdx, `Add blog post: ${fragment.title}`)).commitSha;
-      } else if (extractFrontmatterTitle(existing) === fragment.title) {
-        // Same title at this path — this is our own earlier attempt (its deploy
-        // verification didn't conclude last tick, or failed). Re-check that
-        // commit's deploy status instead of erroring or double-committing.
-        const sha = await getLatestCommitShaForPath(github, relativePath);
-        if (sha === null) throw new Error(`${relativePath} exists but has no commit history — unexpected GitHub state`);
-        commitSha = sha;
+      } else if (extractFrontmatterTitle(existing.content) === fragment.title) {
+        // Same title at this path — at least a prior attempt at this same post. That
+        // attempt's committed content might still be exactly what's currently approved
+        // (its deploy verification just didn't conclude last tick, or failed for a
+        // reason unrelated to content) — or the approved content might have changed
+        // since then (edited + re-approved after a failed/incomplete deploy). Those two
+        // cases must NOT be treated the same: reusing the old commit's sha for the
+        // latter would report the OLD content's deploy as this publish's outcome,
+        // marking the item "published" while the newly approved version was never
+        // actually committed (this is what silently shipped a pre-edit version of a
+        // post while the dashboard showed the edited/approved one as live).
+        const existingPubDate = extractPubDate(existing.content);
+        const reproducedMdx = buildMdxFileContents(
+          {
+            title: fragment.title,
+            description: fragment.metaDescription,
+            categorySlug: category.slug,
+            tags: [],
+            pubDateIso: existingPubDate ? `${existingPubDate}T00:00:00.000Z` : nowIso,
+            authorName: DEFAULT_AUTHOR_NAME,
+            authorBio: DEFAULT_AUTHOR_BIO,
+          },
+          fragment.bodyMdx,
+        );
+
+        if (reproducedMdx === existing.content) {
+          // Unchanged since the earlier attempt — safe to just re-check that commit's
+          // deploy status instead of erroring or double-committing.
+          const sha = await getLatestCommitShaForPath(github, relativePath);
+          if (sha === null) throw new Error(`${relativePath} exists but has no commit history — unexpected GitHub state`);
+          commitSha = sha;
+        } else {
+          // The approved content changed since the earlier attempt — commit the update
+          // so the version that goes live is the one actually approved now.
+          const updatedMdx = buildMdxFileContents(
+            {
+              title: fragment.title,
+              description: fragment.metaDescription,
+              categorySlug: category.slug,
+              tags: [],
+              pubDateIso: nowIso,
+              authorName: DEFAULT_AUTHOR_NAME,
+              authorBio: DEFAULT_AUTHOR_BIO,
+            },
+            fragment.bodyMdx,
+          );
+          commitSha = (
+            await updateFile(github, relativePath, updatedMdx, `Update blog post: ${fragment.title}`, existing.sha)
+          ).commitSha;
+        }
       } else {
         throw new Error(`${relativePath} already exists in the repo with a different title — refusing to overwrite it.`);
       }

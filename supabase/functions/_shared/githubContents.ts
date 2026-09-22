@@ -79,6 +79,58 @@ export async function createFile(
   return { commitSha: body.commit.sha };
 }
 
+// Same file/path, decoded content, and blob `sha` as getFileContent — but also
+// returns the blob sha, which GitHub's Contents API requires as proof-of-current-state
+// before it will let updateFile below replace the file's content (otherwise it 409s).
+export async function getFileContentWithSha(
+  config: GitHubRepoConfig,
+  path: string,
+): Promise<{ content: string; sha: string } | null> {
+  const url = `${apiBase(config, path)}?ref=${encodeURIComponent(config.branch)}`;
+  const response = await fetch(url, { headers: authHeaders(config) });
+  if (response.status === 404) return null;
+  if (!response.ok) {
+    throw new GitHubApiError(response.status, `GET ${path} failed: HTTP ${response.status} ${await response.text()}`);
+  }
+  const body = (await response.json()) as { content: string; encoding: string; sha: string };
+  if (body.encoding !== 'base64') {
+    throw new GitHubApiError(response.status, `GET ${path} returned unexpected encoding "${body.encoding}"`);
+  }
+  const bytes = Uint8Array.from(atob(body.content.replace(/\n/g, '')), (c) => c.charCodeAt(0));
+  return { content: new TextDecoder().decode(bytes), sha: body.sha };
+}
+
+// Replaces an EXISTING file's content in a single commit. Requires the file's current
+// blob `sha` (from getFileContentWithSha) so GitHub can detect a stale write — the
+// counterpart to createFile for the case where a scheduled retry finds that the
+// approved content changed since an earlier, still-uncommitted-content attempt (see
+// fire-due-schedules/index.ts: without this, a retry could only ever reuse the old
+// commit, silently publishing stale content instead of the newly approved version).
+export async function updateFile(
+  config: GitHubRepoConfig,
+  path: string,
+  content: string,
+  message: string,
+  sha: string,
+): Promise<{ commitSha: string }> {
+  const url = apiBase(config, path);
+  const response = await fetch(url, {
+    method: 'PUT',
+    headers: { ...authHeaders(config), 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      message,
+      content: btoa(String.fromCharCode(...new TextEncoder().encode(content))),
+      branch: config.branch,
+      sha,
+    }),
+  });
+  if (!response.ok) {
+    throw new GitHubApiError(response.status, `PUT ${path} (update) failed: HTTP ${response.status} ${await response.text()}`);
+  }
+  const body = (await response.json()) as { commit: { sha: string } };
+  return { commitSha: body.commit.sha };
+}
+
 // Finds the most recent commit SHA touching `path` on `config.branch`. Used to
 // re-locate a prior attempt's commit when the MDX file already exists — so a retry
 // after a not-yet-concluded or failed deploy re-checks that same commit's workflow
