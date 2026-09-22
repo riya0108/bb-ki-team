@@ -50,14 +50,25 @@ export function createAppDeps(): AppDeps {
   const youtubeTranscriptTool = createYoutubeTranscriptMcpClient(logger);
 
   const publishConnectors: Record<string, PublishConnector> = {};
-  const scheduleConnectors: Record<string, ScheduleConnector> = {};
+  // blog's ScheduleConnector needs no config at all — it's a pure no-op that just
+  // lets requestSchedule record a target time (see blogGitClient.ts); the actual
+  // firing of a due blog schedule happens later via the Supabase edge function
+  // (supabase/functions/fire-due-schedules, GitHub Contents API), not this process.
+  // Gating it on env.blogGit (a local-git-checkout path meaningful only to
+  // createBlogGitPublishConnector below) meant that on any host without a local
+  // BLOG_REPO_PATH clone — e.g. the Render deployment, which has no filesystem
+  // access to the site repo at all — scheduling a blog post failed outright with
+  // "No schedule connector is configured for platform blog yet", even though
+  // nothing about recording a schedule actually needs that path.
+  const scheduleConnectors: Record<string, ScheduleConnector> = {
+    blog: createBlogGitScheduleConnector(),
+  };
   if (env.buffer) {
     publishConnectors.x = createBufferPublishConnector(env.buffer, logger);
     scheduleConnectors.x = createXScheduleConnector();
   }
   if (env.blogGit) {
     publishConnectors.blog = createBlogGitPublishConnector(env.blogGit, logger);
-    scheduleConnectors.blog = createBlogGitScheduleConnector();
   }
 
   return {
