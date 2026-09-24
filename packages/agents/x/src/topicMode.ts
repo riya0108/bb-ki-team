@@ -7,7 +7,7 @@ import { createContentItem, recordQaResult, submitForReview } from '@bb/workflow
 import { z } from 'zod';
 
 import { draftXPost } from './draftPost.js';
-import { buildXPackage, enforceXLengthLimit } from './packaging.js';
+import { appendHashtags, buildXPackage, enforceXLengthLimit } from './packaging.js';
 
 const CREATED_BY_AGENT = 'agent-02-x';
 
@@ -68,18 +68,20 @@ export async function draftXTopicPost(input: DraftXTopicPostInput): Promise<XPac
   const dna = await loadCurrentDna(input.pool);
   const forceMode = input.mode === 'thread' ? 'thread' : 'single';
 
-  const draft = enforceXLengthLimit(
-    await draftXPost({
-      topic: input.topic,
-      angle: input.angle,
-      coreClaim: null,
-      sourceTexts: [],
-      contentDna: dna,
-      llm: input.llm,
-      runId: input.runId,
-      stepId: `draft-x-${input.mode}`,
-      forceMode,
-    }),
+  const draft = appendHashtags(
+    enforceXLengthLimit(
+      await draftXPost({
+        topic: input.topic,
+        angle: input.angle,
+        coreClaim: null,
+        sourceTexts: [],
+        contentDna: dna,
+        llm: input.llm,
+        runId: input.runId,
+        stepId: `draft-x-${input.mode}`,
+        forceMode,
+      }),
+    ),
   );
 
   const item = await createContentItem(input.pool, {
@@ -91,7 +93,7 @@ export async function draftXTopicPost(input: DraftXTopicPostInput): Promise<XPac
     contentDnaVersion: dna.version,
     text: draft.finalCopy,
     riskLevel: 'low',
-    package: { mode: draft.mode, hookOptions: draft.hookOptions, threadPosts: draft.threadPosts },
+    package: { mode: draft.mode, hookOptions: draft.hookOptions, threadPosts: draft.threadPosts, hashtags: draft.hashtags },
   });
 
   const qa = await runQaGate({

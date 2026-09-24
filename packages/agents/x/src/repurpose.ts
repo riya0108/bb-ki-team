@@ -11,7 +11,7 @@ import { z } from 'zod';
 
 import { draftXPost } from './draftPost.js';
 import { RepurposeSourceInaccessibleError } from './errors.js';
-import { buildXPackage, enforceXLengthLimit } from './packaging.js';
+import { appendHashtags, buildXPackage, enforceXLengthLimit } from './packaging.js';
 import { selectDistinctTopics } from './sourceDiscovery.js';
 import type { CandidateTopic } from './sourceDiscovery.js';
 
@@ -115,17 +115,19 @@ export async function runRepurpose(input: RunRepurposeInput): Promise<XPackage[]
 
   const packages: XPackage[] = [];
   for (const candidate of selected) {
-    const draft = enforceXLengthLimit(
-      await draftXPost({
-        topic: candidate.topic,
-        angle: candidate.angle,
-        coreClaim: candidate.coreClaim,
-        sourceTexts: [sourceText],
-        contentDna: dna,
-        llm,
-        runId,
-        stepId: `draft-repurpose-${candidate.topic}`,
-      }),
+    const draft = appendHashtags(
+      enforceXLengthLimit(
+        await draftXPost({
+          topic: candidate.topic,
+          angle: candidate.angle,
+          coreClaim: candidate.coreClaim,
+          sourceTexts: [sourceText],
+          contentDna: dna,
+          llm,
+          runId,
+          stepId: `draft-repurpose-${candidate.topic}`,
+        }),
+      ),
     );
 
     const item = await createContentItem(pool, {
@@ -139,7 +141,7 @@ export async function runRepurpose(input: RunRepurposeInput): Promise<XPackage[]
       contentDnaVersion: dna.version,
       text: draft.finalCopy,
       riskLevel: candidate.riskLevel,
-      package: { mode: draft.mode, hookOptions: draft.hookOptions, threadPosts: draft.threadPosts },
+      package: { mode: draft.mode, hookOptions: draft.hookOptions, threadPosts: draft.threadPosts, hashtags: draft.hashtags },
     });
 
     const qa = await runQaGate({

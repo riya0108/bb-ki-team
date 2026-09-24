@@ -23,9 +23,19 @@ export const XPackageSchema = z.object({
   threadPosts: z.array(z.string()).nullable(),
   sourceReferences: z.array(z.string()).default([]),
   factCheckStatus: z.string(),
+  // Up to 3 reach/engagement-boosting hashtags, already attached to finalCopy (and
+  // threadPosts[0] when mode is 'thread') by packages/agents/x's appendHashtags —
+  // kept here too so a reviewer/audit trail can see exactly which ones were chosen
+  // without having to parse them back out of the post text.
+  hashtags: z.array(z.string()).max(3).default([]),
   contentDnaVersion: z.number().int().positive(),
   // Phase 2 never publishes/schedules — always true / 'none', same as LinkedIn.
   approvalRequired: z.literal(true),
   publishAction: PublishActionSchema,
+  // Additive, optional reference into visual_assets (packages/db/migrations/0018) —
+  // see @bb/visual-agent. Defaults to null so every existing call to
+  // XPackageSchema.parse(...) keeps working unchanged (BB-Visual-Agent-Skill's
+  // integration contract: "keep visual data additive").
+  visualAssetId: z.string().uuid().nullable().default(null),
 });
 export type XPackage = z.infer<typeof XPackageSchema>;

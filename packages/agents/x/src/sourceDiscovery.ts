@@ -12,7 +12,7 @@ import { z } from 'zod';
 
 import { draftXPost } from './draftPost.js';
 import { InsufficientDistinctTopicsError, NoAccessibleSourcesError, NoTrustedSourcesError } from './errors.js';
-import { buildXPackage, enforceXLengthLimit } from './packaging.js';
+import { appendHashtags, buildXPackage, enforceXLengthLimit } from './packaging.js';
 
 const CREATED_BY_AGENT = 'agent-02-x';
 const RECENT_TOPICS_LIMIT = 20;
@@ -173,17 +173,19 @@ export async function runSourceDiscovery(deps: RunSourceDiscoveryDeps): Promise<
     const fetchedSource = fetchedByUrl.get(candidate.sourceUrl);
     if (!fetchedSource) throw new NoAccessibleSourcesError();
 
-    const draft = enforceXLengthLimit(
-      await draftXPost({
-        topic: candidate.topic,
-        angle: candidate.angle,
-        coreClaim: candidate.coreClaim,
-        sourceTexts: [fetchedSource.text],
-        contentDna: dna,
-        llm,
-        runId,
-        stepId: `draft-${candidate.sourceUrl}`,
-      }),
+    const draft = appendHashtags(
+      enforceXLengthLimit(
+        await draftXPost({
+          topic: candidate.topic,
+          angle: candidate.angle,
+          coreClaim: candidate.coreClaim,
+          sourceTexts: [fetchedSource.text],
+          contentDna: dna,
+          llm,
+          runId,
+          stepId: `draft-${candidate.sourceUrl}`,
+        }),
+      ),
     );
 
     const item = await createContentItem(pool, {
@@ -198,7 +200,7 @@ export async function runSourceDiscovery(deps: RunSourceDiscoveryDeps): Promise<
       contentDnaVersion: dna.version,
       text: draft.finalCopy,
       riskLevel: candidate.riskLevel,
-      package: { mode: draft.mode, hookOptions: draft.hookOptions, threadPosts: draft.threadPosts },
+      package: { mode: draft.mode, hookOptions: draft.hookOptions, threadPosts: draft.threadPosts, hashtags: draft.hashtags },
     });
 
     const qa = await runQaGate({

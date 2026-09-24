@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { DraftXOutput } from './draftPost.js';
-import { enforceXLengthLimit } from './packaging.js';
+import { appendHashtags, enforceXLengthLimit } from './packaging.js';
 import { X_MAX_POST_LENGTH } from './threadSplit.js';
 
 function draft(overrides: Partial<DraftXOutput>): DraftXOutput {
@@ -11,6 +11,7 @@ function draft(overrides: Partial<DraftXOutput>): DraftXOutput {
     finalCopy: 'short post',
     threadPosts: null,
     factCheckStatus: 'ok',
+    hashtags: [],
     ...overrides,
   };
 }
@@ -47,5 +48,53 @@ describe('enforceXLengthLimit', () => {
     for (const post of result.threadPosts!) expect(post.length).toBeLessThanOrEqual(X_MAX_POST_LENGTH);
     expect(result.threadPosts![0]).toBe('first post');
     expect(result.threadPosts!.join('')).toContain(oversized.slice(0, X_MAX_POST_LENGTH));
+  });
+});
+
+describe('appendHashtags', () => {
+  it('leaves a draft with no hashtags untouched', () => {
+    const input = draft({ hashtags: [] });
+    expect(appendHashtags(input)).toBe(input);
+  });
+
+  it('appends up to 3 normalized hashtags to a single post', () => {
+    const result = appendHashtags(draft({ finalCopy: 'A sharp take.', hashtags: ['Markets', '#Fintech', 'UPI'] }));
+
+    expect(result.finalCopy).toBe('A sharp take.\n\n#Markets #Fintech #UPI');
+    expect(result.hashtags).toEqual(['#Markets', '#Fintech', '#UPI']);
+  });
+
+  it('dedupes hashtags and caps at 3 regardless of casing/# prefix noise', () => {
+    const result = appendHashtags(draft({ finalCopy: 'Post.', hashtags: ['#Markets', 'Markets', 'A', 'B', 'C'] }));
+    expect(result.hashtags).toEqual(['#Markets', '#A', '#B']);
+  });
+
+  it('appends hashtags only to the first post of a thread, leaving continuations untouched', () => {
+    const input = draft({
+      mode: 'thread',
+      finalCopy: 'first post',
+      threadPosts: ['first post', 'second post', 'third post'],
+      hashtags: ['Markets', 'Fintech'],
+    });
+    const result = appendHashtags(input);
+
+    expect(result.finalCopy).toBe('first post\n\n#Markets #Fintech');
+    expect(result.threadPosts).toEqual(['first post\n\n#Markets #Fintech', 'second post', 'third post']);
+  });
+
+  it('drops hashtags one at a time until the first post fits within the 280-char limit', () => {
+    const post = 'A'.repeat(X_MAX_POST_LENGTH - 30);
+    const result = appendHashtags(draft({ finalCopy: post, hashtags: ['LongEnoughTagOne', 'LongEnoughTagTwo'] }));
+
+    expect(result.finalCopy.length).toBeLessThanOrEqual(X_MAX_POST_LENGTH);
+    expect(result.hashtags).toEqual(['#LongEnoughTagOne']);
+  });
+
+  it('omits hashtags entirely when even one does not fit, without truncating the post text', () => {
+    const post = 'A'.repeat(X_MAX_POST_LENGTH);
+    const result = appendHashtags(draft({ finalCopy: post, hashtags: ['Markets'] }));
+
+    expect(result.finalCopy).toBe(post);
+    expect(result.hashtags).toEqual([]);
   });
 });

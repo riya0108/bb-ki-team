@@ -37,4 +37,31 @@ describe('XPackageSchema', () => {
     const result = XPackageSchema.safeParse({ ...base, mode: 'carousel' });
     expect(result.success).toBe(false);
   });
+
+  it('defaults hashtags to an empty array when omitted', () => {
+    const result = XPackageSchema.safeParse(base);
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.hashtags).toEqual([]);
+  });
+
+  it('accepts up to 3 hashtags', () => {
+    const result = XPackageSchema.safeParse({ ...base, hashtags: ['#Markets', '#Fintech', '#UPI'] });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects more than 3 hashtags', () => {
+    const result = XPackageSchema.safeParse({ ...base, hashtags: ['#A', '#B', '#C', '#D'] });
+    expect(result.success).toBe(false);
+  });
+
+  it('defaults visualAssetId to null when omitted, for text-only regression', () => {
+    const result = XPackageSchema.safeParse(base);
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.visualAssetId).toBeNull();
+  });
+
+  it('accepts a visualAssetId reference', () => {
+    const result = XPackageSchema.safeParse({ ...base, visualAssetId: '22222222-2222-4222-8222-222222222222' });
+    expect(result.success).toBe(true);
+  });
 });

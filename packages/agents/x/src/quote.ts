@@ -9,7 +9,7 @@ import { createContentItem, recordQaResult, submitForReview } from '@bb/workflow
 
 import { draftXPost } from './draftPost.js';
 import { RepurposeSourceInaccessibleError } from './errors.js';
-import { buildXPackage } from './packaging.js';
+import { appendHashtags, buildXPackage } from './packaging.js';
 
 const CREATED_BY_AGENT = 'agent-02-x';
 
@@ -44,17 +44,19 @@ export async function runQuote(input: RunQuoteInput): Promise<XPackage> {
   const dna = await loadCurrentDna(input.pool);
   const { text: sourceText, reference } = await resolveSourceText(input.source, input.fetchTool);
 
-  const draft = await draftXPost({
-    topic: `Commentary on: ${reference}`,
-    angle: input.commentaryAngle,
-    coreClaim: null,
-    sourceTexts: [sourceText],
-    contentDna: dna,
-    llm: input.llm,
-    runId: input.runId,
-    stepId: 'draft-quote',
-    forceMode: 'single',
-  });
+  const draft = appendHashtags(
+    await draftXPost({
+      topic: `Commentary on: ${reference}`,
+      angle: input.commentaryAngle,
+      coreClaim: null,
+      sourceTexts: [sourceText],
+      contentDna: dna,
+      llm: input.llm,
+      runId: input.runId,
+      stepId: 'draft-quote',
+      forceMode: 'single',
+    }),
+  );
 
   const item = await createContentItem(input.pool, {
     platform: 'x',
@@ -66,7 +68,7 @@ export async function runQuote(input: RunQuoteInput): Promise<XPackage> {
     contentDnaVersion: dna.version,
     text: draft.finalCopy,
     riskLevel: 'low',
-    package: { mode: 'quote', hookOptions: draft.hookOptions, threadPosts: null },
+    package: { mode: 'quote', hookOptions: draft.hookOptions, threadPosts: null, hashtags: draft.hashtags },
   });
 
   const qa = await runQaGate({

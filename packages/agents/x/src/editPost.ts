@@ -6,8 +6,8 @@ import { buildQaGateUnavailableResult, runQaGate } from '@bb/qa-gate';
 import type { ContentDnaRecord, LearningEvent, XPackage } from '@bb/shared-types';
 import { ContentItemNotFoundError, addRevision, getContentItem, recordQaResult } from '@bb/workflows';
 
-import { DraftXOutputSchema, X_NATIVE_PRINCIPLES } from './draftPost.js';
-import { buildXPackage, enforceXLengthLimit } from './packaging.js';
+import { DraftXOutputSchema, MAX_X_HASHTAGS, X_NATIVE_PRINCIPLES } from './draftPost.js';
+import { appendHashtags, buildXPackage, enforceXLengthLimit } from './packaging.js';
 
 const CREATED_BY_AGENT = 'agent-02-x';
 
@@ -30,12 +30,19 @@ This post is currently a ${wasThread ? 'THREAD — keep it a thread unless the i
 
 Revise per the instruction below. Do not change the underlying topic, claims or facts — only
 revise wording, structure, tone and hooks. Preserve anything the instruction doesn't ask you to
-change.`;
+change.
+
+The original post below may end with a trailing hashtag line — that line is not part of the
+creator's own wording; it was appended separately and will be regenerated. Write finalCopy and
+threadPosts without any hashtag line, and separately choose up to ${MAX_X_HASHTAGS} hashtags for
+the hashtags field (same reach/engagement standard as drafting: real, high-traffic tags an engaged
+finance/business audience follows or searches, only if genuinely relevant to the revised post).`;
 }
 
 function buildReviseUserPrompt(originalPost: string, instruction: string): string {
   return `Original post:\n${originalPost}\n\nEdit instruction: ${instruction}\n\nReturn the revised
-content using the required JSON shape (mode, hookOptions, finalCopy, threadPosts, factCheckStatus).`;
+content using the required JSON shape (mode, hookOptions, finalCopy, threadPosts, factCheckStatus,
+hashtags).`;
 }
 
 export interface ReviseXPostInput {
@@ -60,15 +67,17 @@ export async function reviseXPost(input: ReviseXPostInput): Promise<ReviseXPostR
   const dna = await loadCurrentDna(input.pool);
   const wasThread = (item.package as { mode?: string } | null)?.mode === 'thread';
 
-  const revised = enforceXLengthLimit(
-    await input.llm.completeStructured(
-      {
-        system: buildReviseSystemPrompt(dna, wasThread),
-        messages: [{ role: 'user', content: buildReviseUserPrompt(item.currentText, input.instruction) }],
-        runId: input.runId,
-        stepId: `revise-${item.id}`,
-      },
-      DraftXOutputSchema,
+  const revised = appendHashtags(
+    enforceXLengthLimit(
+      await input.llm.completeStructured(
+        {
+          system: buildReviseSystemPrompt(dna, wasThread),
+          messages: [{ role: 'user', content: buildReviseUserPrompt(item.currentText, input.instruction) }],
+          runId: input.runId,
+          stepId: `revise-${item.id}`,
+        },
+        DraftXOutputSchema,
+      ),
     ),
   );
 
@@ -78,7 +87,7 @@ export async function reviseXPost(input: ReviseXPostInput): Promise<ReviseXPostR
     changedBy: 'agent',
     changedById: CREATED_BY_AGENT,
     reason: input.instruction,
-    package: { mode: revised.mode, hookOptions: revised.hookOptions, threadPosts: revised.threadPosts },
+    package: { mode: revised.mode, hookOptions: revised.hookOptions, threadPosts: revised.threadPosts, hashtags: revised.hashtags },
   });
 
   const qa = await runQaGate({

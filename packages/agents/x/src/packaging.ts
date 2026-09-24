@@ -2,6 +2,7 @@ import type { ContentItem, XMode, XPackage } from '@bb/shared-types';
 import { XPackageSchema } from '@bb/shared-types';
 
 import type { DraftXOutput } from './draftPost.js';
+import { MAX_X_HASHTAGS } from './draftPost.js';
 import { splitPostIntoThread, X_MAX_POST_LENGTH } from './threadSplit.js';
 
 // Spec 6.2's 280-char limit, enforced at draft time rather than only at publish time
@@ -19,6 +20,54 @@ export function enforceXLengthLimit(output: DraftXOutput): DraftXOutput {
 
   const rebuilt = posts.flatMap((post) => (post.length > X_MAX_POST_LENGTH ? splitPostIntoThread(post) : [post]));
   return { ...output, mode: 'thread', finalCopy: rebuilt[0] ?? output.finalCopy, threadPosts: rebuilt };
+}
+
+function normalizeHashtag(raw: string): string | null {
+  const tag = raw.trim().replace(/^#+/, '');
+  if (!tag || /\s/.test(tag)) return null;
+  return `#${tag}`;
+}
+
+// Attaches the up-to-3 reach-boosting hashtags draftXPost chose to the first post
+// only — finalCopy, and threadPosts[0] when the draft is a thread — never to
+// continuation posts, per the reach-boost ask: the hashtags sell the thread, they
+// don't need repeating once someone's already reading it. Must run after
+// enforceXLengthLimit so the 280-char budget checked here is the real remaining
+// budget; a hashtag block that doesn't fit is trimmed hashtag-by-hashtag (never by
+// cutting the post's own text) and output.hashtags is rewritten to match whatever
+// was actually attached, so the persisted package stays truthful about what's live.
+export function appendHashtags(output: DraftXOutput): DraftXOutput {
+  const hashtags = [...new Set((output.hashtags ?? []).map(normalizeHashtag).filter((t): t is string => t !== null))].slice(
+    0,
+    MAX_X_HASHTAGS,
+  );
+  if (hashtags.length === 0) return output;
+
+  let applied: string[] = [];
+  const attach = (post: string): string => {
+    for (let count = hashtags.length; count > 0; count--) {
+      const candidateTags = hashtags.slice(0, count);
+      const candidate = `${post}\n\n${candidateTags.join(' ')}`;
+      if (candidate.length <= X_MAX_POST_LENGTH) {
+        applied = candidateTags;
+        return candidate;
+      }
+    }
+    applied = [];
+    return post;
+  };
+
+  const threadPosts = output.mode === 'thread' ? output.threadPosts : null;
+  if (threadPosts === null || threadPosts.length === 0) {
+    const finalCopy = attach(output.finalCopy);
+    return { ...output, finalCopy, hashtags: applied };
+  }
+
+  // Thread mode keeps finalCopy === threadPosts[0] (same invariant enforceXLengthLimit
+  // maintains) — so both fields are updated from the one attach call, never drifting.
+  const [firstPost, ...restPosts] = threadPosts;
+  const updatedFirst = attach(firstPost ?? output.finalCopy);
+  return { ...output, finalCopy: updatedFirst, threadPosts: [updatedFirst, ...restPosts], hashtags: applied };
 }
 
 // Assembles the X_PACKAGE output contract (spec 6.4). Unlike LinkedIn's contract, X's
@@ -43,6 +92,7 @@ export function buildXPackage(item: ContentItem, draft: DraftXOutput, mode: XMod
     threadPosts: draft.threadPosts,
     sourceReferences: item.sourceUrls,
     factCheckStatus: draft.factCheckStatus,
+    hashtags: draft.hashtags,
     contentDnaVersion: item.contentDnaVersion,
     approvalRequired: true,
     publishAction: 'none',

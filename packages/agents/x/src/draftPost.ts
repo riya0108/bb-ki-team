@@ -18,6 +18,11 @@ export const X_NATIVE_PRINCIPLES: readonly string[] = [
 export const XModeDecisionSchema = z.enum(['single', 'thread']);
 export type XModeDecision = z.infer<typeof XModeDecisionSchema>;
 
+// Max hashtags the reach-boost feature will ever attach. Not enforced as a schema
+// .max() — a model that ignores the prompt and returns more shouldn't fail the whole
+// draft; packaging.ts's appendHashtags is what actually slices down to this count.
+export const MAX_X_HASHTAGS = 3;
+
 export const DraftXOutputSchema = z.object({
   mode: XModeDecisionSchema,
   hookOptions: z.array(z.string()).min(1).max(3),
@@ -26,6 +31,10 @@ export const DraftXOutputSchema = z.object({
   // every draft has one consistent "the primary text" field (mirrors XPackageSchema).
   threadPosts: z.array(z.string()).nullable(),
   factCheckStatus: z.string(),
+  // Topically relevant, high-reach hashtags, "#"-prefixed, chosen separately from
+  // finalCopy/threadPosts — packaging.ts's appendHashtags decides placement,
+  // length-fit and the MAX_X_HASHTAGS cap rather than trusting the model's own count.
+  hashtags: z.array(z.string()).default([]),
 });
 export type DraftXOutput = z.infer<typeof DraftXOutputSchema>;
 
@@ -83,7 +92,15 @@ perspective, analysis, example or disagreement.
 
 Classify every material claim per the taxonomy (FACT / ATTRIBUTED_CLAIM / INTERPRETATION / OPINION /
 PREDICTION / UNKNOWN) in your own reasoning before writing. Never state an UNKNOWN or PREDICTION as
-if it were a FACT. Never use an unsupported number.`;
+if it were a FACT. Never use an unsupported number.
+
+Hashtag selection: separately from finalCopy/threadPosts, choose up to ${MAX_X_HASHTAGS} hashtags
+that would realistically boost this specific post's reach and engagement on X — hashtags an
+engaged finance/business audience actually follows or searches (e.g. broad, high-traffic tags like
+#Markets, #Investing, #Fintech, #Economy, #Stocks, #Startups when genuinely relevant), narrowed by
+whatever is specific to this topic. Do not invent a hashtag no real audience would search. Do not
+pad to ${MAX_X_HASHTAGS} if fewer genuinely fit — an empty list is correct when nothing earns a
+place. Never use a hashtag as a substitute for saying the thing plainly in the post itself.`;
 }
 
 function buildUserPrompt(input: DraftXPostInput): string {
@@ -102,7 +119,8 @@ Write the X content for this topic and angle. Respond with the required JSON sha
 or "thread"), hookOptions (1-3 alternative opening lines for the same post/thread), finalCopy (the
 complete text — the single post, or the first post of the thread), threadPosts (the full ordered
 array of thread posts including the first one, or null if mode is "single"), factCheckStatus (one
-sentence: what is sourced vs. opinion/interpretation).`;
+sentence: what is sourced vs. opinion/interpretation), hashtags (0-${MAX_X_HASHTAGS} relevant,
+high-reach hashtags per the instructions above — do not include them inside finalCopy/threadPosts).`;
 }
 
 export async function draftXPost(input: DraftXPostInput): Promise<DraftXOutput> {

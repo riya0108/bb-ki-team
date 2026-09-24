@@ -417,6 +417,9 @@ Avoid generic 'here are 7 lessons' packaging unless the idea genuinely warrants 
 Use numbers and contrasts when they make the thought clearer.
 Do not force a thread when one post is stronger.
 Do not simply translate LinkedIn wording into X wording.
+Attach up to 3 relevant, high-reach, high-engagement hashtags for the topic to boost
+reachability — on the first post only (finalCopy, or the first post of a thread), never
+repeated across thread continuations.
 6.3 X workflow
 Load Content DNA.
 Load approved source material or topic.
@@ -438,6 +441,8 @@ final_copy:
 thread_posts:
 source_references:
 fact_check_status:
+hashtags: up to 3 relevant, high-reach/high-engagement hashtags, attached to final_copy (and
+thread_posts[0] when mode is thread) only — never to continuation posts
 content_dna_version:
 approval_required: true
 publish_action:

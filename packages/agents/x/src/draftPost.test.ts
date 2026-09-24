@@ -53,6 +53,61 @@ describe('draftXPost', () => {
     expect(capturedUser).toContain('UPI adoption');
   });
 
+  it('asks for hashtags and defaults to an empty list when the model omits them', async () => {
+    let capturedSystem = '';
+    let capturedUser = '';
+    const llm = createFakeLlmClient((input) => {
+      capturedSystem = input.system ?? '';
+      capturedUser = input.messages[0]?.content ?? '';
+      return JSON.stringify({
+        mode: 'single',
+        hookOptions: ['hook'],
+        finalCopy: 'A sharp single post.',
+        threadPosts: null,
+        factCheckStatus: 'Opinion.',
+      });
+    });
+
+    const result = await draftXPost({
+      topic: 'UPI adoption',
+      angle: 'Merchant fees are the real story',
+      sourceTexts: [],
+      contentDna: dna,
+      llm,
+      runId: 'test-run',
+      stepId: 'draft-test',
+    });
+
+    expect(capturedSystem).toContain('Hashtag selection');
+    expect(capturedUser).toContain('hashtags');
+    expect(result.hashtags).toEqual([]);
+  });
+
+  it('passes through model-chosen hashtags as-is — capping to MAX_X_HASHTAGS is appendHashtags\' job', async () => {
+    const llm = createFakeLlmClient(() =>
+      JSON.stringify({
+        mode: 'single',
+        hookOptions: ['hook'],
+        finalCopy: 'A sharp single post.',
+        threadPosts: null,
+        factCheckStatus: 'Opinion.',
+        hashtags: ['#Markets', '#Fintech', '#UPI'],
+      }),
+    );
+
+    const result = await draftXPost({
+      topic: 'UPI adoption',
+      angle: 'Merchant fees are the real story',
+      sourceTexts: [],
+      contentDna: dna,
+      llm,
+      runId: 'test-run',
+      stepId: 'draft-test',
+    });
+
+    expect(result.hashtags).toEqual(['#Markets', '#Fintech', '#UPI']);
+  });
+
   it('forces mode to single and nulls threadPosts when forceMode=single is disobeyed', async () => {
     const llm = createFakeLlmClient(() =>
       JSON.stringify({
