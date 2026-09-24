@@ -6,6 +6,9 @@ import type {
   LearningEvent,
   PublishEvent,
   Revision,
+  VisualAsset,
+  VisualReferenceAsset,
+  VisualReferenceKind,
 } from '@bb/shared-types';
 
 import { clearStoredToken, getStoredToken } from './authToken';
@@ -191,4 +194,71 @@ export function sendChatMessage(
   openContentId: string | null,
 ): Promise<ChatResponse> {
   return post(`/${platform}/chat`, { message, sessionId, openContentId });
+}
+
+// --- BB Visual Agent (packages/agents/visual) ---
+// Gated on BB_VISUAL_AGENT_ENABLED server-side (apps/api/src/routes/visual.ts) —
+// when the flag is off, these calls 403 with an explicit message rather than
+// silently doing nothing.
+
+export function getVisualAsset(contentId: string): Promise<{ asset: VisualAsset | null }> {
+  return request(`/visual/${contentId}`);
+}
+
+// Manual/browser-driven path only (deliberately not the billed `/generate`
+// endpoint — see the visual agent no-paid-api memory): step 1 decides whether a
+// visual is warranted and, if so, returns the exact prompt for a human/Claude to
+// paste into a free image-gen web UI (ChatGPT, Gemini web, Google Flow).
+export interface PrepareVisualResult {
+  runId: string;
+  terminal: boolean;
+  asset?: VisualAsset;
+  visualId?: string;
+  prompt?: string;
+  negativePrompt?: string;
+  aspectRatio?: string;
+}
+
+export function prepareVisual(contentId: string): Promise<PrepareVisualResult> {
+  return post(`/visual/${contentId}/prepare`);
+}
+
+// Step 2 — finishes a GENERATION_PENDING brief once the image has been generated
+// in a web UI and downloaded. `imageBase64` excludes the `data:...;base64,` prefix.
+// --- Visual reference library (packages/db/src/repositories/visualReferenceAssets) ---
+// Persistent character/style reference images so the visual agent's generation
+// prompt can stay consistent across posts — see the blog thumbnail flow.
+
+export function listReferences(
+  platform: string,
+  kind?: VisualReferenceKind,
+): Promise<{ references: VisualReferenceAsset[] }> {
+  const params = new URLSearchParams({ platform });
+  if (kind) params.set('kind', kind);
+  return request(`/references?${params.toString()}`);
+}
+
+export function uploadReference(
+  platform: string,
+  kind: VisualReferenceKind,
+  label: string | null,
+  base64Data: string,
+  mimeType: string,
+): Promise<{ reference: VisualReferenceAsset }> {
+  return post('/references', { platform, kind, label, base64Data, mimeType });
+}
+
+export function deleteReference(id: string): Promise<{ ok: true }> {
+  return request(`/references/${id}`, { method: 'DELETE' });
+}
+
+export function ingestVisual(
+  contentId: string,
+  visualId: string,
+  imageBase64: string,
+  mimeType: string,
+  provider: string,
+  model: string,
+): Promise<{ runId: string; asset: VisualAsset }> {
+  return post(`/visual/${contentId}/ingest`, { visualId, base64Data: imageBase64, mimeType, provider, model });
 }

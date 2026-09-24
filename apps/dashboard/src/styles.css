@@ -311,12 +311,24 @@ select:focus {
   padding: 14px;
 }
 
-/* Transparent on desktop so its children (the mobile-only tabs, hidden via
-   display:none, and ContentQueue's own .panel) act as the grid's direct items —
-   keeps the existing 300px/1fr column split unchanged. Mobile overrides this to
+/* A real flex column on desktop (not display:contents) so queue-panel can hold
+   more than one stacked box — ContentQueue's .panel plus ReferenceLibrary — as a
+   single 300px grid item. (display:contents previously let its children flow
+   directly into the grid, which only worked by accident while ContentQueue's
+   .panel was the sole visible child; a second child would land in the grid's
+   1fr column instead of stacking underneath.) Mobile overrides this further to
    become the actual sliding drawer container (see the max-width:768px block). */
 .queue-panel {
-  display: contents;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 0;
+}
+
+/* Grows to fill queue-panel's flex space and scrolls internally, leaving
+   ReferenceLibrary (queue-panel's other child, natural height) visible below it. */
+.queue-panel > .panel {
+  flex: 1 1 auto;
 }
 
 .mobile-nav-backdrop {
@@ -1031,6 +1043,168 @@ select:focus {
 .section-divider {
   border-top: 1px solid var(--border);
   margin: 18px 0;
+}
+
+/* ---------- visual panel ---------- */
+
+.visual-panel {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 14px;
+  margin-top: 14px;
+}
+
+.visual-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.section-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-faint);
+}
+
+.muted {
+  color: var(--text-dim);
+  font-size: 12.5px;
+  margin: 0 0 10px;
+}
+
+.visual-preview {
+  display: block;
+  max-width: 100%;
+  max-height: 320px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  margin-bottom: 10px;
+}
+
+.visual-issues {
+  margin: 0 0 10px;
+  padding-left: 18px;
+  color: var(--amber);
+  font-size: 12.5px;
+}
+
+.visual-prompt-textarea {
+  min-height: 90px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+
+.status-badge.visual-generated,
+.status-badge.visual-qa_pass,
+.status-badge.visual-approved {
+  color: var(--green);
+  border-color: rgba(79, 214, 138, 0.4);
+  background: rgba(79, 214, 138, 0.1);
+}
+
+.status-badge.visual-needs_review,
+.status-badge.visual-brief_ready,
+.status-badge.visual-generation_pending {
+  color: var(--amber);
+  border-color: rgba(227, 181, 89, 0.4);
+  background: var(--gold-soft);
+}
+
+.status-badge.visual-rejected,
+.status-badge.visual-failed {
+  color: var(--red);
+  border-color: rgba(255, 92, 92, 0.4);
+  background: rgba(255, 92, 92, 0.1);
+}
+
+/* ---------- reference library (blog platform, queue panel) ---------- */
+
+.reference-library {
+  flex: 0 0 auto;
+}
+
+.reference-library-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.reference-library-body {
+  margin-top: 10px;
+}
+
+.reference-section {
+  margin-bottom: 16px;
+}
+
+.reference-section:last-child {
+  margin-bottom: 0;
+}
+
+.reference-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.reference-thumb {
+  position: relative;
+  width: 64px;
+  height: 64px;
+}
+
+.reference-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+}
+
+.reference-thumb-remove {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  line-height: 1;
+  border-radius: 50%;
+  background: var(--red);
+  color: #fff;
+  border: 1px solid var(--bg);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.reference-thumb-label {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  font-size: 9px;
+  text-align: center;
+  padding: 1px 2px;
+  background: rgba(0, 0, 0, 0.55);
+  color: var(--text);
+  border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reference-upload-label {
+  cursor: pointer;
 }
 
 .html-preview-link {

@@ -133,6 +133,7 @@ function fakeImageGen(overrides: Partial<ImageGenTool> = {}): ImageGenTool {
   return {
     generateImage: () => Promise.resolve(fakeGeneratedImage),
     storeVisualAsset: () => Promise.resolve(fakeStoredAsset),
+    signAsset: () => Promise.resolve({ assetUrl: fakeStoredAsset.assetUrl }),
     close: () => Promise.resolve(),
     ...overrides,
   };

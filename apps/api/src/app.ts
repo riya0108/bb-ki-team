@@ -10,6 +10,7 @@ import { createContentRouter } from './routes/content.js';
 import { createContentDnaRouter } from './routes/contentDna.js';
 import { createInstagramRouter } from './routes/instagram.js';
 import { createLinkedinRouter } from './routes/linkedin.js';
+import { createReferencesRouter } from './routes/references.js';
 import { createSchedulerRouter } from './routes/scheduler.js';
 import { createVisualRouter } from './routes/visual.js';
 import { createXRouter } from './routes/x.js';
@@ -20,7 +21,10 @@ import { createYoutubeShortsRouter } from './routes/youtubeShorts.js';
 // tests (CLAUDE.md: every module touching external state must be testable in isolation).
 export function createApp(deps: AppDeps): Express {
   const app = express();
-  app.use(express.json());
+  // Default 100kb is far too small for /visual's ingest route, whose body is a
+  // base64-encoded image (a manually-generated visual can be several MB raw, ~33%
+  // larger again once base64-encoded).
+  app.use(express.json({ limit: '20mb' }));
 
   app.get('/health', (_req, res) => {
     res.status(200).json({ status: 'ok' });
@@ -48,6 +52,7 @@ export function createApp(deps: AppDeps): Express {
   app.use('/content', createContentRouter(deps));
   app.use('/content-dna', createContentDnaRouter(deps));
   app.use('/visual', createVisualRouter(deps));
+  app.use('/references', createReferencesRouter(deps));
   app.use('/internal/scheduler', createSchedulerRouter(deps));
 
   app.use(errorHandler(deps.logger));

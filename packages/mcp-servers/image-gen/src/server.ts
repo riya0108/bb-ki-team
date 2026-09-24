@@ -3,7 +3,7 @@ import { z } from 'zod';
 
 import { generateImageWithGemini } from './geminiImage.js';
 import type { GeminiImageConfig } from './geminiImage.js';
-import { storeVisualAssetInSupabase } from './supabaseStorage.js';
+import { signAssetInSupabase, storeVisualAssetInSupabase } from './supabaseStorage.js';
 import type { SupabaseStorageConfig } from './supabaseStorage.js';
 
 export interface ImageGenMcpServerDeps {
@@ -95,6 +95,49 @@ export function createImageGenMcpServer(deps: ImageGenMcpServerDeps): McpServer 
           };
         }
         return { content: [{ type: 'text', text: JSON.stringify(outcome.result) }] };
+      } catch (error) {
+        return {
+          content: [{ type: 'text', text: JSON.stringify(errorPayload(error)) }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  server.registerTool(
+    'sign_asset',
+    {
+      description:
+        'Re-sign an already-uploaded Supabase Storage path without re-uploading. For assets read ' +
+        'long after their original signed URL (from upload time) may have expired — e.g. the ' +
+        'reusable visual reference library.',
+      inputSchema: {
+        path: z.string().min(1),
+        expirySeconds: z.number().int().positive().optional(),
+      },
+    },
+    async (request) => {
+      if (!deps.supabaseStorage) {
+        return {
+          content: [
+            { type: 'text', text: JSON.stringify({ message: 'no asset storage is configured' }) },
+          ],
+          isError: true,
+        };
+      }
+      try {
+        const outcome = await signAssetInSupabase(
+          deps.supabaseStorage,
+          request.path,
+          request.expirySeconds,
+        );
+        if (!outcome.ok) {
+          return {
+            content: [{ type: 'text', text: JSON.stringify(outcome.error) }],
+            isError: true,
+          };
+        }
+        return { content: [{ type: 'text', text: JSON.stringify({ assetUrl: outcome.assetUrl }) }] };
       } catch (error) {
         return {
           content: [{ type: 'text', text: JSON.stringify(errorPayload(error)) }],

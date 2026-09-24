@@ -64,6 +64,9 @@ const unusedImageGen: ImageGenTool = {
   storeVisualAsset(): ReturnType<ImageGenTool['storeVisualAsset']> {
     return Promise.reject(new Error('not used in this test'));
   },
+  signAsset(): ReturnType<ImageGenTool['signAsset']> {
+    return Promise.reject(new Error('not used in this test'));
+  },
   close(): Promise<void> {
     return Promise.resolve();
   },

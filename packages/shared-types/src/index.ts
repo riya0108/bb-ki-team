@@ -15,3 +15,4 @@ export * from './chatMessage.js';
 export * from './fetchResult.js';
 export * from './youtubeTranscript.js';
 export * from './visualAsset.js';
+export * from './visualReferenceAsset.js';

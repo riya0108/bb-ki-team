@@ -42,6 +42,9 @@ export interface StoredVisualAsset {
 export interface ImageGenTool {
   generateImage(request: GenerateImageRequest): Promise<GeneratedImage>;
   storeVisualAsset(request: StoreVisualAssetRequest): Promise<StoredVisualAsset>;
+  // Re-signs an already-uploaded path without re-uploading — for assets (e.g. the
+  // visual reference library) read long after their original signed URL expired.
+  signAsset(path: string, expirySeconds?: number): Promise<{ assetUrl: string }>;
   close(): Promise<void>;
 }
 
@@ -91,6 +94,8 @@ export function createImageGenMcpClient(
   return {
     generateImage: (request) => callTool<GeneratedImage>('generate_image', request),
     storeVisualAsset: (request) => callTool<StoredVisualAsset>('store_visual_asset', request),
+    signAsset: (path, expirySeconds) =>
+      callTool<{ assetUrl: string }>('sign_asset', { path, expirySeconds }),
     async close(): Promise<void> {
       await client.close();
     },

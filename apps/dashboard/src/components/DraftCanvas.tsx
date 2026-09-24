@@ -16,6 +16,7 @@ import {
 } from '../api/client';
 import { useOperatorName } from '../hooks/useOperatorName';
 import { ActivityLog } from './ActivityLog';
+import { VisualPanel } from './VisualPanel';
 
 interface DraftCanvasProps {
   contentId: string | null;
@@ -187,6 +188,15 @@ export function DraftCanvas({ contentId, onChanged }: DraftCanvasProps) {
       ) : (
         <textarea className="draft-textarea" value={text} onChange={(e) => setText(e.target.value)} />
       )}
+
+      <VisualPanel
+        contentId={item.id}
+        version={item.currentVersion}
+        onGenerated={() => {
+          void reload();
+          onChanged();
+        }}
+      />
 
       <div className="action-row">
         <button
