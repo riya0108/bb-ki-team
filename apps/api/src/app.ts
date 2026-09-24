@@ -11,6 +11,7 @@ import { createContentDnaRouter } from './routes/contentDna.js';
 import { createInstagramRouter } from './routes/instagram.js';
 import { createLinkedinRouter } from './routes/linkedin.js';
 import { createSchedulerRouter } from './routes/scheduler.js';
+import { createVisualRouter } from './routes/visual.js';
 import { createXRouter } from './routes/x.js';
 import { createYoutubeShortsRouter } from './routes/youtubeShorts.js';
 
@@ -46,6 +47,7 @@ export function createApp(deps: AppDeps): Express {
   app.use('/blog', createBlogRouter(deps));
   app.use('/content', createContentRouter(deps));
   app.use('/content-dna', createContentDnaRouter(deps));
+  app.use('/visual', createVisualRouter(deps));
   app.use('/internal/scheduler', createSchedulerRouter(deps));
 
   app.use(errorHandler(deps.logger));

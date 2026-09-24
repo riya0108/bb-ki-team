@@ -23,5 +23,10 @@ export const BlogPackageSchema = z.object({
   contentDnaVersion: z.number().int().positive(),
   approvalRequired: z.literal(true),
   publishAction: PublishActionSchema,
+  // Additive, optional reference into visual_assets (packages/db/migrations/0018) —
+  // see @bb/visual-agent. Defaults to null so every existing call to
+  // BlogPackageSchema.parse(...) keeps working unchanged (BB-Visual-Agent-Skill's
+  // integration contract: "keep visual data additive").
+  visualAssetId: z.string().uuid().nullable().default(null),
 });
 export type BlogPackage = z.infer<typeof BlogPackageSchema>;

@@ -14,3 +14,4 @@ export * from './publishEvent.js';
 export * from './chatMessage.js';
 export * from './fetchResult.js';
 export * from './youtubeTranscript.js';
+export * from './visualAsset.js';

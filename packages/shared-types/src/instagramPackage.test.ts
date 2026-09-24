@@ -91,4 +91,24 @@ describe('InstagramPackageSchema', () => {
     });
     expect(result.success).toBe(false);
   });
+
+  it('defaults visualAssetId to null when omitted, for text-only regression', () => {
+    const post = {
+      format: 'post' as const,
+      ...common,
+      concept: 'A concept',
+      visualDirection: 'A visual',
+      coverText: 'Cover text',
+      headline: 'Headline',
+      caption: 'Caption',
+      firstLineHook: 'Hook',
+      cta: null,
+      hashtagsOptional: [],
+      altText: 'Alt text',
+      designNotes: 'Notes',
+    };
+    const result = InstagramPackageSchema.safeParse(post);
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.visualAssetId).toBeNull();
+  });
 });

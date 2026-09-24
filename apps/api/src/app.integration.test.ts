@@ -11,7 +11,7 @@ import { createFakeLlmClient } from '@bb/core/testing';
 import { createPool, insertContentDna } from '@bb/db';
 import type { Pool } from '@bb/db';
 import { FetchToolError } from '@bb/mcp-client';
-import type { FetchTool, YoutubeTranscriptTool } from '@bb/mcp-client';
+import type { FetchTool, ImageGenTool, YoutubeTranscriptTool } from '@bb/mcp-client';
 import type { FetchResult } from '@bb/shared-types';
 import type { Server } from 'http';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
@@ -51,6 +51,18 @@ const unusedFetchTool: FetchTool = {
 const unusedYoutubeTool: YoutubeTranscriptTool = {
   fetchTranscript(url: string): Promise<FetchResult> {
     return Promise.reject(new FetchToolError(url, 'not used in this test'));
+  },
+  close(): Promise<void> {
+    return Promise.resolve();
+  },
+};
+
+const unusedImageGen: ImageGenTool = {
+  generateImage(): ReturnType<ImageGenTool['generateImage']> {
+    return Promise.reject(new Error('not used in this test'));
+  },
+  storeVisualAsset(): ReturnType<ImageGenTool['storeVisualAsset']> {
+    return Promise.reject(new Error('not used in this test'));
   },
   close(): Promise<void> {
     return Promise.resolve();
@@ -119,11 +131,12 @@ describeIfDb('apps/api HTTP surface (integration, real Postgres)', () => {
     dnaVersion = dna.version;
 
     const deps: AppDeps = {
-      env: { databaseUrl: databaseUrl ?? '', apiPort: 0, apiHost: '127.0.0.1' },
+      env: { databaseUrl: databaseUrl ?? '', apiPort: 0, apiHost: '127.0.0.1', visualAgentEnabled: false },
       pool,
       llm: buildLlm(),
       fetchTool: unusedFetchTool,
       youtubeTranscriptTool: unusedYoutubeTool,
+      imageGen: unusedImageGen,
       logger: noopLogger,
       publishConnectors: {},
       scheduleConnectors: {},
@@ -296,11 +309,12 @@ describeIfDb('apps/api HTTP surface (integration, real Postgres)', () => {
       proposedChange: { voice: { forbiddenPhrases: ['!'] } },
     });
     const deps: AppDeps = {
-      env: { databaseUrl: databaseUrl ?? '', apiPort: 0, apiHost: '127.0.0.1' },
+      env: { databaseUrl: databaseUrl ?? '', apiPort: 0, apiHost: '127.0.0.1', visualAgentEnabled: false },
       pool,
       llm: learningLlm,
       fetchTool: unusedFetchTool,
       youtubeTranscriptTool: unusedYoutubeTool,
+      imageGen: unusedImageGen,
       logger: noopLogger,
       publishConnectors: {},
       scheduleConnectors: {},

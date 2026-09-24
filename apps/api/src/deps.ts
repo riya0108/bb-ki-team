@@ -2,11 +2,12 @@ import type { EmailConfig, Env, LlmClient, Logger } from '@bb/core';
 import { createFallbackLlmClient, createLogger, loadEnv } from '@bb/core';
 import type { Pool } from '@bb/db';
 import { createPool } from '@bb/db';
-import type { FetchTool, YoutubeTranscriptTool } from '@bb/mcp-client';
+import type { FetchTool, ImageGenTool, YoutubeTranscriptTool } from '@bb/mcp-client';
 import {
   createBlogGitPublishConnector,
   createBlogGitScheduleConnector,
   createBufferPublishConnector,
+  createImageGenMcpClient,
   createLinkedinMcpClient,
   createXScheduleConnector,
   createYoutubeTranscriptMcpClient,
@@ -22,6 +23,7 @@ export interface AppDeps {
   llm: LlmClient;
   fetchTool: FetchTool;
   youtubeTranscriptTool: YoutubeTranscriptTool;
+  imageGen: ImageGenTool;
   logger: Logger;
   // Keyed by platform. A platform with no entry here means every publish/schedule
   // request for it honestly fails and is logged rather than pretending to succeed
@@ -48,6 +50,13 @@ export function createAppDeps(): AppDeps {
   const llm = createFallbackLlmClient(env, logger);
   const fetchTool = createLinkedinMcpClient(logger);
   const youtubeTranscriptTool = createYoutubeTranscriptMcpClient(logger);
+  // Always constructed, same as fetchTool/youtubeTranscriptTool above — the client
+  // itself has no config, only the MCP server behind it does. Calling generateImage/
+  // storeVisualAsset without env.geminiImage/env.supabaseStorage configured returns
+  // an explicit "not configured" error rather than silently doing nothing (see
+  // packages/mcp-servers/image-gen/src/server.ts), matching every other
+  // "unset = honestly not configured" connector in this file.
+  const imageGen = createImageGenMcpClient({ gemini: env.geminiImage, supabaseStorage: env.supabaseStorage }, logger);
 
   const publishConnectors: Record<string, PublishConnector> = {};
   // blog's ScheduleConnector needs no config at all — it's a pure no-op that just
@@ -77,6 +86,7 @@ export function createAppDeps(): AppDeps {
     llm,
     fetchTool,
     youtubeTranscriptTool,
+    imageGen,
     logger,
     publishConnectors,
     scheduleConnectors,
@@ -100,6 +110,7 @@ export async function closeAppDeps(deps: AppDeps): Promise<void> {
   await Promise.all([
     deps.fetchTool.close(),
     deps.youtubeTranscriptTool.close(),
+    deps.imageGen.close(),
     deps.pool.end(),
     ...connectorCloses,
   ]);

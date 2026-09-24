@@ -128,4 +128,57 @@ describe('loadEnv', () => {
       siteBaseUrl: 'https://staging.bullorbear.in',
     });
   });
+
+  it('defaults visualAgentEnabled to false and leaves image/storage config undefined', () => {
+    const env = loadEnv(baseValidEnv);
+    expect(env.visualAgentEnabled).toBe(false);
+    expect(env.geminiImage).toBeUndefined();
+    expect(env.supabaseStorage).toBeUndefined();
+  });
+
+  it('treats any BB_VISUAL_AGENT_ENABLED value other than the literal string "true" as false', () => {
+    expect(loadEnv({ ...baseValidEnv, BB_VISUAL_AGENT_ENABLED: 'false' }).visualAgentEnabled).toBe(
+      false,
+    );
+    expect(loadEnv({ ...baseValidEnv, BB_VISUAL_AGENT_ENABLED: 'yes' }).visualAgentEnabled).toBe(
+      false,
+    );
+    expect(loadEnv({ ...baseValidEnv, BB_VISUAL_AGENT_ENABLED: 'true' }).visualAgentEnabled).toBe(
+      true,
+    );
+  });
+
+  it('ignores GEMINI_IMAGE_MODEL without a GEMINI_API_KEY', () => {
+    const { GEMINI_API_KEY: _unused, ...rest } = baseValidEnv;
+    const env = loadEnv({
+      ...rest,
+      GROQ_API_KEY: 'k',
+      GROQ_MODEL: 'm',
+      GEMINI_IMAGE_MODEL: 'gemini-2.5-flash-image',
+    });
+    expect(env.geminiImage).toBeUndefined();
+  });
+
+  it('loads geminiImage when GEMINI_API_KEY and GEMINI_IMAGE_MODEL are both set', () => {
+    const env = loadEnv({ ...baseValidEnv, GEMINI_IMAGE_MODEL: 'gemini-2.5-flash-image' });
+    expect(env.geminiImage).toEqual({ apiKey: 'key', model: 'gemini-2.5-flash-image' });
+  });
+
+  it('ignores a partial Supabase Storage config', () => {
+    const env = loadEnv({ ...baseValidEnv, SUPABASE_URL: 'https://x.supabase.co' });
+    expect(env.supabaseStorage).toBeUndefined();
+  });
+
+  it('loads supabaseStorage with a default bucket name', () => {
+    const env = loadEnv({
+      ...baseValidEnv,
+      SUPABASE_URL: 'https://x.supabase.co',
+      SUPABASE_SERVICE_ROLE_KEY: 'service-role-key',
+    });
+    expect(env.supabaseStorage).toEqual({
+      url: 'https://x.supabase.co',
+      serviceRoleKey: 'service-role-key',
+      bucket: 'visual-assets',
+    });
+  });
 });

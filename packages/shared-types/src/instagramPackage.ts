@@ -15,6 +15,11 @@ const commonFields = {
   sourceReferences: z.array(z.string()).default([]),
   approvalRequired: z.literal(true),
   publishAction: PublishActionSchema,
+  // Additive, optional reference into visual_assets (packages/db/migrations/0018) —
+  // see @bb/visual-agent. Defaults to null so every existing call to *Schema.parse(...)
+  // keeps working unchanged (BB-Visual-Agent-Skill's integration contract: "keep
+  // visual data additive").
+  visualAssetId: z.string().uuid().nullable().default(null),
 };
 
 // Mirrors INSTAGRAM_POST, spec section 8.2.

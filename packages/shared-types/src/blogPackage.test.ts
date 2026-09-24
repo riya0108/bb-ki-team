@@ -31,4 +31,10 @@ describe('BlogPackageSchema', () => {
   it('rejects approvalRequired: false', () => {
     expect(BlogPackageSchema.safeParse({ ...base, approvalRequired: false }).success).toBe(false);
   });
+
+  it('defaults visualAssetId to null when omitted, for text-only regression', () => {
+    const result = BlogPackageSchema.safeParse(base);
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.visualAssetId).toBeNull();
+  });
 });

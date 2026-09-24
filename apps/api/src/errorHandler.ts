@@ -26,6 +26,9 @@ const ERROR_STATUS: Record<string, number> = {
   ContentNotScheduledError: 409,
   AllProvidersFailedError: 502,
   LlmOutputValidationError: 502,
+  VisualContentNotFoundError: 404,
+  VisualBlockedMissingTruthLayerError: 409,
+  VisualBriefNotPendingError: 409,
 };
 
 function statusForError(error: unknown): number {

@@ -1,5 +1,5 @@
 {
-  "name": "@bb/mcp-client",
+  "name": "@bb/visual-agent",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -10,15 +10,11 @@
   },
   "dependencies": {
     "@bb/core": "0.1.0",
-    "@bb/mcp-blog-git": "0.1.0",
-    "@bb/mcp-buffer": "0.1.0",
-    "@bb/mcp-fetch": "0.1.0",
-    "@bb/mcp-image-gen": "0.1.0",
-    "@bb/mcp-x": "0.1.0",
-    "@bb/mcp-youtube-transcript": "0.1.0",
+    "@bb/db": "0.1.0",
+    "@bb/mcp-client": "0.1.0",
+    "@bb/qa-gate": "0.1.0",
     "@bb/shared-types": "0.1.0",
     "@bb/workflows": "0.1.0",
-    "@modelcontextprotocol/sdk": "^1.24.1",
     "zod": "^4.4.3"
   }
 }

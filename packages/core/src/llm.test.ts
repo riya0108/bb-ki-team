@@ -35,6 +35,7 @@ describe('createFallbackLlmClient.complete', () => {
       databaseUrl: 'x',
       apiPort: 4000,
       apiHost: '127.0.0.1',
+      visualAgentEnabled: false,
       gemini: { apiKey: 'g', model: 'gemini-model' },
       groq: { apiKey: 'q', model: 'groq-model' },
     };
@@ -56,6 +57,7 @@ describe('createFallbackLlmClient.complete', () => {
       databaseUrl: 'x',
       apiPort: 4000,
       apiHost: '127.0.0.1',
+      visualAgentEnabled: false,
       groq: { apiKey: 'q', model: 'groq-model' },
     };
     const fetchImpl = vi.fn(() => Promise.resolve(jsonResponse('nope', 500)));
@@ -71,6 +73,7 @@ describe('createFallbackLlmClient.complete request shape', () => {
       databaseUrl: 'x',
       apiPort: 4000,
       apiHost: '127.0.0.1',
+      visualAgentEnabled: false,
       groq: { apiKey: 'q', model: 'm' },
     };
     const fetchImpl = vi.fn((_url: string | URL | Request, _init?: RequestInit) =>
@@ -91,6 +94,7 @@ describe('createFallbackLlmClient.complete request shape', () => {
       databaseUrl: 'x',
       apiPort: 4000,
       apiHost: '127.0.0.1',
+      visualAgentEnabled: false,
       groq: { apiKey: 'q', model: 'm' },
     };
     const fetchImpl = vi.fn((_url: string | URL | Request, _init?: RequestInit) =>
@@ -115,6 +119,7 @@ describe('createFallbackLlmClient.completeStructured', () => {
       databaseUrl: 'x',
       apiPort: 4000,
       apiHost: '127.0.0.1',
+      visualAgentEnabled: false,
       groq: { apiKey: 'q', model: 'm' },
     };
     const fetchImpl = vi.fn(() =>
@@ -132,6 +137,7 @@ describe('createFallbackLlmClient.completeStructured', () => {
       databaseUrl: 'x',
       apiPort: 4000,
       apiHost: '127.0.0.1',
+      visualAgentEnabled: false,
       groq: { apiKey: 'q', model: 'm' },
     };
     // Reproduces a real provider response shape: some models append trailing
@@ -150,6 +156,7 @@ describe('createFallbackLlmClient.completeStructured', () => {
       databaseUrl: 'x',
       apiPort: 4000,
       apiHost: '127.0.0.1',
+      visualAgentEnabled: false,
       groq: { apiKey: 'q', model: 'm' },
     };
     const fenced = 'Here is the JSON:\n```json\n{"greeting": "hi"}\n```';
@@ -166,6 +173,7 @@ describe('createFallbackLlmClient.completeStructured', () => {
       databaseUrl: 'x',
       apiPort: 4000,
       apiHost: '127.0.0.1',
+      visualAgentEnabled: false,
       groq: { apiKey: 'q', model: 'm' },
     };
     let call = 0;
@@ -190,6 +198,7 @@ describe('createFallbackLlmClient.completeStructured', () => {
       databaseUrl: 'x',
       apiPort: 4000,
       apiHost: '127.0.0.1',
+      visualAgentEnabled: false,
       groq: { apiKey: 'q', model: 'm' },
     };
     let call = 0;
@@ -219,6 +228,7 @@ describe('createFallbackLlmClient.completeStructured', () => {
       databaseUrl: 'x',
       apiPort: 4000,
       apiHost: '127.0.0.1',
+      visualAgentEnabled: false,
       groq: { apiKey: 'q', model: 'm' },
     };
     const fetchImpl = vi.fn(() => Promise.resolve(jsonResponse(chatCompletion('still not json'))));

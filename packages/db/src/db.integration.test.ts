@@ -6,11 +6,15 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { insertApproval } from './repositories/approvals.js';
 import { insertContentDna } from './repositories/contentDna.js';
 import { insertContentItem, updateContentItemText } from './repositories/contentItems.js';
-import { createInterviewSession, recordAnswerAndNextQuestion } from './repositories/interviewSessions.js';
+import {
+  createInterviewSession,
+  recordAnswerAndNextQuestion,
+} from './repositories/interviewSessions.js';
 import { insertLearningEvent } from './repositories/learningEvents.js';
 import { insertQaResult } from './repositories/qaResults.js';
 import { insertRevision } from './repositories/revisions.js';
 import { insertSource } from './repositories/sources.js';
+import { getLatestVisualAssetForContent, upsertVisualAsset } from './repositories/visualAssets.js';
 import { createPool } from './pool.js';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
@@ -62,7 +66,11 @@ describeIfDb('packages/db repositories (integration, real Postgres)', () => {
 
   it('inserts a source', async () => {
     await withRollback(async (db) => {
-      const source = await insertSource(db, { name: 'Test Source', platform: 'linkedin', url: 'https://example.com/x' });
+      const source = await insertSource(db, {
+        name: 'Test Source',
+        platform: 'linkedin',
+        url: 'https://example.com/x',
+      });
       expect(source.status).toBe('active');
       expect(source.tier).toBe('tier_2_secondary');
     });
@@ -102,10 +110,17 @@ describeIfDb('packages/db repositories (integration, real Postgres)', () => {
 
       // Omitting `package` entirely (vs. passing null) must leave the existing value
       // alone — this is what lets plain text-only edits skip re-supplying the package.
-      const unchanged = await updateContentItemText(db, item.id, { version: 3, text: 'edited again' });
+      const unchanged = await updateContentItemText(db, item.id, {
+        version: 3,
+        text: 'edited again',
+      });
       expect(unchanged.package).toEqual({ threadPosts: ['edited draft', 'second post'] });
 
-      const approval = await insertApproval(db, { contentId: item.id, version: 2, approvedBy: 'riya' });
+      const approval = await insertApproval(db, {
+        contentId: item.id,
+        version: 2,
+        approvedBy: 'riya',
+      });
       expect(approval.invalidatedAt).toBeNull();
 
       const qa = await insertQaResult(db, item.id, 2, {
@@ -162,6 +177,73 @@ describeIfDb('packages/db repositories (integration, real Postgres)', () => {
       expect(completed.status).toBe('completed');
       expect(completed.turns).toHaveLength(2);
       expect(completed.turns[1]?.answer).toBe('Small fintech startups.');
+    });
+  });
+
+  it('stores and re-fetches a visual asset, upserting in place for the same version', async () => {
+    await withRollback(async (db) => {
+      const dna = await insertContentDna(db, { version: 1, status: 'active', body: dnaBody });
+      const item = await insertContentItem(db, {
+        platform: 'instagram',
+        createdByAgent: 'agent-instagram',
+        mode: 'single_topic',
+        topic: 'AI regulation',
+        contentDnaVersion: dna.version,
+        text: 'a post about AI regulation',
+      });
+
+      const base = {
+        id: '11111111-1111-4111-8111-111111111111',
+        contentId: item.id,
+        version: 1,
+        visualType: null,
+        concept: null,
+        rationale: null,
+        sourceMode: null,
+        isAiGenerated: false,
+        isIllustrative: false,
+        disclosureRequired: false,
+        generationBrief: null,
+        visualClaims: [],
+        fictionalOrIllustrativeElements: [],
+        riskFlags: [],
+        qa: null,
+        masterAsset: {
+          status: 'NONE' as const,
+          provider: null,
+          model: null,
+          generationId: null,
+          assetPath: null,
+          assetUrl: null,
+          mimeType: null,
+          width: null,
+          height: null,
+          createdAt: null,
+        },
+        platformVariants: {},
+        blockingReasons: [],
+        createdAt: '2026-09-23T00:00:00.000Z',
+        updatedAt: '2026-09-23T00:00:00.000Z',
+      };
+
+      const pending = await upsertVisualAsset(db, {
+        ...base,
+        status: 'GENERATION_PENDING',
+        visualDecision: 'RECOMMENDED',
+      });
+      expect(pending.status).toBe('GENERATION_PENDING');
+
+      const failed = await upsertVisualAsset(db, {
+        ...base,
+        status: 'FAILED',
+        visualDecision: 'RECOMMENDED',
+        blockingReasons: ['provider returned no asset'],
+      });
+      expect(failed.status).toBe('FAILED');
+
+      const latest = await getLatestVisualAssetForContent(db, item.id);
+      expect(latest?.status).toBe('FAILED');
+      expect(latest?.blockingReasons).toEqual(['provider returned no asset']);
     });
   });
 });

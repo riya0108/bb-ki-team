@@ -15,6 +15,7 @@
     "@bb/db": "0.1.0",
     "@bb/mcp-client": "0.1.0",
     "@bb/shared-types": "0.1.0",
+    "@bb/visual-agent": "0.1.0",
     "@bb/workflows": "0.1.0",
     "cors": "^2.8.5",
     "express": "^5.2.1",

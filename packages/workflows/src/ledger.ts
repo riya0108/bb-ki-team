@@ -47,7 +47,10 @@ async function requireContentItem(db: Queryable, id: string): Promise<ContentIte
   return item;
 }
 
-export async function createContentItem(db: Queryable, input: NewContentItemInput): Promise<ContentItem> {
+export async function createContentItem(
+  db: Queryable,
+  input: NewContentItemInput,
+): Promise<ContentItem> {
   return insertContentItem(db, input);
 }
 
@@ -70,7 +73,12 @@ export async function listContentItems(
   return dbListContentItems(db, filter);
 }
 
-export async function recordQaResult(db: Queryable, contentId: string, version: number, qa: QaResult): Promise<void> {
+export async function recordQaResult(
+  db: Queryable,
+  contentId: string,
+  version: number,
+  qa: QaResult,
+): Promise<void> {
   await insertQaResult(db, contentId, version, qa);
 }
 
@@ -160,7 +168,11 @@ export async function recordApproval(
 // no reviewer-comment schema yet, only the status transition itself. Callers
 // (apps/api) are expected to log the feedback text via the structured logger if
 // they want it retained; revisit if Phase 2+ needs a durable comment thread.
-export async function requestChanges(db: Queryable, id: string, _feedback: string): Promise<ContentItem> {
+export async function requestChanges(
+  db: Queryable,
+  id: string,
+  _feedback: string,
+): Promise<ContentItem> {
   const current = await requireContentItem(db, id);
   assertTransition(current.status, 'changes_requested');
   return setContentItemStatus(db, id, 'changes_requested');
@@ -170,4 +182,20 @@ export async function reject(db: Queryable, id: string, _reason: string): Promis
   const current = await requireContentItem(db, id);
   assertTransition(current.status, 'rejected');
   return setContentItemStatus(db, id, 'rejected');
+}
+
+// A new/replaced visual asset for the CURRENT text version invalidates approval the
+// same way a text edit does (addRevision's hadApproval branch above), but without
+// bumping current_version — the text itself did not change (BB-Visual-Agent-Skill's
+// integration contract: "any post-approval visual change invalidates approval for
+// the affected package"). No-op when the item isn't currently approved/scheduled,
+// so calling this after every visual stage run is always safe.
+export async function invalidateApprovalForVisualChange(
+  db: Queryable,
+  contentId: string,
+): Promise<ContentItem> {
+  const current = await requireContentItem(db, contentId);
+  if (current.status !== 'approved' && current.status !== 'scheduled') return current;
+  assertTransition(current.status, 'in_review');
+  return setContentItemApproval(db, contentId, null);
 }

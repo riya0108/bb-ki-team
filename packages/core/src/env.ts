@@ -41,6 +41,24 @@ const RawEnvSchema = z.object({
   RESEND_API_KEY: z.string().optional(),
   NOTIFY_EMAIL_TO: z.string().optional(),
   NOTIFY_EMAIL_FROM: z.string().optional(),
+  // BB Visual Agent (additive visual-production layer, see packages/agents/visual).
+  // Default false: the existing text-only workflow behaves exactly as before until
+  // this is deliberately turned on (BB-Visual-Agent-Skill's integration contract).
+  BB_VISUAL_AGENT_ENABLED: z
+    .string()
+    .optional()
+    .transform((v) => v === 'true'),
+  // Image generation reuses the Gemini family already configured for text
+  // (GEMINI_API_KEY) rather than introducing a second provider account — only the
+  // model name differs (e.g. gemini-2.5-flash-image).
+  GEMINI_IMAGE_MODEL: z.string().optional(),
+  // Supabase Storage holds generated visual assets. Required because apps/api and
+  // apps/worker run on Render, whose filesystem is ephemeral across deploys — unlike
+  // BLOG_REPO_PATH (a git checkout that survives via GitHub, not local disk), a
+  // generated image saved to local disk would be lost on the next redeploy.
+  SUPABASE_URL: z.string().optional(),
+  SUPABASE_SERVICE_ROLE_KEY: z.string().optional(),
+  SUPABASE_STORAGE_BUCKET: z.string().optional(),
 });
 
 export interface LlmProviderConfig {
@@ -96,6 +114,22 @@ export interface EmailConfig {
   from: string;
 }
 
+// Google Gemini image generation (packages/mcp-servers/image-gen) — reuses
+// GEMINI_API_KEY (see gemini above), only the model differs from the text provider.
+export interface GeminiImageConfig {
+  apiKey: string;
+  model: string;
+}
+
+// Supabase Storage (packages/mcp-servers/image-gen) — where generated visual assets
+// are actually persisted; see the SUPABASE_URL comment on RawEnvSchema above for why
+// this can't just be a local path like BLOG_REPO_PATH.
+export interface SupabaseStorageConfig {
+  url: string;
+  serviceRoleKey: string;
+  bucket: string;
+}
+
 export interface Env {
   databaseUrl: string;
   apiPort: number;
@@ -110,6 +144,9 @@ export interface Env {
   buffer?: BufferCredentials | undefined;
   blogGit?: BlogGitConfig | undefined;
   email?: EmailConfig | undefined;
+  visualAgentEnabled: boolean;
+  geminiImage?: GeminiImageConfig | undefined;
+  supabaseStorage?: SupabaseStorageConfig | undefined;
 }
 
 export class EnvValidationError extends Error {
@@ -163,6 +200,22 @@ function emailConfig(raw: z.infer<typeof RawEnvSchema>): EmailConfig | undefined
   };
 }
 
+function geminiImageConfig(raw: z.infer<typeof RawEnvSchema>): GeminiImageConfig | undefined {
+  if (!raw.GEMINI_API_KEY || !raw.GEMINI_IMAGE_MODEL) return undefined;
+  return { apiKey: raw.GEMINI_API_KEY, model: raw.GEMINI_IMAGE_MODEL };
+}
+
+function supabaseStorageConfig(
+  raw: z.infer<typeof RawEnvSchema>,
+): SupabaseStorageConfig | undefined {
+  if (!raw.SUPABASE_URL || !raw.SUPABASE_SERVICE_ROLE_KEY) return undefined;
+  return {
+    url: raw.SUPABASE_URL,
+    serviceRoleKey: raw.SUPABASE_SERVICE_ROLE_KEY,
+    bucket: raw.SUPABASE_STORAGE_BUCKET ?? 'visual-assets',
+  };
+}
+
 export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
   const parsed = RawEnvSchema.safeParse(source);
   if (!parsed.success) {
@@ -200,5 +253,8 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
     buffer: bufferCredentialsConfig(raw),
     blogGit: blogGitConfig(raw),
     email: emailConfig(raw),
+    visualAgentEnabled: raw.BB_VISUAL_AGENT_ENABLED ?? false,
+    geminiImage: geminiImageConfig(raw),
+    supabaseStorage: supabaseStorageConfig(raw),
   };
 }
