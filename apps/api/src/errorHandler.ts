@@ -29,6 +29,7 @@ const ERROR_STATUS: Record<string, number> = {
   VisualContentNotFoundError: 404,
   VisualBlockedMissingTruthLayerError: 409,
   VisualBriefNotPendingError: 409,
+  VisualNotReviewableError: 409,
 };
 
 function statusForError(error: unknown): number {

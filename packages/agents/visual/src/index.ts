@@ -7,3 +7,4 @@ export * from './prepareVisualBrief.js';
 export * from './finalizeVisualAsset.js';
 export * from './runVisualStage.js';
 export * from './ingestManualVisualAsset.js';
+export * from './reviewVisualAsset.js';

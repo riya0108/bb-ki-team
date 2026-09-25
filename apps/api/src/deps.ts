@@ -77,7 +77,7 @@ export function createAppDeps(): AppDeps {
     scheduleConnectors.x = createXScheduleConnector();
   }
   if (env.blogGit) {
-    publishConnectors.blog = createBlogGitPublishConnector(env.blogGit, logger);
+    publishConnectors.blog = createBlogGitPublishConnector(env.blogGit, logger, pool);
   }
 
   return {

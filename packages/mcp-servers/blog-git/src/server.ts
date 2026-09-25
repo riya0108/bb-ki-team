@@ -20,6 +20,19 @@ function errorPayload(error: unknown): { message: string } {
   return { message: error instanceof Error ? error.message : String(error) };
 }
 
+// Chosen over linking the BB Visual Agent's Supabase URL directly: that URL is a
+// signed link with a 60-day expiry (packages/mcp-servers/image-gen/src/
+// supabaseStorage.ts — deliberate, so an unapproved image isn't permanently public
+// before a human reviews it). Baking a signed URL into a permanently-live blog post
+// would make its cover image silently 404 two months after publish. Committing the
+// bytes into the site repo itself — same convention already used for this site's
+// other post covers — has no expiry.
+function extensionForMimeType(mimeType: string): string {
+  if (mimeType === 'image/jpeg') return 'jpg';
+  if (mimeType === 'image/webp') return 'webp';
+  return 'png';
+}
+
 async function fileExists(filePath: string): Promise<boolean> {
   try {
     await access(filePath, fsConstants.F_OK);
@@ -53,11 +66,40 @@ export function createBlogGitMcpServer(deps: BlogGitMcpServerDeps): McpServer {
         authorBio: z.string(),
         bodyMdx: z.string().min(1),
         commitMessage: z.string().min(1),
+        // Raw bytes, not a URL — see extensionForMimeType's comment above for why.
+        // Only ever populated by the caller for an APPROVED visual (see
+        // packages/mcp-client/src/blogGitClient.ts).
+        heroImage: z
+          .object({
+            base64Data: z.string().min(1),
+            mimeType: z.string().min(1),
+            alt: z.string().nullable().optional(),
+          })
+          .nullable()
+          .optional(),
       },
     },
-    async ({ slug, title, description, categoryRaw, tags, pubDateIso, authorName, authorBio, bodyMdx, commitMessage }) => {
+    async ({
+      slug,
+      title,
+      description,
+      categoryRaw,
+      tags,
+      pubDateIso,
+      authorName,
+      authorBio,
+      bodyMdx,
+      commitMessage,
+      heroImage,
+    }) => {
       const relativePath = path.join('src', 'content', 'posts', `${slug}.mdx`);
       const absolutePath = path.join(deps.repoPath, relativePath);
+      // Site-root-relative, matching astro:content's `heroImage: z.string()` and every
+      // hand-added cover image already in this repo (e.g. src/content/posts/
+      // is-ai-turning-your-productivity-into-a-money-drain.mdx uses this exact shape).
+      const heroImageSitePath = heroImage ? `/images/posts/${slug}/cover.${extensionForMimeType(heroImage.mimeType)}` : null;
+      const heroImageRelativePath = heroImageSitePath ? path.join('public', heroImageSitePath) : null;
+      const heroImageAbsolutePath = heroImageRelativePath ? path.join(deps.repoPath, heroImageRelativePath) : null;
       let preOpSha: string | null = null;
 
       try {
@@ -78,13 +120,30 @@ export function createBlogGitMcpServer(deps: BlogGitMcpServerDeps): McpServer {
         const category = resolveCategorySlug(categoryRaw, validSlugs);
 
         const mdx = buildMdxFileContents(
-          { title, description, categorySlug: category.slug, tags, pubDateIso, authorName, authorBio },
+          {
+            title,
+            description,
+            categorySlug: category.slug,
+            tags,
+            pubDateIso,
+            authorName,
+            authorBio,
+            heroImageUrl: heroImageSitePath,
+            heroImageAlt: heroImage?.alt ?? null,
+          },
           bodyMdx,
         );
 
         await mkdir(path.dirname(absolutePath), { recursive: true });
         await writeFile(absolutePath, mdx, 'utf8');
         await addFile(deps.repoPath, relativePath);
+
+        if (heroImage && heroImageAbsolutePath && heroImageRelativePath) {
+          await mkdir(path.dirname(heroImageAbsolutePath), { recursive: true });
+          await writeFile(heroImageAbsolutePath, Buffer.from(heroImage.base64Data, 'base64'));
+          await addFile(deps.repoPath, heroImageRelativePath);
+        }
+
         const commitSha = await commit(deps.repoPath, commitMessage);
 
         try {
@@ -107,6 +166,9 @@ export function createBlogGitMcpServer(deps: BlogGitMcpServerDeps): McpServer {
           await resetHardTo(deps.repoPath, preOpSha).catch(() => undefined);
         }
         await unlink(absolutePath).catch(() => undefined);
+        if (heroImageAbsolutePath) {
+          await unlink(heroImageAbsolutePath).catch(() => undefined);
+        }
         return { content: [{ type: 'text', text: JSON.stringify(errorPayload(error)) }], isError: true };
       }
     },

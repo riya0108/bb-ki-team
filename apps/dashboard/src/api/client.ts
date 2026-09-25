@@ -262,3 +262,19 @@ export function ingestVisual(
 ): Promise<{ runId: string; asset: VisualAsset }> {
   return post(`/visual/${contentId}/ingest`, { visualId, base64Data: imageBase64, mimeType, provider, model });
 }
+
+// Step 3 — the human decision a NEEDS_REVIEW visual (pixels stored, but visual
+// quality can never be auto-verified — see visualAsset.ts) has been waiting on.
+// Only an APPROVED visual is eligible to become a blog post's cover image at
+// publish time.
+export function approveVisual(contentId: string, visualId: string): Promise<{ asset: VisualAsset }> {
+  return post(`/visual/${contentId}/approve`, { visualId });
+}
+
+export function rejectVisual(
+  contentId: string,
+  visualId: string,
+  reason: string,
+): Promise<{ asset: VisualAsset }> {
+  return post(`/visual/${contentId}/reject`, { visualId, reason });
+}

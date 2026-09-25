@@ -18,3 +18,19 @@ export class VisualContentNotFoundError extends Error {
     this.name = 'VisualContentNotFoundError';
   }
 }
+
+// Thrown by approveVisualAsset/rejectVisualAsset when there is no visual asset
+// waiting on a human decision for this content item — either the id doesn't match
+// the latest row (a newer visual has since been prepared/generated for this
+// content), or its status isn't one a human review action makes sense from (e.g.
+// it's still GENERATION_PENDING with no pixels yet, or already APPROVED/REJECTED).
+export class VisualNotReviewableError extends Error {
+  constructor(contentId: string, visualId: string, actualStatus: string) {
+    super(
+      `Visual ${visualId} for content ${contentId} is not awaiting review (status is ` +
+        `"${actualStatus}"). Only NEEDS_REVIEW or QA_PASS visuals with a stored asset can be ` +
+        'approved or rejected.',
+    );
+    this.name = 'VisualNotReviewableError';
+  }
+}

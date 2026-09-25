@@ -11,12 +11,15 @@
 // create-post call blocks for minutes waiting for a "sent" confirmation, which
 // doesn't fit a request/response Edge Function invocation cleanly.
 import { createClient } from 'jsr:@supabase/supabase-js@2';
+import { encodeBase64 } from 'jsr:@std/encoding@1/base64';
 
 import {
   createFile,
   getFileContent,
   getFileContentWithSha,
+  getFileSha,
   getLatestCommitShaForPath,
+  putBinaryFile,
   updateFile,
   waitForWorkflowRun,
   type GitHubRepoConfig,
@@ -149,6 +152,43 @@ function extractPubDate(mdx: string): string | null {
   return match ? match[1] : null;
 }
 
+// Mirrors packages/mcp-servers/blog-git/src/server.ts's extensionForMimeType.
+function extensionForMimeType(mimeType: string): string {
+  if (mimeType === 'image/jpeg') return 'jpg';
+  if (mimeType === 'image/webp') return 'webp';
+  return 'png';
+}
+
+// Downloads the approved visual's bytes from its (still-valid, short-lived) signed
+// Supabase URL and commits them into the site repo at `path`, upserting (create or
+// update) so a retry that already uploaded the image on an earlier tick doesn't 422
+// on "file already exists". Committing the bytes — rather than linking the signed
+// URL from a permanently-live post — is deliberate: that URL expires in 60 days
+// (packages/mcp-servers/image-gen/src/supabaseStorage.ts), which would silently
+// 404 the cover image two months after publish. Best-effort: a download/commit
+// failure here must not block publishing the already-approved text.
+async function upsertHeroImage(
+  github: GitHubRepoConfig,
+  path: string,
+  assetUrl: string,
+  title: string,
+): Promise<boolean> {
+  try {
+    const response = await fetch(assetUrl);
+    if (!response.ok) {
+      console.error(`Failed to download approved visual asset for cover image: HTTP ${response.status}`);
+      return false;
+    }
+    const base64Content = encodeBase64(await response.arrayBuffer());
+    const sha = await getFileSha(github, path);
+    await putBinaryFile(github, path, base64Content, `Add cover image: ${title}`, sha ?? undefined);
+    return true;
+  } catch (error) {
+    console.error(`Failed to commit cover image: ${error instanceof Error ? error.message : String(error)}`);
+    return false;
+  }
+}
+
 Deno.serve(async (req) => {
   const cronSecret = Deno.env.get('CRON_SECRET');
   if (cronSecret && req.headers.get('x-cron-secret') !== cronSecret) {
@@ -209,6 +249,39 @@ Deno.serve(async (req) => {
       const slug = slugify(fragment.title);
       const relativePath = `src/content/posts/${slug}.mdx`;
 
+      // Only an APPROVED visual for this exact approved content version becomes the
+      // post's cover image — a NEEDS_REVIEW image (no human has looked at the actual
+      // pixels yet) or one belonging to a since-superseded version must never ship
+      // silently (CLAUDE.md: never publish without approval; see
+      // packages/agents/visual/src/reviewVisualAsset.ts, the human decision this gate
+      // is waiting on).
+      const { data: visualRow } = await supabase
+        .from('visual_assets')
+        .select('asset')
+        .eq('content_id', contentId)
+        .eq('version', item.approved_version)
+        .maybeSingle<{
+          asset: {
+            status: string;
+            concept: string | null;
+            masterAsset: { status: string; assetUrl: string | null; mimeType: string | null };
+          };
+        }>();
+      const visualAsset = visualRow?.asset ?? null;
+      // Bundled into one object (rather than parallel nullable variables) so
+      // `sitePath` and `assetUrl` can never disagree about whether a cover image is
+      // actually available.
+      const heroImageApproved =
+        visualAsset?.status === 'APPROVED' && visualAsset.masterAsset.status === 'STORED' && visualAsset.masterAsset.assetUrl
+          ? {
+              assetUrl: visualAsset.masterAsset.assetUrl,
+              // Site-root-relative, matching astro:content's `heroImage: z.string()`
+              // and the path already used by this site's other hand-added post covers.
+              sitePath: `/images/posts/${slug}/cover.${extensionForMimeType(visualAsset.masterAsset.mimeType ?? 'image/png')}`,
+              alt: visualAsset.concept ?? null,
+            }
+          : null;
+
       const categoriesJson = await getFileContent(github, 'src/content/categories.json');
       if (categoriesJson === null) throw new Error('src/content/categories.json not found in target repo');
       const category = resolveCategorySlug(fragment.categoryRaw, parseCategorySlugs(categoriesJson));
@@ -217,6 +290,12 @@ Deno.serve(async (req) => {
       const existing = await getFileContentWithSha(github, relativePath);
       let commitSha: string;
       if (existing === null) {
+        // Committed before the MDX, and only reflected in the MDX's own heroImage
+        // field if it actually succeeds — never reference a cover image path that
+        // doesn't exist in the repo (see upsertHeroImage's comment on retry safety).
+        const imageCommitted = heroImageApproved
+          ? await upsertHeroImage(github, `public${heroImageApproved.sitePath}`, heroImageApproved.assetUrl, fragment.title)
+          : false;
         const mdx = buildMdxFileContents(
           {
             title: fragment.title,
@@ -226,6 +305,8 @@ Deno.serve(async (req) => {
             pubDateIso: nowIso,
             authorName: DEFAULT_AUTHOR_NAME,
             authorBio: DEFAULT_AUTHOR_BIO,
+            heroImageUrl: imageCommitted ? heroImageApproved?.sitePath : null,
+            heroImageAlt: imageCommitted ? heroImageApproved?.alt : null,
           },
           fragment.bodyMdx,
         );
@@ -251,6 +332,8 @@ Deno.serve(async (req) => {
             pubDateIso: existingPubDate ? `${existingPubDate}T00:00:00.000Z` : nowIso,
             authorName: DEFAULT_AUTHOR_NAME,
             authorBio: DEFAULT_AUTHOR_BIO,
+            heroImageUrl: heroImageApproved?.sitePath,
+            heroImageAlt: heroImageApproved?.alt,
           },
           fragment.bodyMdx,
         );
@@ -264,6 +347,9 @@ Deno.serve(async (req) => {
         } else {
           // The approved content changed since the earlier attempt — commit the update
           // so the version that goes live is the one actually approved now.
+          const imageCommitted = heroImageApproved
+            ? await upsertHeroImage(github, `public${heroImageApproved.sitePath}`, heroImageApproved.assetUrl, fragment.title)
+            : false;
           const updatedMdx = buildMdxFileContents(
             {
               title: fragment.title,
@@ -273,6 +359,8 @@ Deno.serve(async (req) => {
               pubDateIso: nowIso,
               authorName: DEFAULT_AUTHOR_NAME,
               authorBio: DEFAULT_AUTHOR_BIO,
+              heroImageUrl: imageCommitted ? heroImageApproved?.sitePath : null,
+              heroImageAlt: imageCommitted ? heroImageApproved?.alt : null,
             },
             fragment.bodyMdx,
           );

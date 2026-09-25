@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 
-import { ApiError, getVisualAsset, ingestVisual, prepareVisual } from '../api/client';
+import { ApiError, approveVisual, getVisualAsset, ingestVisual, prepareVisual, rejectVisual } from '../api/client';
 import type { PrepareVisualResult } from '../api/client';
 
 interface VisualPanelProps {
@@ -100,7 +100,38 @@ export function VisualPanel({ contentId, version, onGenerated }: VisualPanelProp
     }
   }
 
+  async function handleApprove() {
+    if (!asset) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await approveVisual(contentId, asset.id);
+      setAsset(res.asset);
+      onGenerated();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleReject() {
+    if (!asset) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await rejectVisual(contentId, asset.id, 'Rejected from dashboard.');
+      setAsset(res.asset);
+      onGenerated();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const isStale = asset !== null && asset.version !== version;
+  const isReviewable = asset !== null && (asset.status === 'NEEDS_REVIEW' || asset.status === 'QA_PASS');
   const imageUrl = asset?.masterAsset.status === 'STORED' ? asset.masterAsset.assetUrl : null;
   const issues = [...(asset?.blockingReasons ?? []), ...(asset?.qa?.issues ?? [])];
 
@@ -133,6 +164,17 @@ export function VisualPanel({ contentId, version, onGenerated }: VisualPanelProp
                 <li key={i}>{issue}</li>
               ))}
             </ul>
+          )}
+
+          {!isStale && isReviewable && (
+            <div className="action-row">
+              <button disabled={busy} onClick={() => void handleApprove()}>
+                {busy ? 'Working…' : 'Approve visual'}
+              </button>
+              <button disabled={busy} onClick={() => void handleReject()}>
+                {busy ? 'Working…' : 'Reject visual'}
+              </button>
+            </div>
           )}
 
           {brief && (

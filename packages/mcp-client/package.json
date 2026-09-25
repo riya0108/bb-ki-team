@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@bb/core": "0.1.0",
+    "@bb/db": "0.1.0",
     "@bb/mcp-blog-git": "0.1.0",
     "@bb/mcp-buffer": "0.1.0",
     "@bb/mcp-fetch": "0.1.0",

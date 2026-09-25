@@ -138,6 +138,12 @@ export interface BlogFrontmatter {
   pubDateIso: string;
   authorName: string;
   authorBio: string;
+  // Mirrors packages/mcp-servers/blog-git/src/mdxFile.ts's BlogFrontmatter — only
+  // ever populated from a visual_assets row whose status is APPROVED for this exact
+  // scheduled content version (see fire-due-schedules/index.ts). Null/omitted means
+  // the site's Thumbnail.astro falls back to its generated placeholder graphic.
+  heroImageUrl?: string | null;
+  heroImageAlt?: string | null;
 }
 
 export function buildMdxFileContents(frontmatter: BlogFrontmatter, bodyMdx: string): string {
@@ -150,6 +156,10 @@ export function buildMdxFileContents(frontmatter: BlogFrontmatter, bodyMdx: stri
     `tags: ${yamlStringArray(frontmatter.tags)}`,
     `pubDate: ${pubDate}`,
     `author: { name: ${yamlString(frontmatter.authorName)}, bio: ${yamlString(frontmatter.authorBio)} }`,
+    ...(frontmatter.heroImageUrl ? [`heroImage: ${yamlString(frontmatter.heroImageUrl)}`] : []),
+    ...(frontmatter.heroImageUrl && frontmatter.heroImageAlt
+      ? [`heroImageAlt: ${yamlString(frontmatter.heroImageAlt)}`]
+      : []),
     'draft: false',
     '---',
   ];

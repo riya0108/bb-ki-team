@@ -131,6 +131,50 @@ export async function updateFile(
   return { commitSha: body.commit.sha };
 }
 
+// Sha-only lookup, deliberately skipping getFileContentWithSha's UTF-8 decode step —
+// that decode corrupts arbitrary binary bytes (an image), so a binary file's
+// existence/sha must be checked without ever decoding its content as text.
+export async function getFileSha(config: GitHubRepoConfig, path: string): Promise<string | null> {
+  const url = `${apiBase(config, path)}?ref=${encodeURIComponent(config.branch)}`;
+  const response = await fetch(url, { headers: authHeaders(config) });
+  if (response.status === 404) return null;
+  if (!response.ok) {
+    throw new GitHubApiError(response.status, `GET ${path} failed: HTTP ${response.status} ${await response.text()}`);
+  }
+  const body = (await response.json()) as { sha: string };
+  return body.sha;
+}
+
+// createFile/updateFile above re-encode their `content` string as UTF-8 bytes before
+// base64ing it — correct for MDX/text, but would corrupt arbitrary binary bytes (an
+// image) that don't round-trip through UTF-8. This takes already-base64-encoded
+// content directly and PUTs it verbatim; pass `sha` to update an existing file,
+// omit it to create a new one (mirrors GitHub's own create-vs-update contract).
+export async function putBinaryFile(
+  config: GitHubRepoConfig,
+  path: string,
+  base64Content: string,
+  message: string,
+  sha?: string,
+): Promise<{ commitSha: string }> {
+  const url = apiBase(config, path);
+  const response = await fetch(url, {
+    method: 'PUT',
+    headers: { ...authHeaders(config), 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      message,
+      content: base64Content,
+      branch: config.branch,
+      ...(sha ? { sha } : {}),
+    }),
+  });
+  if (!response.ok) {
+    throw new GitHubApiError(response.status, `PUT ${path} (binary) failed: HTTP ${response.status} ${await response.text()}`);
+  }
+  const body = (await response.json()) as { commit: { sha: string } };
+  return { commitSha: body.commit.sha };
+}
+
 // Finds the most recent commit SHA touching `path` on `config.branch`. Used to
 // re-locate a prior attempt's commit when the MDX file already exists — so a retry
 // after a not-yet-concluded or failed deploy re-checks that same commit's workflow

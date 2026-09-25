@@ -1,7 +1,13 @@
 import { randomUUID } from 'node:crypto';
 
 import { getLatestVisualAssetForContent } from '@bb/db';
-import { ingestManualVisualAsset, prepareVisualBrief, runVisualStage } from '@bb/visual-agent';
+import {
+  approveVisualAsset,
+  ingestManualVisualAsset,
+  prepareVisualBrief,
+  rejectVisualAsset,
+  runVisualStage,
+} from '@bb/visual-agent';
 import { Router } from 'express';
 import { z } from 'zod';
 
@@ -99,6 +105,47 @@ export function createVisualRouter(deps: AppDeps): Router {
       model: body.model,
     });
     res.status(200).json({ runId, asset });
+  });
+
+  // Records the human decision a NEEDS_REVIEW visual has been waiting on — nothing
+  // upstream ever set VisualStatus to APPROVED before this route existed, so a
+  // human-supplied image had no way out of NEEDS_REVIEW and never actually became
+  // usable as a post's cover image.
+  const ApproveVisualSchema = z.object({ visualId: z.string().uuid() });
+  router.post('/:contentId/approve', async (req, res) => {
+    if (!deps.env.visualAgentEnabled) {
+      res.status(403).json({
+        error: 'VisualAgentDisabled',
+        message: 'Set BB_VISUAL_AGENT_ENABLED=true to use the visual stage.',
+      });
+      return;
+    }
+    const body = parseWith(ApproveVisualSchema, req.body);
+    const asset = await approveVisualAsset({
+      pool: deps.pool,
+      contentId: req.params.contentId ?? '',
+      visualId: body.visualId,
+    });
+    res.status(200).json({ asset });
+  });
+
+  const RejectVisualSchema = z.object({ visualId: z.string().uuid(), reason: z.string().min(1) });
+  router.post('/:contentId/reject', async (req, res) => {
+    if (!deps.env.visualAgentEnabled) {
+      res.status(403).json({
+        error: 'VisualAgentDisabled',
+        message: 'Set BB_VISUAL_AGENT_ENABLED=true to use the visual stage.',
+      });
+      return;
+    }
+    const body = parseWith(RejectVisualSchema, req.body);
+    const asset = await rejectVisualAsset({
+      pool: deps.pool,
+      contentId: req.params.contentId ?? '',
+      visualId: body.visualId,
+      reason: body.reason,
+    });
+    res.status(200).json({ asset });
   });
 
   router.get('/:contentId', async (req, res) => {

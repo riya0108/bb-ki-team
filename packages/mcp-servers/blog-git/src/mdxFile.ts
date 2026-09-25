@@ -18,6 +18,14 @@ export interface BlogFrontmatter {
   pubDateIso: string;
   authorName: string;
   authorBio: string;
+  // The BB Visual Agent's stored master asset URL for this exact approved content
+  // version, only ever populated once a human has APPROVED that visual (see
+  // packages/agents/visual/src/reviewVisualAsset.ts) — never an unreviewed image.
+  // Null/omitted means "no visual" or "visual not yet approved", in which case the
+  // site's own Thumbnail.astro falls back to its generated placeholder graphic, the
+  // same behavior every blog post had before the visual agent existed.
+  heroImageUrl?: string | null | undefined;
+  heroImageAlt?: string | null | undefined;
 }
 
 export function buildMdxFileContents(frontmatter: BlogFrontmatter, bodyMdx: string): string {
@@ -30,6 +38,10 @@ export function buildMdxFileContents(frontmatter: BlogFrontmatter, bodyMdx: stri
     `tags: ${yamlStringArray(frontmatter.tags)}`,
     `pubDate: ${pubDate}`,
     `author: { name: ${yamlString(frontmatter.authorName)}, bio: ${yamlString(frontmatter.authorBio)} }`,
+    ...(frontmatter.heroImageUrl ? [`heroImage: ${yamlString(frontmatter.heroImageUrl)}`] : []),
+    ...(frontmatter.heroImageUrl && frontmatter.heroImageAlt
+      ? [`heroImageAlt: ${yamlString(frontmatter.heroImageAlt)}`]
+      : []),
     'draft: false',
     '---',
   ];

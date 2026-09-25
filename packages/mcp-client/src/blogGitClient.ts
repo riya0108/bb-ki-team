@@ -1,4 +1,6 @@
 import type { BlogGitConfig, Logger } from '@bb/core';
+import { getVisualAssetForVersion } from '@bb/db';
+import type { Queryable } from '@bb/db';
 import { createBlogGitMcpServer } from '@bb/mcp-blog-git';
 import type { ContentItem } from '@bb/shared-types';
 import type { PublishConnector, ScheduleConnector } from '@bb/workflows';
@@ -25,6 +27,35 @@ interface PublishPostResult {
   categoryExactMatch: boolean;
 }
 
+// Downloads the approved visual's bytes from its (still-valid, short-lived) signed
+// Supabase URL so publish_post can commit them straight into the site repo instead
+// of linking that URL from a permanently-live post — see
+// packages/mcp-servers/blog-git/src/server.ts's extensionForMimeType comment for
+// why a signed link can't be the long-term source of truth here. Best-effort: a
+// download failure must not block publishing the already-approved text (the post
+// just goes out with the site's placeholder cover, same as before the visual agent).
+async function downloadHeroImage(
+  assetUrl: string,
+  mimeType: string,
+  logger: Logger,
+): Promise<{ base64Data: string; mimeType: string } | null> {
+  try {
+    const response = await fetch(assetUrl);
+    if (!response.ok) {
+      logger.warn({ status: response.status }, 'Failed to download approved visual asset for blog cover image');
+      return null;
+    }
+    const bytes = Buffer.from(await response.arrayBuffer());
+    return { base64Data: bytes.toString('base64'), mimeType };
+  } catch (error) {
+    logger.warn(
+      { error: error instanceof Error ? error.message : String(error) },
+      'Failed to download approved visual asset for blog cover image',
+    );
+    return null;
+  }
+}
+
 // Wraps the blog-git MCP server (packages/mcp-servers/blog-git) via an in-process
 // InMemoryTransport pair rather than spawning it as a child process — a
 // deliberate 2026-09-16 change (see packages/mcp-client/README or the commit that
@@ -42,7 +73,8 @@ interface PublishPostResult {
 // repo and pushing — there is no platform API to call (see apps/api/src/deps.ts).
 export function createBlogGitPublishConnector(
   config: BlogGitConfig,
-  _logger: Logger,
+  logger: Logger,
+  pool: Queryable,
 ): PublishConnector & { close(): Promise<void> } {
   const client = new Client({ name: 'bb-connector-blog-git', version: '0.1.0' });
   let connected: Promise<void> | null = null;
@@ -69,6 +101,17 @@ export function createBlogGitPublishConnector(
       const fragment = blogPostFragmentFromHtml(item.currentText);
       const slug = slugify(fragment.title);
 
+      // Only an APPROVED visual for this exact approved content version becomes the
+      // post's cover image — a NEEDS_REVIEW image (nobody has looked at the actual
+      // pixels yet, per visualAsset.ts) or one for a since-superseded version must
+      // never ship silently (CLAUDE.md: never publish without approval).
+      const approvedVersion = item.approvedVersion ?? item.currentVersion;
+      const visual = await getVisualAssetForVersion(pool, item.id, approvedVersion);
+      const heroImage =
+        visual?.status === 'APPROVED' && visual.masterAsset.status === 'STORED' && visual.masterAsset.assetUrl
+          ? await downloadHeroImage(visual.masterAsset.assetUrl, visual.masterAsset.mimeType ?? 'image/png', logger)
+          : null;
+
       const response = await client.callTool({
         name: 'publish_post',
         arguments: {
@@ -82,6 +125,7 @@ export function createBlogGitPublishConnector(
           authorBio: DEFAULT_AUTHOR_BIO,
           bodyMdx: fragment.bodyMdx,
           commitMessage: `Add blog post: ${fragment.title}`,
+          heroImage: heroImage ? { ...heroImage, alt: visual?.concept ?? null } : null,
         },
       });
 
