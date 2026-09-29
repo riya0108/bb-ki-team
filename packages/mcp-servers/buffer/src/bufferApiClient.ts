@@ -21,7 +21,7 @@ export interface BufferPost {
 // external state must be testable in isolation).
 export interface BufferApiClient {
   listChannels(): Promise<BufferChannel[]>;
-  createThreadPost(texts: string[], dueAt: Date): Promise<BufferPost>;
+  createThreadPost(texts: string[], dueAt: Date, imageUrl?: string): Promise<BufferPost>;
   getPost(id: string): Promise<BufferPost>;
 }
 
@@ -98,7 +98,7 @@ export function createBufferApiClient(credentials: BufferCredentials): BufferApi
       return channels;
     },
 
-    async createThreadPost(texts, dueAt) {
+    async createThreadPost(texts, dueAt, imageUrl) {
       const first = texts[0];
       if (!first) throw new BufferApiError('createThreadPost: at least one post is required');
 
@@ -122,6 +122,11 @@ export function createBufferApiClient(credentials: BufferCredentials): BufferApi
             mode: 'customScheduled',
             dueAt: dueAt.toISOString(),
             metadata: threadMetadata(texts),
+            // Attaches only to the first/main post — Buffer's thread metadata (above)
+            // carries reply text only, with no per-reply asset slot, so an image on a
+            // thread always lands on its opening tweet. Omitted (not sent as []) when
+            // there is no image, for a text-only post exactly as before this field existed.
+            ...(imageUrl ? { assets: [{ image: { url: imageUrl } }] } : {}),
           },
         },
       );

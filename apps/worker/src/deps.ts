@@ -36,7 +36,7 @@ export function createWorkerDeps(): WorkerDeps {
 
   const publishConnectors: Record<string, PublishConnector> = {};
   if (env.buffer) {
-    publishConnectors.x = createBufferPublishConnector(env.buffer, logger);
+    publishConnectors.x = createBufferPublishConnector(env.buffer, logger, pool);
   }
 
   return { env, pool, logger, publishConnectors, email: env.email };

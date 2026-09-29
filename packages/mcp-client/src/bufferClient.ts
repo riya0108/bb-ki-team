@@ -1,4 +1,6 @@
 import type { BufferCredentials, Logger } from '@bb/core';
+import { getVisualAssetForVersion } from '@bb/db';
+import type { Queryable } from '@bb/db';
 import { createBufferApiClient, createBufferMcpServer } from '@bb/mcp-buffer';
 import type { ContentItem } from '@bb/shared-types';
 import type { PublishConnector } from '@bb/workflows';
@@ -47,6 +49,7 @@ export function tweetIdFromUrl(url: string): string {
 export function createBufferPublishConnector(
   credentials: BufferCredentials,
   _logger: Logger,
+  pool: Queryable,
 ): PublishConnector & { close(): Promise<void> } {
   const client = new Client({ name: 'bb-connector-buffer', version: '0.1.0' });
   let connected: Promise<void> | null = null;
@@ -77,6 +80,18 @@ export function createBufferPublishConnector(
           `Post exceeds X's ${X_MAX_POST_LENGTH}-character limit (${tooLong.length} characters): "${tooLong.slice(0, 60)}..."`,
         );
       }
+      // Only an APPROVED visual for this exact approved content version gets attached
+      // — mirrors blogGitClient.ts's own gate (a NEEDS_REVIEW image or one for a
+      // since-superseded version must never ship silently; CLAUDE.md: never publish
+      // without approval). Buffer fetches the URL itself rather than us uploading
+      // bytes, so the signed Supabase URL (60-day expiry — supabaseStorage.ts) just
+      // needs to still be live when Buffer's own send worker gets to it, which it is.
+      const approvedVersion = item.approvedVersion ?? item.currentVersion;
+      const visual = await getVisualAssetForVersion(pool, item.id, approvedVersion);
+      const imageUrl =
+        visual?.status === 'APPROVED' && visual.masterAsset.status === 'STORED'
+          ? (visual.masterAsset.assetUrl ?? undefined)
+          : undefined;
       // Verified live: Buffer's createPost rejects a dueAt that isn't strictly in
       // the future ("Scheduled time must be in the future"), so "now" for an
       // on-demand publish is now + a small buffer, not Date.now() itself.
@@ -91,7 +106,7 @@ export function createBufferPublishConnector(
       // retry and create a duplicate post). Match the server's own budget plus margin.
       const CREATE_POST_TIMEOUT_MS = 400_000;
       const response = await client.callTool(
-        { name: 'create_buffer_post', arguments: { posts, dueAt } },
+        { name: 'create_buffer_post', arguments: { posts, dueAt, imageUrl } },
         undefined,
         { timeout: CREATE_POST_TIMEOUT_MS },
       );

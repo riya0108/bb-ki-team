@@ -46,18 +46,21 @@ export function createBufferMcpServer(deps: BufferMcpServerDeps): McpServer {
         'is an ISO 8601 datetime and MUST be strictly in the future (Buffer rejects "now") — ' +
         'pass a minute or more out for an effectively-immediate publish, or a later time to ' +
         'have Buffer send it then; either way this call blocks until Buffer actually confirms ' +
-        'the send (can take several minutes past dueAt). This is an IRREVERSIBLE, PUBLICLY VISIBLE publish ' +
-        'action — only call this from a step that runs after an approval gate has recorded an ' +
-        'approved decision for this exact content version (CLAUDE.md/spec 15: never publish ' +
-        'without approval).',
+        'the send (can take several minutes past dueAt). `imageUrl`, if given, attaches that ' +
+        'image to the opening tweet — it must be a publicly reachable, non-expiring HTTPS URL ' +
+        'that stays live until the post actually sends (Buffer fetches it itself). This is an ' +
+        'IRREVERSIBLE, PUBLICLY VISIBLE publish action — only call this from a step that runs ' +
+        'after an approval gate has recorded an approved decision for this exact content ' +
+        'version (CLAUDE.md/spec 15: never publish without approval).',
       inputSchema: {
         posts: z.array(z.string().min(1).max(280)).min(1),
         dueAt: z.string().datetime(),
+        imageUrl: z.string().url().optional(),
       },
     },
-    async ({ posts, dueAt }) => {
+    async ({ posts, dueAt, imageUrl }) => {
       try {
-        const created = await deps.apiClient.createThreadPost(posts, new Date(dueAt));
+        const created = await deps.apiClient.createThreadPost(posts, new Date(dueAt), imageUrl);
         const sent = await waitForSent(deps.apiClient, created.id);
         return { content: [{ type: 'text', text: JSON.stringify(sent) }] };
       } catch (error) {
