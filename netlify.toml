@@ -1,0 +1,3 @@
+[build]
+  command = "npm install && npm run build --workspace=@bb/dashboard"
+  publish = "apps/dashboard/dist"
