@@ -14,6 +14,7 @@ import {
   ContentNotApprovedError,
   ContentNotScheduledError,
   firePendingSchedule,
+  PermanentPublishError,
   publishDueSchedules,
   requestPublish,
   requestSchedule,
@@ -256,6 +257,39 @@ describeIfDb('packages/workflows publishing (integration, real Postgres)', () =>
 
     const second = await publishDueSchedules(pool, { x: fakeConnector }, new Date());
     expect(second.map((outcome) => outcome.item.id)).not.toContain(contentId);
+  });
+
+  it('stops retrying a schedule after a permanent publish failure, keeping its approval', async () => {
+    const contentId = await createScheduledItem(new Date(Date.now() - 1000));
+    let calls = 0;
+    const duplicateConnector: PublishConnector = {
+      name: 'fake-x-connector',
+      publish: () => {
+        calls += 1;
+        return Promise.reject(new PermanentPublishError('already got this one scheduled or posted'));
+      },
+    };
+
+    const first = await publishDueSchedules(pool, { x: duplicateConnector }, new Date());
+    const outcome = first.find((o) => o.item.id === contentId);
+    expect(outcome?.event.result).toBe('failed');
+    expect(outcome?.item.status).toBe('approved');
+
+    const second = await publishDueSchedules(pool, { x: duplicateConnector }, new Date());
+    expect(second.map((o) => o.item.id)).not.toContain(contentId);
+    expect(calls).toBe(1);
+  });
+
+  it('keeps retrying a schedule after an ordinary publish failure', async () => {
+    const contentId = await createScheduledItem(new Date(Date.now() - 1000));
+    const flakyConnector: PublishConnector = {
+      name: 'fake-x-connector',
+      publish: () => Promise.reject(new Error('Buffer API timed out')),
+    };
+
+    await publishDueSchedules(pool, { x: flakyConnector }, new Date());
+    const second = await publishDueSchedules(pool, { x: flakyConnector }, new Date());
+    expect(second.map((o) => o.item.id)).toContain(contentId);
   });
 
   it('rescheduleContent moves the target time and stays scheduled, superseding the old due time', async () => {

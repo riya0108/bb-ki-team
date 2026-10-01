@@ -2,6 +2,7 @@ import type { BufferCredentials, Logger } from '@bb/core';
 import type { Queryable } from '@bb/db';
 import { createBufferApiClient, createBufferMcpServer } from '@bb/mcp-buffer';
 import type { ContentItem } from '@bb/shared-types';
+import { PermanentPublishError } from '@bb/workflows';
 import type { PublishConnector } from '@bb/workflows';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
@@ -18,6 +19,17 @@ export class BufferPublishError extends Error {
 }
 
 const IMMEDIATE_PUBLISH_LEAD_MS = 60_000;
+
+// Buffer's wording when it refuses text it already sent/scheduled recently ("Whoops,
+// it looks like you've already got this one scheduled or posted around the same
+// time..."). Identical text keeps failing, so retrying every tick is pointless.
+const BUFFER_DUPLICATE_PATTERN = /already got this one scheduled or posted/i;
+
+export function bufferToolError(message: string): Error {
+  return BUFFER_DUPLICATE_PATTERN.test(message)
+    ? new PermanentPublishError(message)
+    : new BufferPublishError(message);
+}
 const X_MAX_POST_LENGTH = 280;
 
 interface CreateBufferPostResult {
@@ -112,7 +124,7 @@ export function createBufferPublishConnector(
       }
 
       if (response.isError) {
-        throw new BufferPublishError(toolErrorMessage(textContent.text));
+        throw bufferToolError(toolErrorMessage(textContent.text));
       }
 
       const parsed: unknown = JSON.parse(textContent.text);

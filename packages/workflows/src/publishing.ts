@@ -32,6 +32,17 @@ export class ContentNotScheduledError extends Error {
   }
 }
 
+// Thrown by a connector when the platform has rejected this exact content for a
+// reason that retrying cannot fix (e.g. Buffer's duplicate-post check). A scheduled
+// item that hits one is taken out of 'scheduled' after this single attempt so the
+// minute-by-minute tick stops re-firing it; every other failure keeps retrying.
+export class PermanentPublishError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'PermanentPublishError';
+  }
+}
+
 // The tool-boundary contract every real platform connector implements (CLAUDE.md:
 // "MCP is the tool boundary" — a future connector wraps an MCP client the same way
 // packages/mcp-client's createLinkedinMcpClient does). No agent or workflow function
@@ -142,6 +153,13 @@ async function attemptPublish(
       result: 'failed',
       error: error instanceof Error ? error.message : String(error),
     });
+    // scheduled -> approved keeps the (still valid) approval but drops the item from
+    // listDueSchedules, so a human must fix the content and re-schedule it.
+    if (error instanceof PermanentPublishError && item.status === 'scheduled') {
+      assertTransition(item.status, 'approved');
+      const unscheduledItem = await setContentItemStatus(pool, item.id, 'approved');
+      return { item: unscheduledItem, event };
+    }
     return { item, event };
   }
 }
