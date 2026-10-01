@@ -156,6 +156,7 @@ function extractPubDate(mdx: string): string | null {
 function extensionForMimeType(mimeType: string): string {
   if (mimeType === 'image/jpeg') return 'jpg';
   if (mimeType === 'image/webp') return 'webp';
+  if (mimeType === 'image/gif') return 'gif';
   return 'png';
 }
 
@@ -249,17 +250,16 @@ Deno.serve(async (req) => {
       const slug = slugify(fragment.title);
       const relativePath = `src/content/posts/${slug}.mdx`;
 
-      // Only an APPROVED visual for this exact approved content version becomes the
-      // post's cover image — a NEEDS_REVIEW image (no human has looked at the actual
-      // pixels yet) or one belonging to a since-superseded version must never ship
-      // silently (CLAUDE.md: never publish without approval; see
-      // packages/agents/visual/src/reviewVisualAsset.ts, the human decision this gate
-      // is waiting on).
+      // The content's latest visual becomes the cover image when it is APPROVED
+      // (a user upload is stored APPROVED directly). Latest rather than keyed to
+      // approved_version, matching packages/mcp-client/src/approvedVisual.ts — a
+      // text-only edit after attaching the image must not drop it.
       const { data: visualRow } = await supabase
         .from('visual_assets')
         .select('asset')
         .eq('content_id', contentId)
-        .eq('version', item.approved_version)
+        .order('version', { ascending: false })
+        .limit(1)
         .maybeSingle<{
           asset: {
             status: string;

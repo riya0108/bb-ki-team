@@ -7,6 +7,7 @@ import {
   prepareVisualBrief,
   rejectVisualAsset,
   runVisualStage,
+  uploadUserVisualAsset,
 } from '@bb/visual-agent';
 import { Router } from 'express';
 import { z } from 'zod';
@@ -105,6 +106,25 @@ export function createVisualRouter(deps: AppDeps): Router {
       model: body.model,
     });
     res.status(200).json({ runId, asset });
+  });
+
+  // The user's own image, attached as-is: stored APPROVED with no brief, no QA and
+  // no review step, and published alongside the content on every platform. Not
+  // gated on BB_VISUAL_AGENT_ENABLED — no agent runs here.
+  const UploadSchema = z.object({
+    base64Data: z.string().min(1),
+    mimeType: z.string().regex(/^image\//, 'mimeType must be an image type'),
+  });
+  router.post('/:contentId/upload', async (req, res) => {
+    const body = parseWith(UploadSchema, req.body);
+    const asset = await uploadUserVisualAsset({
+      contentId: req.params.contentId ?? '',
+      pool: deps.pool,
+      imageGen: deps.imageGen,
+      base64Data: body.base64Data,
+      mimeType: body.mimeType,
+    });
+    res.status(200).json({ asset });
   });
 
   // Records the human decision a NEEDS_REVIEW visual has been waiting on — nothing

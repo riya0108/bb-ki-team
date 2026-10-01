@@ -8,3 +8,4 @@ export * from './finalizeVisualAsset.js';
 export * from './runVisualStage.js';
 export * from './ingestManualVisualAsset.js';
 export * from './reviewVisualAsset.js';
+export * from './uploadUserVisualAsset.js';

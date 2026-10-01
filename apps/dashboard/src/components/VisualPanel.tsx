@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 
-import { ApiError, approveVisual, getVisualAsset, ingestVisual, prepareVisual, rejectVisual } from '../api/client';
+import { ApiError, approveVisual, getVisualAsset, prepareVisual, rejectVisual, uploadVisual } from '../api/client';
 import type { PrepareVisualResult } from '../api/client';
 
 interface VisualPanelProps {
@@ -8,13 +8,6 @@ interface VisualPanelProps {
   version: number;
   onGenerated: () => void;
 }
-
-const SOURCE_OPTIONS = [
-  { label: 'Gemini (web)', value: 'gemini-web' },
-  { label: 'ChatGPT (web)', value: 'chatgpt-web' },
-  { label: 'Google Flow', value: 'google-flow-web' },
-  { label: 'Other', value: 'other-web' },
-];
 
 function fileToBase64(file: File): Promise<{ base64: string; mimeType: string }> {
   return new Promise((resolve, reject) => {
@@ -31,16 +24,15 @@ function fileToBase64(file: File): Promise<{ base64: string; mimeType: string }>
 // The BB Visual Agent (packages/agents/visual) never calls a billed image-gen API
 // from this app (see the "Visual Agent: No Paid API" memory) — a human or Claude
 // driving a browser session against a free web UI (Gemini/ChatGPT/Google Flow)
-// generates the actual pixels. This panel only does step 1 (prepare the brief +
-// prompt) and step 3 (upload the resulting image for QA + storage); step 2 —
-// actually generating the image — happens outside this app.
+// generates the actual pixels. This panel prepares an optional brief + prompt, and
+// uploads any image you attach — that upload is stored APPROVED directly (no QA,
+// no review step) and goes out with the content when it publishes.
 export function VisualPanel({ contentId, version, onGenerated }: VisualPanelProps) {
   const [asset, setAsset] = useState<Awaited<ReturnType<typeof getVisualAsset>>['asset']>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [brief, setBrief] = useState<PrepareVisualResult | null>(null);
-  const [source, setSource] = useState(SOURCE_OPTIONS[0]!.value);
   const [file, setFile] = useState<File | null>(null);
 
   useEffect(() => {
@@ -83,12 +75,12 @@ export function VisualPanel({ contentId, version, onGenerated }: VisualPanelProp
   }
 
   async function handleAttach() {
-    if (!brief?.visualId || !file) return;
+    if (!file) return;
     setBusy(true);
     setError(null);
     try {
       const { base64, mimeType } = await fileToBase64(file);
-      const res = await ingestVisual(contentId, brief.visualId, base64, mimeType, source, source);
+      const res = await uploadVisual(contentId, base64, mimeType);
       setAsset(res.asset);
       setBrief(null);
       setFile(null);
@@ -130,7 +122,9 @@ export function VisualPanel({ contentId, version, onGenerated }: VisualPanelProp
     }
   }
 
-  const isStale = asset !== null && asset.version !== version;
+  // An approved visual follows the content across text edits (publish attaches the
+  // latest approved one — approvedVisual.ts), so it is never shown as stale.
+  const isStale = asset !== null && asset.version !== version && asset.status !== 'APPROVED';
   const isReviewable = asset !== null && (asset.status === 'NEEDS_REVIEW' || asset.status === 'QA_PASS');
   const imageUrl = asset?.masterAsset.status === 'STORED' ? asset.masterAsset.assetUrl : null;
   const issues = [...(asset?.blockingReasons ?? []), ...(asset?.qa?.issues ?? [])];
@@ -181,7 +175,7 @@ export function VisualPanel({ contentId, version, onGenerated }: VisualPanelProp
             <div className="visual-brief">
               <p className="muted">
                 Paste this prompt into a free image-gen web UI (Gemini, ChatGPT, Google Flow) — via Claude-in-Chrome or
-                by hand — download the result, then attach it below. Aspect ratio: {brief.aspectRatio}.
+                by hand — download the result, then attach it below. Attached images post as-is with the content. Aspect ratio: {brief.aspectRatio}.
               </p>
               <textarea className="draft-textarea visual-prompt-textarea" readOnly value={brief.prompt ?? ''} />
               {brief.negativePrompt && (
@@ -190,21 +184,15 @@ export function VisualPanel({ contentId, version, onGenerated }: VisualPanelProp
                   <textarea className="draft-textarea visual-prompt-textarea" readOnly value={brief.negativePrompt} />
                 </>
               )}
-              <div className="action-row">
-                <select value={source} onChange={(e) => setSource(e.target.value)}>
-                  {SOURCE_OPTIONS.map((opt) => (
-                    <option key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
-                <input type="file" accept="image/*" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
-                <button disabled={busy || !file} onClick={() => void handleAttach()}>
-                  {busy ? 'Attaching…' : 'Attach visual'}
-                </button>
-              </div>
             </div>
           )}
+
+          <div className="action-row">
+            <input type="file" accept="image/*" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+            <button disabled={busy || !file} onClick={() => void handleAttach()}>
+              {busy ? 'Attaching…' : asset?.status === 'APPROVED' ? 'Replace visual' : 'Attach visual'}
+            </button>
+          </div>
 
           {!brief && (
             <button disabled={busy} onClick={() => void handlePrepare()}>

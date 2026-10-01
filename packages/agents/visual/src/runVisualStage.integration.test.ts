@@ -25,6 +25,7 @@ import { VisualBlockedMissingTruthLayerError, VisualContentNotFoundError } from 
 import { VisualBriefNotPendingError, ingestManualVisualAsset } from './ingestManualVisualAsset.js';
 import { prepareVisualBrief } from './prepareVisualBrief.js';
 import { runVisualStage } from './runVisualStage.js';
+import { uploadUserVisualAsset } from './uploadUserVisualAsset.js';
 
 const noopLogger = {
   warn: () => undefined,
@@ -440,6 +441,76 @@ describeIfDb('runVisualStage (integration, real Postgres)', () => {
           model: 'chatgpt-web-manual',
         }),
       ).rejects.toBeInstanceOf(VisualBriefNotPendingError);
+    });
+  });
+
+  it('user upload: stored APPROVED with no QA, no brief, and keeps an existing approval', async () => {
+    await withRollback(async (db) => {
+      const item = await seedContentItem(db);
+      await insertApproval(db, {
+        contentId: item.id,
+        version: item.currentVersion,
+        approvedBy: 'riya',
+      });
+      await setContentItemApproval(db, item.id, {
+        version: item.currentVersion,
+        approvedBy: 'riya',
+      });
+
+      const asset = await uploadUserVisualAsset({
+        contentId: item.id,
+        pool: db,
+        imageGen: fakeImageGen(),
+        base64Data: 'ZmFrZQ==',
+        mimeType: 'image/jpeg',
+      });
+
+      expect(asset.status).toBe('APPROVED');
+      expect(asset.qa).toBeNull();
+      expect(asset.sourceMode).toBe('user_supplied_asset');
+      expect(asset.masterAsset.assetUrl).toBe(fakeStoredAsset.assetUrl);
+      expect(asset.masterAsset.mimeType).toBe('image/jpeg');
+      const after = await getContentItemById(db, item.id);
+      expect(after?.status).toBe('approved');
+    });
+  });
+
+  it('user upload: replaces a pending brief for the same version', async () => {
+    await withRollback(async (db) => {
+      const item = await seedContentItem(db);
+      await insertQaResult(db, item.id, item.currentVersion, passingQaResult);
+      const prepared = await prepareVisualBrief({
+        contentId: item.id,
+        pool: db,
+        llm: llmFor(briefResponse),
+        runId: 'run-1',
+      });
+      expect(prepared.kind).toBe('pending');
+
+      const asset = await uploadUserVisualAsset({
+        contentId: item.id,
+        pool: db,
+        imageGen: fakeImageGen(),
+        base64Data: 'ZmFrZQ==',
+        mimeType: 'image/png',
+      });
+
+      expect(asset.status).toBe('APPROVED');
+      expect(asset.concept).toBe(briefResponse.concept);
+    });
+  });
+
+  it('user upload: throws VisualContentNotFoundError for an unknown content id', async () => {
+    await withRollback(async (db) => {
+      await expect(
+        uploadUserVisualAsset({
+          contentId: '00000000-0000-0000-0000-000000000000',
+          pool: db,
+          imageGen: fakeImageGen(),
+          base64Data: 'ZmFrZQ==',
+          mimeType: 'image/png',
+        }),
+      ).rejects.toBeInstanceOf(VisualContentNotFoundError);
     });
   });
 });

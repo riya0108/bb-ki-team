@@ -30,6 +30,7 @@ function errorPayload(error: unknown): { message: string } {
 function extensionForMimeType(mimeType: string): string {
   if (mimeType === 'image/jpeg') return 'jpg';
   if (mimeType === 'image/webp') return 'webp';
+  if (mimeType === 'image/gif') return 'gif';
   return 'png';
 }
 

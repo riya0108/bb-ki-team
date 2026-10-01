@@ -252,15 +252,14 @@ export function deleteReference(id: string): Promise<{ ok: true }> {
   return request(`/references/${id}`, { method: 'DELETE' });
 }
 
-export function ingestVisual(
+// Your own image, attached as-is: stored APPROVED (no QA, no review step) and
+// published with the content on every platform.
+export function uploadVisual(
   contentId: string,
-  visualId: string,
   imageBase64: string,
   mimeType: string,
-  provider: string,
-  model: string,
-): Promise<{ runId: string; asset: VisualAsset }> {
-  return post(`/visual/${contentId}/ingest`, { visualId, base64Data: imageBase64, mimeType, provider, model });
+): Promise<{ asset: VisualAsset }> {
+  return post(`/visual/${contentId}/upload`, { base64Data: imageBase64, mimeType });
 }
 
 // Step 3 — the human decision a NEEDS_REVIEW visual (pixels stored, but visual
