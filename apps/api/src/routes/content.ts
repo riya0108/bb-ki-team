@@ -1,4 +1,8 @@
+import { randomUUID } from 'node:crypto';
+
+import { loadCurrentDna } from '@bb/content-dna';
 import { listPublishEventsForContent, listRevisionsForContent } from '@bb/db';
+import { buildQaGateUnavailableResult, runQaGate } from '@bb/qa-gate';
 import { ContentStatusSchema } from '@bb/shared-types';
 import {
   addRevision,
@@ -11,6 +15,7 @@ import {
   requestChanges,
   requestPublish,
   requestSchedule,
+  recordQaResult,
   rescheduleContent,
 } from '@bb/workflows';
 import { Router } from 'express';
@@ -18,6 +23,16 @@ import { z } from 'zod';
 
 import type { AppDeps } from '../deps.js';
 import { parseWith } from '../validation.js';
+
+// Human-readable platform labels the QA rubric checks expect (same labels each head
+// agent passes to runQaGate itself).
+const QA_PLATFORM_LABELS: Record<string, string> = {
+  linkedin: 'LinkedIn',
+  x: 'X',
+  instagram: 'Instagram',
+  youtube_shorts: 'YouTube Shorts',
+  blog: 'Blog',
+};
 
 const ListQuerySchema = z.object({
   status: ContentStatusSchema.optional(),
@@ -149,6 +164,26 @@ export function createContentRouter(deps: AppDeps): Router {
       changedById: body.changedById,
       ...(packagePatch !== undefined ? { package: packagePatch } : {}),
     });
+
+    // Every new version gets its own QA pass, same invariant as the agents' LLM edit
+    // modes — otherwise a manual edit leaves the new version with no QA result, and
+    // anything gated on the truth layer (e.g. the Visual Agent's
+    // VISUAL_BLOCKED_MISSING_TRUTH_LAYER check) stays blocked for it.
+    const runId = randomUUID();
+    const dna = await loadCurrentDna(deps.pool);
+    const qa = await runQaGate({
+      finalPost: item.currentText,
+      sourceReferences: item.sourceUrls,
+      sourceTexts: [],
+      contentDna: dna,
+      status: item.status,
+      llm: deps.llm,
+      runId,
+      stepId: `qa-${item.id}-v${item.currentVersion}`,
+      platform: QA_PLATFORM_LABELS[item.platform] ?? item.platform,
+    }).catch((error: unknown) => buildQaGateUnavailableResult(error instanceof Error ? error.message : String(error)));
+    await recordQaResult(deps.pool, item.id, item.currentVersion, qa);
+
     res.status(201).json({ item, revision });
   });
 
