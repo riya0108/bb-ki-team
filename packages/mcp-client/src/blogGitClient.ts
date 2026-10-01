@@ -1,5 +1,4 @@
 import type { BlogGitConfig, Logger } from '@bb/core';
-import { getVisualAssetForVersion } from '@bb/db';
 import type { Queryable } from '@bb/db';
 import { createBlogGitMcpServer } from '@bb/mcp-blog-git';
 import type { ContentItem } from '@bb/shared-types';
@@ -7,6 +6,7 @@ import type { PublishConnector, ScheduleConnector } from '@bb/workflows';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 
+import { resolveApprovedVisual } from './approvedVisual.js';
 import { blogPostFragmentFromHtml, slugify } from './blogPost.js';
 import { isToolTextContent, toolErrorMessage } from './mcpToolResponse.js';
 
@@ -101,16 +101,12 @@ export function createBlogGitPublishConnector(
       const fragment = blogPostFragmentFromHtml(item.currentText);
       const slug = slugify(fragment.title);
 
-      // Only an APPROVED visual for this exact approved content version becomes the
-      // post's cover image — a NEEDS_REVIEW image (nobody has looked at the actual
-      // pixels yet, per visualAsset.ts) or one for a since-superseded version must
-      // never ship silently (CLAUDE.md: never publish without approval).
-      const approvedVersion = item.approvedVersion ?? item.currentVersion;
-      const visual = await getVisualAssetForVersion(pool, item.id, approvedVersion);
-      const heroImage =
-        visual?.status === 'APPROVED' && visual.masterAsset.status === 'STORED' && visual.masterAsset.assetUrl
-          ? await downloadHeroImage(visual.masterAsset.assetUrl, visual.masterAsset.mimeType ?? 'image/png', logger)
-          : null;
+      // Gate lives in resolveApprovedVisual (approvedVisual.ts) — shared with the X/Buffer
+      // connector so both platforms attach the same approved image.
+      const visual = await resolveApprovedVisual(pool, item.id);
+      const heroImage = visual?.masterAsset.assetUrl
+        ? await downloadHeroImage(visual.masterAsset.assetUrl, visual.masterAsset.mimeType ?? 'image/png', logger)
+        : null;
 
       const response = await client.callTool({
         name: 'publish_post',

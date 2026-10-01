@@ -1,5 +1,4 @@
 import type { BufferCredentials, Logger } from '@bb/core';
-import { getVisualAssetForVersion } from '@bb/db';
 import type { Queryable } from '@bb/db';
 import { createBufferApiClient, createBufferMcpServer } from '@bb/mcp-buffer';
 import type { ContentItem } from '@bb/shared-types';
@@ -7,6 +6,7 @@ import type { PublishConnector } from '@bb/workflows';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 
+import { resolveApprovedVisual } from './approvedVisual.js';
 import { isToolTextContent, toolErrorMessage } from './mcpToolResponse.js';
 import { tweetsForItem } from './xClient.js';
 
@@ -80,18 +80,12 @@ export function createBufferPublishConnector(
           `Post exceeds X's ${X_MAX_POST_LENGTH}-character limit (${tooLong.length} characters): "${tooLong.slice(0, 60)}..."`,
         );
       }
-      // Only an APPROVED visual for this exact approved content version gets attached
-      // — mirrors blogGitClient.ts's own gate (a NEEDS_REVIEW image or one for a
-      // since-superseded version must never ship silently; CLAUDE.md: never publish
-      // without approval). Buffer fetches the URL itself rather than us uploading
-      // bytes, so the signed Supabase URL (60-day expiry — supabaseStorage.ts) just
-      // needs to still be live when Buffer's own send worker gets to it, which it is.
-      const approvedVersion = item.approvedVersion ?? item.currentVersion;
-      const visual = await getVisualAssetForVersion(pool, item.id, approvedVersion);
-      const imageUrl =
-        visual?.status === 'APPROVED' && visual.masterAsset.status === 'STORED'
-          ? (visual.masterAsset.assetUrl ?? undefined)
-          : undefined;
+      // Gate lives in resolveApprovedVisual (approvedVisual.ts). Buffer fetches the URL
+      // itself rather than us uploading bytes, so the signed Supabase URL (60-day expiry
+      // — supabaseStorage.ts) just needs to still be live when Buffer's own send worker
+      // gets to it, which it is.
+      const visual = await resolveApprovedVisual(pool, item.id);
+      const imageUrl = visual?.masterAsset.assetUrl ?? undefined;
       // Verified live: Buffer's createPost rejects a dueAt that isn't strictly in
       // the future ("Scheduled time must be in the future"), so "now" for an
       // on-demand publish is now + a small buffer, not Date.now() itself.
