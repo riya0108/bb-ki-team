@@ -139,8 +139,8 @@ export interface BlogFrontmatter {
   authorName: string;
   authorBio: string;
   // Mirrors packages/mcp-servers/blog-git/src/mdxFile.ts's BlogFrontmatter — only
-  // ever populated from a visual_assets row whose status is APPROVED for this exact
-  // scheduled content version (see fire-due-schedules/index.ts). Null/omitted means
+  // ever populated from the content's latest visual_assets row when its status is
+  // APPROVED (see fire-due-schedules/index.ts). Null/omitted means
   // the site's Thumbnail.astro falls back to its generated placeholder graphic.
   heroImageUrl?: string | null;
   heroImageAlt?: string | null;
