@@ -110,9 +110,7 @@ export async function commitFiles(
   return { commitSha: commit.sha };
 }
 
-// Same file/path, decoded content, and blob `sha` as getFileContent — but also
-// returns the blob sha, which GitHub's Contents API requires as proof-of-current-state
-// before it will let updateFile below replace the file's content (otherwise it 409s).
+// Same file/path and decoded content as getFileContent, plus the file's blob `sha`.
 export async function getFileContentWithSha(
   config: GitHubRepoConfig,
   path: string,
@@ -154,7 +152,7 @@ export interface WorkflowRunOutcome {
 }
 
 // Polls GitHub Actions for the run triggered by `commitSha` until it completes, or
-// `timeoutMs` elapses. A successful `createFile`/`PUT` only means the MDX landed in
+// `timeoutMs` elapses. A successful commitFiles only means the MDX landed in
 // git — the site repo's own Deploy workflow (lint -> build -> Cloudflare deploy)
 // still has to pass before the post is reachable at its computed URL. Spec 15.4:
 // "never claim a post was published unless the connector confirms it" — this is
