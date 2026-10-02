@@ -64,6 +64,50 @@ export const LLM_PROVIDER_ENDPOINTS: Record<LlmProviderName, string> = {
 };
 
 const REQUEST_TIMEOUT_MS = 30_000;
+// OpenRouter's free models are routinely queued behind paid traffic, so a full blog
+// prompt took longer than 30s and was aborted by our own timeout rather than failing
+// on the provider side (2026-10-02 incident) — give it room to actually answer.
+const PROVIDER_TIMEOUT_MS: Partial<Record<LlmProviderName, number>> = {
+  openrouter: 90_000,
+};
+
+// A 429 that tells us to come back in a few seconds (Groq's per-minute token window,
+// Gemini's per-minute request window) is worth waiting out once before falling through
+// to the next provider. Longer waits aren't — falling back is faster than stalling the run.
+const MAX_RATE_LIMIT_WAIT_MS = 20_000;
+// Small cushion on top of the provider's own hint, so we don't land a hair before the
+// window rolls over and get rejected again.
+const RATE_LIMIT_WAIT_PADDING_MS = 500;
+
+class ProviderHttpError extends Error {
+  constructor(
+    message: string,
+    public readonly status: number,
+    // Undefined when the response didn't say how long to wait, or the limit is a daily
+    // one — retrying in that case would just burn time before the same rejection.
+    public readonly retryAfterMs: number | undefined,
+  ) {
+    super(message);
+    this.name = 'ProviderHttpError';
+  }
+}
+
+// Gemini reports daily-quota exhaustion with the same "Please retry in 30s" hint as its
+// per-minute limit; the quota id ("...PerDay...") in the body is the only way to tell.
+function isDailyQuota(body: string): boolean {
+  return /per\s*day/i.test(body);
+}
+
+function parseRetryAfterMs(response: Response, body: string): number | undefined {
+  const header = response.headers.get('retry-after');
+  if (header !== null) {
+    const seconds = Number(header);
+    if (Number.isFinite(seconds) && seconds >= 0) return seconds * 1000;
+  }
+  // Groq: "Please try again in 12.87s."  Gemini: "Please retry in 30.958472804s."
+  const match = /(?:try again|retry) in (\d+(?:\.\d+)?)\s*s\b/i.exec(body);
+  return match?.[1] !== undefined ? Number(match[1]) * 1000 : undefined;
+}
 
 function buildProviderList(env: Env): ProviderSpec[] {
   const providers: ProviderSpec[] = [];
@@ -96,7 +140,7 @@ async function callOpenAiCompatible(
   const controller = new AbortController();
   const timeout = setTimeout(() => {
     controller.abort();
-  }, REQUEST_TIMEOUT_MS);
+  }, PROVIDER_TIMEOUT_MS[spec.name] ?? REQUEST_TIMEOUT_MS);
 
   try {
     const response = await fetchImpl(spec.baseUrl, {
@@ -120,7 +164,9 @@ async function callOpenAiCompatible(
 
     if (!response.ok) {
       const body = await response.text().catch(() => '<unreadable body>');
-      throw new Error(`HTTP ${response.status}: ${body.slice(0, 500)}`);
+      const retryAfterMs =
+        response.status === 429 && !isDailyQuota(body) ? parseRetryAfterMs(response, body) : undefined;
+      throw new ProviderHttpError(`HTTP ${response.status}: ${body.slice(0, 500)}`, response.status, retryAfterMs);
     }
 
     const json = (await response.json()) as {
@@ -148,6 +194,11 @@ function stripJsonFences(text: string): string {
 
 export interface CreateFallbackLlmClientOptions {
   fetchImpl?: typeof fetch;
+  sleep?: (ms: number) => Promise<void>;
+}
+
+function defaultSleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 export function createFallbackLlmClient(
@@ -157,12 +208,34 @@ export function createFallbackLlmClient(
 ): LlmClient {
   const providers = buildProviderList(env);
   const fetchImpl = options.fetchImpl ?? fetch;
+  const sleep = options.sleep ?? defaultSleep;
+
+  async function callWithRateLimitRetry(spec: ProviderSpec, input: LlmCompletionInput): Promise<string> {
+    try {
+      return await callOpenAiCompatible(spec, input, fetchImpl);
+    } catch (error) {
+      if (
+        !(error instanceof ProviderHttpError) ||
+        error.retryAfterMs === undefined ||
+        error.retryAfterMs > MAX_RATE_LIMIT_WAIT_MS
+      ) {
+        throw error;
+      }
+      const waitMs = error.retryAfterMs + RATE_LIMIT_WAIT_PADDING_MS;
+      logger.warn(
+        { provider: spec.name, runId: input.runId, stepId: input.stepId, waitMs },
+        'LLM provider rate-limited with a short retry window, waiting once before retrying',
+      );
+      await sleep(waitMs);
+      return callOpenAiCompatible(spec, input, fetchImpl);
+    }
+  }
 
   async function complete(input: LlmCompletionInput): Promise<LlmCompletionResult> {
     const attempts: { provider: LlmProviderName; error: string }[] = [];
     for (const spec of providers) {
       try {
-        const text = await callOpenAiCompatible(spec, input, fetchImpl);
+        const text = await callWithRateLimitRetry(spec, input);
         return { text, provider: spec.name, model: spec.config.model };
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);

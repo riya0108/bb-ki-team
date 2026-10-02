@@ -67,6 +67,116 @@ describe('createFallbackLlmClient.complete', () => {
   });
 });
 
+describe('createFallbackLlmClient.complete rate-limit retry', () => {
+  const groqOnly: Env = {
+    databaseUrl: 'x',
+    apiPort: 4000,
+    apiHost: '127.0.0.1',
+    visualAgentEnabled: false,
+    groq: { apiKey: 'q', model: 'groq-model' },
+  };
+
+  function rateLimited(message: string, headers: Record<string, string> = {}): Response {
+    return new Response(JSON.stringify({ error: { message } }), { status: 429, headers });
+  }
+
+  it('waits out a short 429 window once and retries the same provider', async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(rateLimited('Rate limit reached on tokens per minute (TPM). Please try again in 12.87s.'))
+      .mockResolvedValueOnce(jsonResponse(chatCompletion('groq after wait')));
+    const sleep = vi.fn(() => Promise.resolve());
+    const client = createFallbackLlmClient(groqOnly, logger, { fetchImpl, sleep });
+
+    const result = await client.complete(baseInput);
+    expect(result.text).toBe('groq after wait');
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(sleep).toHaveBeenCalledWith(13_370);
+  });
+
+  it('prefers the retry-after header when present', async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(rateLimited('slow down', { 'retry-after': '3' }))
+      .mockResolvedValueOnce(jsonResponse(chatCompletion('ok')));
+    const sleep = vi.fn(() => Promise.resolve());
+    const client = createFallbackLlmClient(groqOnly, logger, { fetchImpl, sleep });
+
+    await client.complete(baseInput);
+    expect(sleep).toHaveBeenCalledWith(3_500);
+  });
+
+  it('retries only once, then falls through', async () => {
+    const fetchImpl = vi.fn(() => Promise.resolve(rateLimited('Please try again in 2s.')));
+    const sleep = vi.fn(() => Promise.resolve());
+    const client = createFallbackLlmClient(groqOnly, logger, { fetchImpl, sleep });
+
+    await expect(client.complete(baseInput)).rejects.toBeInstanceOf(AllProvidersFailedError);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(sleep).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not wait when the provider asks for longer than the cap — falls back instead', async () => {
+    const fetchImpl = vi.fn(() => Promise.resolve(rateLimited('Please try again in 45s.')));
+    const sleep = vi.fn(() => Promise.resolve());
+    const client = createFallbackLlmClient(groqOnly, logger, { fetchImpl, sleep });
+
+    await expect(client.complete(baseInput)).rejects.toBeInstanceOf(AllProvidersFailedError);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(sleep).not.toHaveBeenCalled();
+  });
+
+  it('does not wait on a daily quota even when the body carries a short retry hint', async () => {
+    const fetchImpl = vi.fn(() =>
+      Promise.resolve(
+        rateLimited('Quota exceeded, quotaId: GenerateRequestsPerDayPerProjectPerModel-FreeTier. Please retry in 5s.'),
+      ),
+    );
+    const sleep = vi.fn(() => Promise.resolve());
+    const client = createFallbackLlmClient(groqOnly, logger, { fetchImpl, sleep });
+
+    await expect(client.complete(baseInput)).rejects.toBeInstanceOf(AllProvidersFailedError);
+    expect(sleep).not.toHaveBeenCalled();
+  });
+});
+
+describe('createFallbackLlmClient.complete timeouts', () => {
+  function hangingFetch(_url: string | URL | Request, init?: RequestInit): Promise<Response> {
+    return new Promise((_resolve, reject) => {
+      init?.signal?.addEventListener('abort', () => {
+        reject(new Error('This operation was aborted'));
+      });
+    });
+  }
+
+  it('gives openrouter longer than the 30s default before aborting', async () => {
+    vi.useFakeTimers();
+    try {
+      const env: Env = {
+        databaseUrl: 'x',
+        apiPort: 4000,
+        apiHost: '127.0.0.1',
+        visualAgentEnabled: false,
+        openrouter: { apiKey: 'o', model: 'free-model' },
+      };
+      const client = createFallbackLlmClient(env, logger, { fetchImpl: vi.fn(hangingFetch) });
+      let settled = false;
+      const pending = client.complete(baseInput).finally(() => {
+        settled = true;
+      });
+      pending.catch(() => undefined);
+
+      await vi.advanceTimersByTimeAsync(31_000);
+      expect(settled).toBe(false);
+
+      await vi.advanceTimersByTimeAsync(60_000);
+      await expect(pending).rejects.toBeInstanceOf(AllProvidersFailedError);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe('createFallbackLlmClient.complete request shape', () => {
   it('defaults max_tokens high enough for a full structured response, not the old 1024 that truncated real drafts', async () => {
     const env: Env = {
