@@ -1,9 +1,9 @@
 // Stateless replacement for packages/mcp-servers/blog-git/src/git.ts's local clone +
 // commit + push, using GitHub's Contents API over HTTPS instead — required because an
-// Edge Function invocation has no persistent local git checkout to operate on. Each
-// call is a single atomic commit made server-side by GitHub, so there's no
-// pull/push/reset-on-failure dance to replicate: a create either lands as one commit
-// or the request fails outright, nothing to roll back.
+// Edge Function invocation has no persistent local git checkout to operate on.
+// commitFiles makes a single atomic commit server-side by GitHub, so there's no
+// pull/push/reset-on-failure dance to replicate: the branch ref only moves once the
+// whole commit exists, or the request fails outright, nothing to roll back.
 
 export class GitHubApiError extends Error {
   constructor(
@@ -53,30 +53,61 @@ export async function getFileContent(config: GitHubRepoConfig, path: string): Pr
   return new TextDecoder().decode(bytes);
 }
 
-// Creates a new file in a single commit. Only for NEW files (no `sha` passed) — an
-// existing file at this path fails the create with a 422, which is exactly the
-// "refuse to overwrite" behavior server.ts's fileExists check enforced locally.
-export async function createFile(
-  config: GitHubRepoConfig,
-  path: string,
-  content: string,
-  message: string,
-): Promise<{ commitSha: string }> {
-  const url = apiBase(config, path);
+export interface RepoFileWrite {
+  path: string;
+  // Already-base64-encoded bytes — text callers encode their UTF-8 themselves, so
+  // binary content (an image) is never round-tripped through a string decode.
+  base64Content: string;
+}
+
+async function gitApi<T>(config: GitHubRepoConfig, method: string, path: string, body?: unknown): Promise<T> {
+  const url = `https://api.github.com/repos/${config.owner}/${config.repo}/git/${path}`;
   const response = await fetch(url, {
-    method: 'PUT',
-    headers: { ...authHeaders(config), 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      message,
-      content: btoa(String.fromCharCode(...new TextEncoder().encode(content))),
-      branch: config.branch,
-    }),
+    method,
+    headers: { ...authHeaders(config), ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
   if (!response.ok) {
-    throw new GitHubApiError(response.status, `PUT ${path} failed: HTTP ${response.status} ${await response.text()}`);
+    throw new GitHubApiError(response.status, `${method} git/${path} failed: HTTP ${response.status} ${await response.text()}`);
   }
-  const body = (await response.json()) as { commit: { sha: string } };
-  return { commitSha: body.commit.sha };
+  return (await response.json()) as T;
+}
+
+// Writes every file in `files` (create or replace) as ONE commit on `config.branch`,
+// via the Git Data API (blobs -> tree -> commit -> ref). One commit per publish is
+// the point: the Contents API makes one commit per file, and each commit triggers
+// its own Deploy workflow in the site repo — a cover-image commit's deploy (built
+// without the post) could finish after the post's deploy and overwrite it, leaving
+// the post 404 while both runs report success. The final ref update is a
+// non-force fast-forward, so if the branch moved since we read it the call fails
+// (422) instead of silently discarding someone else's commit.
+export async function commitFiles(
+  config: GitHubRepoConfig,
+  files: RepoFileWrite[],
+  message: string,
+): Promise<{ commitSha: string }> {
+  if (files.length === 0) throw new Error('commitFiles called with no files');
+  const ref = await gitApi<{ object: { sha: string } }>(config, 'GET', `ref/heads/${encodeURIComponent(config.branch)}`);
+  const parentSha = ref.object.sha;
+  const parent = await gitApi<{ tree: { sha: string } }>(config, 'GET', `commits/${parentSha}`);
+
+  const treeEntries = [];
+  for (const file of files) {
+    const blob = await gitApi<{ sha: string }>(config, 'POST', 'blobs', {
+      content: file.base64Content,
+      encoding: 'base64',
+    });
+    treeEntries.push({ path: file.path, mode: '100644', type: 'blob', sha: blob.sha });
+  }
+
+  const tree = await gitApi<{ sha: string }>(config, 'POST', 'trees', { base_tree: parent.tree.sha, tree: treeEntries });
+  const commit = await gitApi<{ sha: string }>(config, 'POST', 'commits', {
+    message,
+    tree: tree.sha,
+    parents: [parentSha],
+  });
+  await gitApi(config, 'PATCH', `refs/heads/${encodeURIComponent(config.branch)}`, { sha: commit.sha, force: false });
+  return { commitSha: commit.sha };
 }
 
 // Same file/path, decoded content, and blob `sha` as getFileContent — but also
@@ -98,81 +129,6 @@ export async function getFileContentWithSha(
   }
   const bytes = Uint8Array.from(atob(body.content.replace(/\n/g, '')), (c) => c.charCodeAt(0));
   return { content: new TextDecoder().decode(bytes), sha: body.sha };
-}
-
-// Replaces an EXISTING file's content in a single commit. Requires the file's current
-// blob `sha` (from getFileContentWithSha) so GitHub can detect a stale write — the
-// counterpart to createFile for the case where a scheduled retry finds that the
-// approved content changed since an earlier, still-uncommitted-content attempt (see
-// fire-due-schedules/index.ts: without this, a retry could only ever reuse the old
-// commit, silently publishing stale content instead of the newly approved version).
-export async function updateFile(
-  config: GitHubRepoConfig,
-  path: string,
-  content: string,
-  message: string,
-  sha: string,
-): Promise<{ commitSha: string }> {
-  const url = apiBase(config, path);
-  const response = await fetch(url, {
-    method: 'PUT',
-    headers: { ...authHeaders(config), 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      message,
-      content: btoa(String.fromCharCode(...new TextEncoder().encode(content))),
-      branch: config.branch,
-      sha,
-    }),
-  });
-  if (!response.ok) {
-    throw new GitHubApiError(response.status, `PUT ${path} (update) failed: HTTP ${response.status} ${await response.text()}`);
-  }
-  const body = (await response.json()) as { commit: { sha: string } };
-  return { commitSha: body.commit.sha };
-}
-
-// Sha-only lookup, deliberately skipping getFileContentWithSha's UTF-8 decode step —
-// that decode corrupts arbitrary binary bytes (an image), so a binary file's
-// existence/sha must be checked without ever decoding its content as text.
-export async function getFileSha(config: GitHubRepoConfig, path: string): Promise<string | null> {
-  const url = `${apiBase(config, path)}?ref=${encodeURIComponent(config.branch)}`;
-  const response = await fetch(url, { headers: authHeaders(config) });
-  if (response.status === 404) return null;
-  if (!response.ok) {
-    throw new GitHubApiError(response.status, `GET ${path} failed: HTTP ${response.status} ${await response.text()}`);
-  }
-  const body = (await response.json()) as { sha: string };
-  return body.sha;
-}
-
-// createFile/updateFile above re-encode their `content` string as UTF-8 bytes before
-// base64ing it — correct for MDX/text, but would corrupt arbitrary binary bytes (an
-// image) that don't round-trip through UTF-8. This takes already-base64-encoded
-// content directly and PUTs it verbatim; pass `sha` to update an existing file,
-// omit it to create a new one (mirrors GitHub's own create-vs-update contract).
-export async function putBinaryFile(
-  config: GitHubRepoConfig,
-  path: string,
-  base64Content: string,
-  message: string,
-  sha?: string,
-): Promise<{ commitSha: string }> {
-  const url = apiBase(config, path);
-  const response = await fetch(url, {
-    method: 'PUT',
-    headers: { ...authHeaders(config), 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      message,
-      content: base64Content,
-      branch: config.branch,
-      ...(sha ? { sha } : {}),
-    }),
-  });
-  if (!response.ok) {
-    throw new GitHubApiError(response.status, `PUT ${path} (binary) failed: HTTP ${response.status} ${await response.text()}`);
-  }
-  const body = (await response.json()) as { commit: { sha: string } };
-  return { commitSha: body.commit.sha };
 }
 
 // Finds the most recent commit SHA touching `path` on `config.branch`. Used to
@@ -215,15 +171,48 @@ export async function waitForWorkflowRun(
   while (Date.now() < deadline) {
     const response = await fetch(url, { headers: authHeaders(config) });
     if (response.ok) {
-      const body = (await response.json()) as {
-        workflow_runs: { status: string; conclusion: string | null; html_url: string }[];
-      };
+      const body = (await response.json()) as { workflow_runs: WorkflowRun[] };
       const run = body.workflow_runs[0];
       if (run && run.status === 'completed' && run.conclusion) {
-        return { conclusion: run.conclusion, htmlUrl: run.html_url };
+        if (run.conclusion !== 'cancelled') return { conclusion: run.conclusion, htmlUrl: run.html_url };
+        // The site's Deploy workflow cancels an in-progress run when a newer push
+        // arrives (concurrency: cancel-in-progress). That newer run deploys a build
+        // that still contains this commit, so its outcome is this commit's outcome.
+        const successor = await findSupersedingRun(config, commitSha);
+        if (successor === null) return { conclusion: run.conclusion, htmlUrl: run.html_url };
+        if (successor.status === 'completed' && successor.conclusion) {
+          return { conclusion: successor.conclusion, htmlUrl: successor.html_url };
+        }
       }
     }
     await new Promise((resolve) => setTimeout(resolve, options.intervalMs));
   }
   return 'timeout';
+}
+
+interface WorkflowRun {
+  head_sha: string;
+  status: string;
+  conclusion: string | null;
+  html_url: string;
+}
+
+// The newest push-triggered run on the branch, if its commit is a descendant of
+// `commitSha` (i.e. its build includes this commit); null otherwise.
+async function findSupersedingRun(config: GitHubRepoConfig, commitSha: string): Promise<WorkflowRun | null> {
+  const repoBase = `https://api.github.com/repos/${config.owner}/${config.repo}`;
+  const runsResponse = await fetch(
+    `${repoBase}/actions/runs?branch=${encodeURIComponent(config.branch)}&event=push&per_page=1`,
+    { headers: authHeaders(config) },
+  );
+  if (!runsResponse.ok) return null;
+  const latest = ((await runsResponse.json()) as { workflow_runs: WorkflowRun[] }).workflow_runs[0];
+  if (!latest || latest.head_sha === commitSha) return null;
+
+  const compareResponse = await fetch(`${repoBase}/compare/${commitSha}...${latest.head_sha}`, {
+    headers: authHeaders(config),
+  });
+  if (!compareResponse.ok) return null;
+  const { status } = (await compareResponse.json()) as { status: string };
+  return status === 'ahead' ? latest : null;
 }

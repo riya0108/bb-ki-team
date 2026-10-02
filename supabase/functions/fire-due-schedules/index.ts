@@ -14,15 +14,13 @@ import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { encodeBase64 } from 'jsr:@std/encoding@1/base64';
 
 import {
-  createFile,
+  commitFiles,
   getFileContent,
   getFileContentWithSha,
-  getFileSha,
   getLatestCommitShaForPath,
-  putBinaryFile,
-  updateFile,
   waitForWorkflowRun,
   type GitHubRepoConfig,
+  type RepoFileWrite,
 } from '../_shared/githubContents.ts';
 import { blogPostFragmentFromHtml, buildMdxFileContents, parseCategorySlugs, resolveCategorySlug, slugify } from '../_shared/blogPost.ts';
 
@@ -161,33 +159,30 @@ function extensionForMimeType(mimeType: string): string {
 }
 
 // Downloads the approved visual's bytes from its (still-valid, short-lived) signed
-// Supabase URL and commits them into the site repo at `path`, upserting (create or
-// update) so a retry that already uploaded the image on an earlier tick doesn't 422
-// on "file already exists". Committing the bytes — rather than linking the signed
-// URL from a permanently-live post — is deliberate: that URL expires in 60 days
+// Supabase URL, base64-encoded for commitFiles, so the cover image lands in the SAME
+// commit as the MDX that references it (separate commits each trigger a deploy, and
+// the image-only deploy could finish last and overwrite the live post). Committing
+// the bytes — rather than linking the signed URL from a permanently-live post — is
+// deliberate: that URL expires in 60 days
 // (packages/mcp-servers/image-gen/src/supabaseStorage.ts), which would silently
-// 404 the cover image two months after publish. Best-effort: a download/commit
-// failure here must not block publishing the already-approved text.
-async function upsertHeroImage(
-  github: GitHubRepoConfig,
-  path: string,
-  assetUrl: string,
-  title: string,
-): Promise<boolean> {
+// 404 the cover image two months after publish. Best-effort: a download failure
+// here must not block publishing the already-approved text.
+async function downloadHeroImage(assetUrl: string): Promise<string | null> {
   try {
     const response = await fetch(assetUrl);
     if (!response.ok) {
       console.error(`Failed to download approved visual asset for cover image: HTTP ${response.status}`);
-      return false;
+      return null;
     }
-    const base64Content = encodeBase64(await response.arrayBuffer());
-    const sha = await getFileSha(github, path);
-    await putBinaryFile(github, path, base64Content, `Add cover image: ${title}`, sha ?? undefined);
-    return true;
+    return encodeBase64(await response.arrayBuffer());
   } catch (error) {
-    console.error(`Failed to commit cover image: ${error instanceof Error ? error.message : String(error)}`);
-    return false;
+    console.error(`Failed to download cover image: ${error instanceof Error ? error.message : String(error)}`);
+    return null;
   }
+}
+
+function textFile(path: string, content: string): RepoFileWrite {
+  return { path, base64Content: encodeBase64(new TextEncoder().encode(content)) };
 }
 
 Deno.serve(async (req) => {
@@ -290,12 +285,10 @@ Deno.serve(async (req) => {
       const existing = await getFileContentWithSha(github, relativePath);
       let commitSha: string;
       if (existing === null) {
-        // Committed before the MDX, and only reflected in the MDX's own heroImage
-        // field if it actually succeeds — never reference a cover image path that
-        // doesn't exist in the repo (see upsertHeroImage's comment on retry safety).
-        const imageCommitted = heroImageApproved
-          ? await upsertHeroImage(github, `public${heroImageApproved.sitePath}`, heroImageApproved.assetUrl, fragment.title)
-          : false;
+        // Only reflected in the MDX's own heroImage field if the download actually
+        // succeeded — never reference a cover image path that isn't in the commit.
+        const heroImageBase64 = heroImageApproved ? await downloadHeroImage(heroImageApproved.assetUrl) : null;
+        const imageCommitted = heroImageBase64 !== null;
         const mdx = buildMdxFileContents(
           {
             title: fragment.title,
@@ -310,7 +303,11 @@ Deno.serve(async (req) => {
           },
           fragment.bodyMdx,
         );
-        commitSha = (await createFile(github, relativePath, mdx, `Add blog post: ${fragment.title}`)).commitSha;
+        const files = [textFile(relativePath, mdx)];
+        if (heroImageApproved && heroImageBase64 !== null) {
+          files.unshift({ path: `public${heroImageApproved.sitePath}`, base64Content: heroImageBase64 });
+        }
+        commitSha = (await commitFiles(github, files, `Add blog post: ${fragment.title}`)).commitSha;
       } else if (extractFrontmatterTitle(existing.content) === fragment.title) {
         // Same title at this path — at least a prior attempt at this same post. That
         // attempt's committed content might still be exactly what's currently approved
@@ -347,9 +344,8 @@ Deno.serve(async (req) => {
         } else {
           // The approved content changed since the earlier attempt — commit the update
           // so the version that goes live is the one actually approved now.
-          const imageCommitted = heroImageApproved
-            ? await upsertHeroImage(github, `public${heroImageApproved.sitePath}`, heroImageApproved.assetUrl, fragment.title)
-            : false;
+          const heroImageBase64 = heroImageApproved ? await downloadHeroImage(heroImageApproved.assetUrl) : null;
+          const imageCommitted = heroImageBase64 !== null;
           const updatedMdx = buildMdxFileContents(
             {
               title: fragment.title,
@@ -364,9 +360,11 @@ Deno.serve(async (req) => {
             },
             fragment.bodyMdx,
           );
-          commitSha = (
-            await updateFile(github, relativePath, updatedMdx, `Update blog post: ${fragment.title}`, existing.sha)
-          ).commitSha;
+          const files = [textFile(relativePath, updatedMdx)];
+          if (heroImageApproved && heroImageBase64 !== null) {
+            files.unshift({ path: `public${heroImageApproved.sitePath}`, base64Content: heroImageBase64 });
+          }
+          commitSha = (await commitFiles(github, files, `Update blog post: ${fragment.title}`)).commitSha;
         }
       } else {
         throw new Error(`${relativePath} already exists in the repo with a different title — refusing to overwrite it.`);
