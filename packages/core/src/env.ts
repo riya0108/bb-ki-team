@@ -26,6 +26,16 @@ const RawEnvSchema = z.object({
   GROQ_MODEL: z.string().optional(),
   OPENROUTER_API_KEY: z.string().optional(),
   OPENROUTER_MODEL: z.string().optional(),
+  // Free-tier fallbacks after the three above (2026-10-07): the editorial pipeline
+  // roughly doubled LLM calls per draft and exhausted Gemini's free daily quota.
+  // Mistral La Plateforme (paid API — not a free tier; leave unset unless on a plan)
+  // — https://console.mistral.ai/api-keys
+  MISTRAL_API_KEY: z.string().optional(),
+  MISTRAL_MODEL: z.string().optional(),
+  // NVIDIA NIM hosted API (free tier) — https://build.nvidia.com. Many listed models
+  // 404 for free accounts or have been retired; openai/gpt-oss-20b was verified working.
+  NVIDIA_API_KEY: z.string().optional(),
+  NVIDIA_MODEL: z.string().optional(),
   // No API key: Ollama is a local install (brew services start ollama) with no
   // account, no auth, no billing surface — setting this alone enables it.
   OLLAMA_MODEL: z.string().optional(),
@@ -139,6 +149,8 @@ export interface Env {
   gemini?: LlmProviderConfig | undefined;
   groq?: LlmProviderConfig | undefined;
   openrouter?: LlmProviderConfig | undefined;
+  mistral?: LlmProviderConfig | undefined;
+  nvidia?: LlmProviderConfig | undefined;
   ollama?: LlmProviderConfig | undefined;
   x?: XCredentials | undefined;
   buffer?: BufferCredentials | undefined;
@@ -228,14 +240,16 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
   const gemini = providerConfig(raw.GEMINI_API_KEY, raw.GEMINI_MODEL);
   const groq = providerConfig(raw.GROQ_API_KEY, raw.GROQ_MODEL);
   const openrouter = providerConfig(raw.OPENROUTER_API_KEY, raw.OPENROUTER_MODEL);
+  const mistral = providerConfig(raw.MISTRAL_API_KEY, raw.MISTRAL_MODEL);
+  const nvidia = providerConfig(raw.NVIDIA_API_KEY, raw.NVIDIA_MODEL);
   // No real API key to check — Ollama has no auth, so OLLAMA_MODEL alone enables it.
   // The placeholder string is never validated by Ollama; it only exists because
   // callOpenAiCompatible always sends an Authorization header.
   const ollama = raw.OLLAMA_MODEL ? { apiKey: 'ollama-local', model: raw.OLLAMA_MODEL } : undefined;
 
-  if (!gemini && !groq && !openrouter && !ollama) {
+  if (!gemini && !groq && !openrouter && !mistral && !nvidia && !ollama) {
     throw new EnvValidationError([
-      'at least one LLM provider must be configured (GEMINI_API_KEY+GEMINI_MODEL, GROQ_API_KEY+GROQ_MODEL, OPENROUTER_API_KEY+OPENROUTER_MODEL, or OLLAMA_MODEL with `brew services start ollama` running locally)',
+      'at least one LLM provider must be configured (GEMINI_API_KEY+GEMINI_MODEL, GROQ_API_KEY+GROQ_MODEL, OPENROUTER_API_KEY+OPENROUTER_MODEL, MISTRAL_API_KEY+MISTRAL_MODEL, NVIDIA_API_KEY+NVIDIA_MODEL, or OLLAMA_MODEL with `brew services start ollama` running locally)',
     ]);
   }
 
@@ -248,6 +262,8 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
     gemini,
     groq,
     openrouter,
+    mistral,
+    nvidia,
     ollama,
     x: xCredentialsConfig(raw),
     buffer: bufferCredentialsConfig(raw),

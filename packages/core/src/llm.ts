@@ -3,7 +3,7 @@ import { z } from 'zod';
 import type { Env, LlmProviderConfig } from './env.js';
 import type { Logger } from './logger.js';
 
-export type LlmProviderName = 'gemini' | 'groq' | 'openrouter' | 'ollama';
+export type LlmProviderName = 'gemini' | 'groq' | 'openrouter' | 'mistral' | 'nvidia' | 'ollama';
 
 export interface LlmMessage {
   role: 'user' | 'assistant';
@@ -57,6 +57,8 @@ export const LLM_PROVIDER_ENDPOINTS: Record<LlmProviderName, string> = {
   gemini: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
   groq: 'https://api.groq.com/openai/v1/chat/completions',
   openrouter: 'https://openrouter.ai/api/v1/chat/completions',
+  mistral: 'https://api.mistral.ai/v1/chat/completions',
+  nvidia: 'https://integrate.api.nvidia.com/v1/chat/completions',
   // Local, via `brew services start ollama` — no account, no API key, no billing
   // surface of any kind (see packages/core/src/env.ts's comment on why `config.apiKey`
   // is a hardcoded placeholder here rather than something the user configures).
@@ -67,8 +69,11 @@ const REQUEST_TIMEOUT_MS = 30_000;
 // OpenRouter's free models are routinely queued behind paid traffic, so a full blog
 // prompt took longer than 30s and was aborted by our own timeout rather than failing
 // on the provider side (2026-10-02 incident) — give it room to actually answer.
+// NVIDIA NIM's free hosted endpoints took 15-70s for even a short structured prompt
+// in live testing (2026-10-07), so it gets the same headroom.
 const PROVIDER_TIMEOUT_MS: Partial<Record<LlmProviderName, number>> = {
   openrouter: 90_000,
+  nvidia: 90_000,
 };
 
 // A 429 that tells us to come back in a few seconds (Groq's per-minute token window,
@@ -116,6 +121,10 @@ function buildProviderList(env: Env): ProviderSpec[] {
   if (env.openrouter) {
     providers.push({ name: 'openrouter', baseUrl: LLM_PROVIDER_ENDPOINTS.openrouter, config: env.openrouter });
   }
+  // Free-tier fallbacks added 2026-10-07, tried only after the three above fail —
+  // more independent quotas for the editorial pipeline's extra calls per draft.
+  if (env.mistral) providers.push({ name: 'mistral', baseUrl: LLM_PROVIDER_ENDPOINTS.mistral, config: env.mistral });
+  if (env.nvidia) providers.push({ name: 'nvidia', baseUrl: LLM_PROVIDER_ENDPOINTS.nvidia, config: env.nvidia });
   // Last in the fallback order deliberately — added as a fourth safety net after
   // gemini/groq/openrouter all hit rate limits/quota at once on the same free-tier
   // account (2026-09-15 incident), not as a replacement for any of them. Local, so

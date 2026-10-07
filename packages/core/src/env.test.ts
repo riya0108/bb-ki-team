@@ -41,6 +41,17 @@ describe('loadEnv', () => {
     expect(env.openrouter).toEqual({ apiKey: 'key', model: 'some-model' });
   });
 
+  it('configures Mistral and NVIDIA NIM fallbacks only when both key and model are set', () => {
+    const env = loadEnv({
+      DATABASE_URL: baseValidEnv.DATABASE_URL,
+      MISTRAL_API_KEY: 'm-key',
+      MISTRAL_MODEL: 'mistral-small-latest',
+      NVIDIA_API_KEY: 'n-key',
+    });
+    expect(env.mistral).toEqual({ apiKey: 'm-key', model: 'mistral-small-latest' });
+    expect(env.nvidia).toBeUndefined();
+  });
+
   it('coerces API_PORT from a string', () => {
     const env = loadEnv({ ...baseValidEnv, API_PORT: '5000' });
     expect(env.apiPort).toBe(5000);

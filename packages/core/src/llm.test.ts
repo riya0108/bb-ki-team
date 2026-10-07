@@ -52,6 +52,32 @@ describe('createFallbackLlmClient.complete', () => {
     expect(fetchImpl).toHaveBeenCalledTimes(2);
   });
 
+  it('tries Mistral then NVIDIA NIM after the primary providers, before local Ollama', async () => {
+    const env: Env = {
+      databaseUrl: 'x',
+      apiPort: 4000,
+      apiHost: '127.0.0.1',
+      visualAgentEnabled: false,
+      gemini: { apiKey: 'g', model: 'gemini-flash-lite-latest' },
+      mistral: { apiKey: 'm', model: 'mistral-small-latest' },
+      nvidia: { apiKey: 'n', model: 'meta/llama-3.3-70b-instruct' },
+      ollama: { apiKey: 'ollama-local', model: 'llama3.2:3b' },
+    };
+    const fetchImpl = vi.fn((url: string | URL | Request) => {
+      if (url === LLM_PROVIDER_ENDPOINTS.nvidia) return Promise.resolve(jsonResponse(chatCompletion('nim says hi')));
+      return Promise.resolve(jsonResponse('quota exhausted', 503));
+    });
+    const client = createFallbackLlmClient(env, logger, { fetchImpl });
+
+    const result = await client.complete(baseInput);
+    expect(result).toEqual({ text: 'nim says hi', provider: 'nvidia', model: 'meta/llama-3.3-70b-instruct' });
+    expect(fetchImpl.mock.calls.map(([url]) => url)).toEqual([
+      LLM_PROVIDER_ENDPOINTS.gemini,
+      LLM_PROVIDER_ENDPOINTS.mistral,
+      LLM_PROVIDER_ENDPOINTS.nvidia,
+    ]);
+  });
+
   it('throws AllProvidersFailedError when every configured provider fails', async () => {
     const env: Env = {
       databaseUrl: 'x',
