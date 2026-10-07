@@ -71,9 +71,20 @@ async function graphql<T>(
 // after the first replies to the one before it in order (the same contract as
 // packages/mcp-servers/x's postThread, just delegated to Buffer's own send). A single
 // post omits metadata entirely — Buffer has no reason to treat it as a thread.
-function threadMetadata(texts: string[]): Record<string, unknown> | undefined {
+//
+// Verified live: once metadata.twitter.thread is present, Buffer takes each tweet's
+// media from that item's own `assets` (ThreadedPostInput.assets) and silently drops
+// the top-level CreatePostInput.assets — so a thread's image must ride on item 0.
+export function threadMetadata(texts: string[], imageUrl?: string): Record<string, unknown> | undefined {
   if (texts.length <= 1) return undefined;
-  return { twitter: { thread: texts.map((text) => ({ text })) } };
+  return {
+    twitter: {
+      thread: texts.map((text, index) => ({
+        text,
+        assets: index === 0 && imageUrl ? [{ image: { url: imageUrl } }] : [],
+      })),
+    },
+  };
 }
 
 export function createBufferApiClient(credentials: BufferCredentials): BufferApiClient {
@@ -121,10 +132,10 @@ export function createBufferApiClient(credentials: BufferCredentials): BufferApi
             schedulingType: 'automatic',
             mode: 'customScheduled',
             dueAt: dueAt.toISOString(),
-            metadata: threadMetadata(texts),
-            // Attaches only to the first/main post — Buffer's thread metadata (above)
-            // carries reply text only, with no per-reply asset slot, so an image on a
-            // thread always lands on its opening tweet. Omitted (not sent as []) when
+            metadata: threadMetadata(texts, imageUrl),
+            // Attaches to the first/main post. For a thread Buffer ignores this and reads
+            // the image from thread item 0 instead (see threadMetadata); it is still sent
+            // so the post record mirrors the opening tweet. Omitted (not sent as []) when
             // there is no image, for a text-only post exactly as before this field existed.
             ...(imageUrl ? { assets: [{ image: { url: imageUrl } }] } : {}),
           },
