@@ -31,6 +31,8 @@ export function createBlogRouter(deps: AppDeps): Router {
     const pkg = await runBlogArticle({
       pool: deps.pool,
       llm: deps.llm,
+      fetchTool: deps.fetchTool,
+      logger: deps.logger,
       topic: body.topic,
       articleType: body.articleType,
       constraints: body.constraints ?? null,
@@ -54,6 +56,7 @@ export function createBlogRouter(deps: AppDeps): Router {
       pool: deps.pool,
       llm: deps.llm,
       fetchTool: deps.fetchTool,
+      logger: deps.logger,
       source: body.source,
       topic: body.topic,
       ...(body.sampleArticleTexts !== undefined ? { sampleArticleTexts: body.sampleArticleTexts } : {}),

@@ -1,6 +1,7 @@
 import type { LlmClient } from '@bb/core';
 import { BRAND_BRAIN } from '@bb/core';
-import type { ContentDnaRecord } from '@bb/shared-types';
+import { renderBriefForWriter, STORY_FIRST_WRITING_RULES } from '@bb/editorial-intelligence';
+import type { ContentDnaRecord, EditorialBrief } from '@bb/shared-types';
 import { z } from 'zod';
 
 // Spec section 6.2 — X-native principles, verbatim as instructions.
@@ -13,6 +14,18 @@ export const X_NATIVE_PRINCIPLES: readonly string[] = [
   'Use numbers and contrasts when they make the thought clearer.',
   'Do not force a thread when one post is stronger.',
   'Do not simply translate LinkedIn wording into X wording.',
+];
+
+// Spec 22 (editorial refactor): X's job is STOP SCROLLING -> UNDERSTAND THE EVENT ->
+// WANT TO KEEP READING. These optimise presentation of an EditorialBrief; they never
+// license redefining the story.
+export const X_EDITORIAL_RULES: readonly string[] = [
+  'The first sentence carries the strongest verified story element.',
+  'No generic filler openings: not "Here\'s why this matters", "You might be wondering", "In a recent development", "This is interesting because", or a vague paraphrase like "RBI just nudged rates up again".',
+  'A hook usually combines at least two of: novelty, consequence, scale, affected audience, contrast, unexpected implication, curiosity.',
+  'Lead with the most important fact, then why it matters, then context. Never retell research in the order you found it.',
+  'Never sacrifice factuality for punchiness: no unsupported number, no upgraded certainty, no changed attribution, no proposal turned into an implemented event, no "expected" turned into "confirmed", no "could/may" turned into "will", no changed temporal meaning.',
+  'Hashtags sparingly.',
 ];
 
 export const XModeDecisionSchema = z.enum(['single', 'thread']);
@@ -35,6 +48,8 @@ export const DraftXOutputSchema = z.object({
   // finalCopy/threadPosts — packaging.ts's appendHashtags decides placement,
   // length-fit and the MAX_X_HASHTAGS cap rather than trusting the model's own count.
   hashtags: z.array(z.string()).default([]),
+  // The brief claim IDs the opening line rests on (empty for opinion/no-brief drafts).
+  supportingClaimIds: z.array(z.string()).default([]),
 });
 export type DraftXOutput = z.infer<typeof DraftXOutputSchema>;
 
@@ -51,6 +66,11 @@ export interface DraftXPostInput {
   // "Single-post mode" / "Thread mode" vs. discovery/repurpose flows where the model
   // makes the single-vs-thread call itself, per spec 6.3).
   forceMode?: XModeDecision;
+  // The verified editorial core (spec 20). When present it replaces raw sourceTexts as
+  // the writer's only factual input — the writer must not re-interpret research.
+  editorialBrief?: EditorialBrief | null;
+  // Problems found in a previous attempt (meaning drift) that this draft must fix.
+  revisionNotes?: readonly string[];
 }
 
 function buildSystemPrompt(dna: ContentDnaRecord, forceMode: XModeDecision | undefined): string {
@@ -76,6 +96,13 @@ ${BRAND_BRAIN.permanentWritingRules.map((r) => `- ${r}`).join('\n')}
 
 X-native principles (spec 6.2):
 ${X_NATIVE_PRINCIPLES.map((p) => `- ${p}`).join('\n')}
+
+Story-first writing rules:
+${STORY_FIRST_WRITING_RULES.map((r) => `- ${r}`).join('\n')}
+X editorial rules:
+${X_EDITORIAL_RULES.map((r) => `- ${r}`).join('\n')}
+Priority order, never reversed: factual truth > verified editorial meaning > brand voice > platform
+optimisation > engagement.
 
 Creator's Content DNA — write in this voice, blended with the brand voice above:
 - Role: ${dna.identity.role}
@@ -104,6 +131,25 @@ place. Never use a hashtag as a substitute for saying the thing plainly in the p
 }
 
 function buildUserPrompt(input: DraftXPostInput): string {
+  const revision =
+    input.revisionNotes && input.revisionNotes.length > 0
+      ? `\n\nYour previous draft changed the meaning of verified facts. Fix ALL of these:\n${input.revisionNotes.map((n) => `- ${n}`).join('\n')}`
+      : '';
+  if (input.editorialBrief) {
+    return `Angle: ${input.angle}
+
+${renderBriefForWriter(input.editorialBrief)}
+
+Write the X content from this brief: the brief decides WHAT is true and what the story is; you decide
+only how to express it on X. Open with one of the approved hooks (or a tightening that keeps every fact
+and qualifier). Respond with the required JSON shape: mode ("single" or "thread"), hookOptions (1-3
+opening lines, each grounded in the brief), finalCopy (the single post, or the first post of the
+thread), threadPosts (the full ordered array including the first post, or null if mode is "single"),
+factCheckStatus (one sentence: what is verified vs. interpretation/opinion), hashtags
+(0-${MAX_X_HASHTAGS}, not inside finalCopy/threadPosts), supportingClaimIds (the claim IDs your
+opening line rests on).${revision}`;
+  }
+
   const sourceBlock =
     input.sourceTexts.length > 0
       ? input.sourceTexts.map((text, i) => `--- Source ${i + 1} ---\n${text.slice(0, 4000)}`).join('\n\n')
@@ -120,7 +166,7 @@ or "thread"), hookOptions (1-3 alternative opening lines for the same post/threa
 complete text — the single post, or the first post of the thread), threadPosts (the full ordered
 array of thread posts including the first one, or null if mode is "single"), factCheckStatus (one
 sentence: what is sourced vs. opinion/interpretation), hashtags (0-${MAX_X_HASHTAGS} relevant,
-high-reach hashtags per the instructions above — do not include them inside finalCopy/threadPosts).`;
+high-reach hashtags per the instructions above — do not include them inside finalCopy/threadPosts).${revision}`;
 }
 
 export async function draftXPost(input: DraftXPostInput): Promise<DraftXOutput> {

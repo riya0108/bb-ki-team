@@ -49,18 +49,38 @@ export function createXRouter(deps: AppDeps): Router {
     res.status(200).json({ runId, angles });
   });
 
-  const TopicDraftSchema = z.object({ topic: z.string().min(1), angle: z.string().min(1) });
+  // angle is optional: without one, the editorial pipeline researches the story and
+  // selects the strongest verified angle itself.
+  const TopicDraftSchema = z.object({ topic: z.string().min(1), angle: z.string().min(1).nullable().default(null) });
   router.post('/single-post/draft', async (req, res) => {
     const { topic, angle } = parseWith(TopicDraftSchema, req.body);
     const runId = randomUUID();
-    const pkg = await draftXTopicPost({ pool: deps.pool, llm: deps.llm, topic, angle, mode: 'single_topic', runId });
+    const pkg = await draftXTopicPost({
+      pool: deps.pool,
+      llm: deps.llm,
+      fetchTool: deps.fetchTool,
+      logger: deps.logger,
+      topic,
+      angle,
+      mode: 'single_topic',
+      runId,
+    });
     res.status(201).json({ runId, package: pkg });
   });
 
   router.post('/thread/draft', async (req, res) => {
     const { topic, angle } = parseWith(TopicDraftSchema, req.body);
     const runId = randomUUID();
-    const pkg = await draftXTopicPost({ pool: deps.pool, llm: deps.llm, topic, angle, mode: 'thread', runId });
+    const pkg = await draftXTopicPost({
+      pool: deps.pool,
+      llm: deps.llm,
+      fetchTool: deps.fetchTool,
+      logger: deps.logger,
+      topic,
+      angle,
+      mode: 'thread',
+      runId,
+    });
     res.status(201).json({ runId, package: pkg });
   });
 

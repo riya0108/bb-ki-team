@@ -1,6 +1,15 @@
-import type { LlmClient } from '@bb/core';
+import type { LlmClient, Logger } from '@bb/core';
 import { loadCurrentDna } from '@bb/content-dna';
 import type { Pool } from '@bb/db';
+import {
+  briefSourceReferences,
+  briefSourceTexts,
+  buildEditorialSummary,
+  draftWithMeaningGuard,
+  loadSiblingDrafts,
+  prepareEditorialBrief,
+} from '@bb/editorial-intelligence';
+import type { FetchTool } from '@bb/mcp-client';
 import { buildQaGateUnavailableResult, runQaGate } from '@bb/qa-gate';
 import type { ContentDnaRecord, LinkedinPackage } from '@bb/shared-types';
 import { createContentItem, recordQaResult, submitForReview } from '@bb/workflows';
@@ -56,8 +65,13 @@ export async function proposeLinkedinAngles(
 export interface DraftSingleTopicPostInput {
   pool: Pool;
   llm: LlmClient;
+  fetchTool: FetchTool;
+  logger: Logger;
   topic: string;
-  angle: string;
+  // null lets the editorial pipeline choose the strongest verified angle.
+  angle: string | null;
+  // The user's original chat message, when there is one (spec 34/35).
+  userMessage?: string | null;
   runId: string;
 }
 
@@ -67,42 +81,64 @@ export interface DraftSingleTopicPostInput {
 export async function draftSingleTopicPost(input: DraftSingleTopicPostInput): Promise<LinkedinPackage> {
   const dna = await loadCurrentDna(input.pool);
 
-  const draft = await draftLinkedinPost({
-    topic: input.topic,
-    angle: input.angle,
-    coreClaim: null,
-    sourceTexts: [],
-    contentDna: dna,
-    llm: input.llm,
+  // Topic -> research -> verified EditorialBrief before drafting (spec 33). Reuses the
+  // brief X/Blog already built for the same story, so all platforms share one core.
+  const brief = await prepareEditorialBrief(
+    { pool: input.pool, llm: input.llm, fetchTool: input.fetchTool, logger: input.logger },
+    { topic: input.topic, userMessage: input.userMessage ?? null, angle: input.angle, contentDna: dna, runId: input.runId },
+  );
+  const angle = input.angle ?? brief.selectedAngle?.angle ?? input.topic;
+
+  const { draft } = await draftWithMeaningGuard({
+    brief,
+    draft: (revisionNotes) =>
+      draftLinkedinPost({
+        topic: input.topic,
+        angle,
+        coreClaim: null,
+        sourceTexts: [],
+        contentDna: dna,
+        llm: input.llm,
+        runId: input.runId,
+        stepId: 'draft-single-topic',
+        editorialBrief: brief,
+        revisionNotes,
+      }),
+    textOf: (d) => d.finalPost,
+    logger: input.logger,
     runId: input.runId,
     stepId: 'draft-single-topic',
   });
+  const sourceReferences = briefSourceReferences(brief);
 
   const item = await createContentItem(input.pool, {
     platform: 'linkedin',
     createdByAgent: CREATED_BY_AGENT,
     mode: 'single_topic',
     topic: input.topic,
-    angle: input.angle,
+    angle,
+    sourceUrls: sourceReferences,
     contentDnaVersion: dna.version,
     text: draft.finalPost,
-    riskLevel: 'low',
+    riskLevel: brief.riskLevel,
+    package: { supportingClaimIds: draft.supportingClaimIds, editorialBrief: brief },
   });
 
   const qa = await runQaGate({
     finalPost: draft.finalPost,
-    sourceReferences: [],
-    sourceTexts: [],
+    sourceReferences,
+    sourceTexts: briefSourceTexts(brief),
     contentDna: dna,
     status: item.status,
     llm: input.llm,
     runId: input.runId,
     stepId: `qa-${item.id}`,
     platform: 'LinkedIn',
+    editorial: { brief, siblingDrafts: await loadSiblingDrafts(input.pool, brief.id, item.id) },
   }).catch((error: unknown) => buildQaGateUnavailableResult(error instanceof Error ? error.message : String(error)));
   await recordQaResult(input.pool, item.id, item.currentVersion, qa);
 
   const reviewedItem = await submitForReview(input.pool, item.id);
 
-  return buildLinkedinPackage(reviewedItem, draft, qa);
+  return buildLinkedinPackage(reviewedItem, draft, qa, buildEditorialSummary(brief));
 }

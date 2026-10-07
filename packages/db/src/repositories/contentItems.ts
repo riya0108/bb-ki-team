@@ -109,6 +109,40 @@ export async function listContentItems(
   return result.rows.map(mapRow);
 }
 
+// The most recent EditorialBrief (stored inside content_items.package by the
+// editorial-intelligence pipeline) for a normalized topic, created after `since` —
+// lets a second platform reuse one researched brief instead of researching the same
+// story again. Returns the raw JSON; the caller validates it against its schema.
+export async function findRecentEditorialBrief(
+  db: Queryable,
+  topicKey: string,
+  since: Date,
+): Promise<unknown> {
+  const result = await db.query<{ brief: unknown }>(
+    `SELECT package->'editorialBrief' AS brief
+     FROM content_items
+     WHERE package->'editorialBrief'->>'topicKey' = $1
+       AND package->'editorialBrief'->>'kind' = 'researched'
+       AND created_at >= $2
+     ORDER BY created_at DESC
+     LIMIT 1`,
+    [topicKey, since],
+  );
+  return result.rows[0]?.brief ?? null;
+}
+
+// Every content item drafted from the same EditorialBrief — the cross-platform
+// consistency check compares a new draft against these.
+export async function listContentItemsByEditorialBriefId(db: Queryable, briefId: string): Promise<ContentItem[]> {
+  const result = await db.query<ContentItemRow>(
+    `SELECT * FROM content_items
+     WHERE package->'editorialBrief'->>'id' = $1
+     ORDER BY created_at DESC`,
+    [briefId],
+  );
+  return result.rows.map(mapRow);
+}
+
 export async function updateContentItemText(
   db: Queryable,
   id: string,

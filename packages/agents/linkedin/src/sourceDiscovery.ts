@@ -2,6 +2,16 @@ import type { Logger, LlmClient } from '@bb/core';
 import { loadCurrentDna } from '@bb/content-dna';
 import type { Pool } from '@bb/db';
 import { listSources, markSourceAccessed, updateSourceStatus } from '@bb/db';
+import {
+  briefSourceReferences,
+  briefSourceTexts,
+  buildEditorialSummary,
+  draftWithMeaningGuard,
+  loadSiblingDrafts,
+  maxRiskLevel,
+  prepareEditorialBrief,
+  tierForRegistrySource,
+} from '@bb/editorial-intelligence';
 import type { FetchTool } from '@bb/mcp-client';
 import { FetchToolError } from '@bb/mcp-client';
 import { buildQaGateUnavailableResult, runQaGate } from '@bb/qa-gate';
@@ -180,16 +190,50 @@ export async function runSourceDiscovery(deps: RunSourceDiscoveryDeps): Promise<
     const fetchedSource = fetchedByUrl.get(candidate.sourceUrl);
     if (!fetchedSource) throw new NoAccessibleSourcesError();
 
-    const draft = await draftLinkedinPost({
-      topic: candidate.topic,
-      angle: candidate.angle,
-      coreClaim: candidate.coreClaim,
-      sourceTexts: [fetchedSource.text],
-      contentDna: dna,
-      llm,
+    // The trusted source is the lead document; the editorial pipeline still verifies
+    // its claims (and corroborates via research) before anything is drafted from it.
+    const brief = await prepareEditorialBrief(
+      { pool, llm, fetchTool, logger },
+      {
+        topic: candidate.topic,
+        angle: candidate.angle,
+        contentDna: dna,
+        runId,
+        reuseExisting: false,
+        providedDocuments: [
+          {
+            kind: 'trusted_source',
+            text: fetchedSource.text,
+            url: fetchedSource.source.url,
+            title: fetchedSource.title,
+            publisher: fetchedSource.source.name,
+            tier: tierForRegistrySource(fetchedSource.source.tier),
+          },
+        ],
+      },
+    );
+
+    const { draft } = await draftWithMeaningGuard({
+      brief,
+      draft: (revisionNotes) =>
+        draftLinkedinPost({
+          topic: candidate.topic,
+          angle: candidate.angle,
+          coreClaim: candidate.coreClaim,
+          sourceTexts: [],
+          contentDna: dna,
+          llm,
+          runId,
+          stepId: `draft-${candidate.sourceUrl}`,
+          editorialBrief: brief,
+          revisionNotes,
+        }),
+      textOf: (d) => d.finalPost,
+      logger,
       runId,
       stepId: `draft-${candidate.sourceUrl}`,
     });
+    const sourceUrls = [...new Set([fetchedSource.source.url, ...briefSourceReferences(brief)])];
 
     const item = await createContentItem(pool, {
       platform: 'linkedin',
@@ -199,28 +243,30 @@ export async function runSourceDiscovery(deps: RunSourceDiscoveryDeps): Promise<
       coreClaim: candidate.coreClaim,
       angle: candidate.angle,
       sourceIds: [fetchedSource.source.id],
-      sourceUrls: [fetchedSource.source.url],
+      sourceUrls,
       contentDnaVersion: dna.version,
       text: draft.finalPost,
-      riskLevel: candidate.riskLevel,
+      riskLevel: maxRiskLevel(candidate.riskLevel, brief.riskLevel),
+      package: { supportingClaimIds: draft.supportingClaimIds, editorialBrief: brief },
     });
 
     const qa = await runQaGate({
       finalPost: draft.finalPost,
-      sourceReferences: [fetchedSource.source.url],
-      sourceTexts: [fetchedSource.text],
+      sourceReferences: sourceUrls,
+      sourceTexts: [fetchedSource.text, ...briefSourceTexts(brief)],
       contentDna: dna,
       status: item.status,
       llm,
       runId,
       stepId: `qa-${item.id}`,
       platform: 'LinkedIn',
+      editorial: { brief, siblingDrafts: await loadSiblingDrafts(pool, brief.id, item.id) },
     }).catch((error: unknown) => buildQaGateUnavailableResult(error instanceof Error ? error.message : String(error)));
     await recordQaResult(pool, item.id, item.currentVersion, qa);
 
     const reviewedItem = await submitForReview(pool, item.id);
 
-    packages.push(buildLinkedinPackage(reviewedItem, draft, qa));
+    packages.push(buildLinkedinPackage(reviewedItem, draft, qa, buildEditorialSummary(brief)));
   }
 
   return packages;

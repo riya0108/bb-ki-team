@@ -35,8 +35,8 @@ const SourceActionSchema = z.union([
 const XChatActionSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('source_discovery') }),
   z.object({ action: z.literal('angles'), topic: z.string().min(1) }),
-  z.object({ action: z.literal('draft'), topic: z.string().min(1), angle: z.string().min(1) }),
-  z.object({ action: z.literal('thread_draft'), topic: z.string().min(1), angle: z.string().min(1) }),
+  z.object({ action: z.literal('draft'), topic: z.string().min(1), angle: z.string().min(1).nullable().default(null) }),
+  z.object({ action: z.literal('thread_draft'), topic: z.string().min(1), angle: z.string().min(1).nullable().default(null) }),
   z.object({ action: z.literal('quote'), source: SourceActionSchema, commentaryAngle: z.string().min(1) }),
   z.object({ action: z.literal('repurpose'), source: SourceActionSchema }),
   z.object({ action: z.literal('edit'), instruction: z.string().min(1) }),
@@ -49,8 +49,8 @@ type XChatAction = z.infer<typeof XChatActionSchema>;
 const CATALOG_DESCRIPTION = `Supported actions:
 - source_discovery {}: find topics from the creator's trusted X sources and draft posts on them.
 - angles { topic }: propose angles for a topic, without drafting yet.
-- draft { topic, angle }: draft a single X post for an already-chosen topic + angle.
-- thread_draft { topic, angle }: draft an X thread for an already-chosen topic + angle. Use when the user explicitly asks for a thread.
+- draft { topic, angle }: draft a single X post on a topic. angle is optional — use the user's angle if they gave one, otherwise null (the editorial pipeline researches the story and picks the strongest verified angle). topic is a short statement of the story, keeping any facts the user stated (e.g. "RBI hiked rates for the first time since 2023").
+- thread_draft { topic, angle }: same as draft, but as an X thread. Use when the user explicitly asks for a thread.
 - quote { source: { kind: 'url', url } | { kind: 'text', label, text }, commentaryAngle }: draft a quote-post reacting to a source with the creator's own point of view.
 - repurpose { source: { kind: 'url', url } | { kind: 'text', label, text } }: turn an article/text into post drafts.
 - edit { instruction }: revise the draft that is CURRENTLY OPEN in the dashboard per a natural-language instruction. There is no separate "which draft" parameter — it always means the open one.
@@ -80,6 +80,7 @@ async function dispatch(
   action: XChatAction,
   context: XChatContext,
   runId: string,
+  message: string,
 ): Promise<{ reply: string; result: unknown }> {
   switch (action.action) {
     case 'source_discovery': {
@@ -94,11 +95,31 @@ async function dispatch(
       return { reply: `Here are some angles for "${action.topic}":\n${list}`, result: angles };
     }
     case 'draft': {
-      const pkg = await draftXTopicPost({ pool: deps.pool, llm: deps.llm, topic: action.topic, angle: action.angle, mode: 'single_topic', runId });
+      const pkg = await draftXTopicPost({
+        pool: deps.pool,
+        llm: deps.llm,
+        fetchTool: deps.fetchTool,
+        logger: deps.logger,
+        topic: action.topic,
+        angle: action.angle,
+        userMessage: message,
+        mode: 'single_topic',
+        runId,
+      });
       return { reply: `Drafted an X post about "${action.topic}". It's now in review.`, result: pkg };
     }
     case 'thread_draft': {
-      const pkg = await draftXTopicPost({ pool: deps.pool, llm: deps.llm, topic: action.topic, angle: action.angle, mode: 'thread', runId });
+      const pkg = await draftXTopicPost({
+        pool: deps.pool,
+        llm: deps.llm,
+        fetchTool: deps.fetchTool,
+        logger: deps.logger,
+        topic: action.topic,
+        angle: action.angle,
+        userMessage: message,
+        mode: 'thread',
+        runId,
+      });
       return { reply: `Drafted an X thread about "${action.topic}". It's now in review.`, result: pkg };
     }
     case 'quote': {
@@ -185,7 +206,7 @@ export async function handleXChatMessage(
   let reply: string;
   let result: unknown;
   try {
-    ({ reply, result } = await dispatch(deps, classified, context, runId));
+    ({ reply, result } = await dispatch(deps, classified, context, runId, message));
   } catch (error) {
     if (error instanceof NoOpenDraftError) {
       reply = error.message;

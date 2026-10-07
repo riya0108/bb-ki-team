@@ -4,9 +4,17 @@ try {
   // no .env file present — tests below are skipped without TEST_DATABASE_URL.
 }
 
+import type { Logger } from '@bb/core';
 import { createFakeLlmClient } from '@bb/core/testing';
-import { createPool, insertContentDna } from '@bb/db';
+import { createPool, getQaResultForVersion, insertContentDna } from '@bb/db';
 import type { Pool } from '@bb/db';
+import {
+  createRbiFetchTool,
+  createUnreachableFetchTool,
+  RBI_TOPIC,
+  RBI_USER_MESSAGE,
+  rbiEditorialResponse,
+} from '@bb/editorial-intelligence/testing';
 import { FetchToolError } from '@bb/mcp-client';
 import type { FetchTool } from '@bb/mcp-client';
 import type { FetchResult } from '@bb/shared-types';
@@ -88,6 +96,31 @@ function fakeFetchTool(text: string | null): FetchTool {
   };
 }
 
+const noopLogger = { info: () => undefined, warn: () => undefined, error: () => undefined } as unknown as Logger;
+
+function rbiArticleJson(): string {
+  return JSON.stringify({
+    titleOptions: 'RBI Just Hiked Rates For The First Time Since 2023'.split('|'),
+    category: 'Money',
+    metaDescription: 'What the first RBI rate hike since 2023 means for borrowers.',
+    deck: 'The repo rate went up 25 basis points. Here is what changes for your EMI.',
+    thesis: 'The first hike since 2023 lands on repo-linked borrowers.',
+    sections: [
+      { heading: 'What happened', body: 'RBI raised the repo rate by 25 basis points to 5.50%. It is the first RBI rate hike since 2023.', sourceNote: 'Reserve Bank of India' },
+      { heading: 'Why your EMI could change', body: 'Borrowers with floating-rate home and car loans linked to the repo rate could see higher EMIs.', sourceNote: 'Reuters' },
+    ],
+    practicalTakeaway: 'Check whether your loan is linked to the repo rate.',
+    conclusion: 'Whether more hikes follow is not established yet.',
+    disclaimer: null,
+    sources: ['Reserve Bank of India', 'Reuters'],
+    articleSummary: 'Explainer on the first RBI rate hike since 2023.',
+    estimatedReadTime: '3 min',
+    seoStatus: 'ok',
+    styleMatchStatus: 'ok',
+    supportingClaimIds: ['claim_001'],
+  });
+}
+
 describeIfDb('packages/agents/blog head agent (integration, real Postgres)', () => {
   let pool: Pool;
   let dnaVersion: number;
@@ -115,6 +148,8 @@ describeIfDb('packages/agents/blog head agent (integration, real Postgres)', () 
     const pkg = await runBlogArticle({
       pool,
       llm: buildLlm(),
+      fetchTool: createUnreachableFetchTool(),
+      logger: noopLogger,
       topic: 'RBI UPI merchant fee proposal',
       articleType: 'Explainer',
       runId: 'r',
@@ -139,6 +174,7 @@ describeIfDb('packages/agents/blog head agent (integration, real Postgres)', () 
       pool,
       llm: buildLlm(),
       fetchTool: unusedFetchTool,
+      logger: noopLogger,
       source: { kind: 'text', label: 'Podcast transcript', text: 'A long transcript about UPI fees.' },
       topic: 'RBI UPI merchant fee proposal',
       runId: 'r',
@@ -158,6 +194,7 @@ describeIfDb('packages/agents/blog head agent (integration, real Postgres)', () 
       pool,
       llm: buildLlm(),
       fetchTool: fakeFetchTool('An article about UPI fees.'),
+      logger: noopLogger,
       source: { kind: 'url', url },
       topic: 'RBI UPI merchant fee proposal',
       runId: 'r',
@@ -176,10 +213,42 @@ describeIfDb('packages/agents/blog head agent (integration, real Postgres)', () 
         pool,
         llm: buildLlm(),
         fetchTool: fakeFetchTool(null),
+        logger: noopLogger,
         source: { kind: 'url', url: 'https://example.com/unreachable' },
         topic: 'A topic',
         runId: 'r',
       }),
     ).rejects.toBeInstanceOf(RepurposeSourceInaccessibleError);
+  });
+  it('RBI end-to-end: the article is written from the verified brief and passes meaning-preservation QA', async () => {
+    const llm = createFakeLlmClient((input) => {
+      const editorial = rbiEditorialResponse(input);
+      if (editorial !== null) return editorial;
+      if ((input.system ?? '').includes('Blog HTML Agent')) {
+        expect(input.messages[0]?.content).toContain('PROTECTED FACTS');
+        return rbiArticleJson();
+      }
+      return JSON.stringify({ status: 'PASS', notes: 'ok' });
+    });
+    const fetchTool = createRbiFetchTool();
+    const pkg = await runBlogArticle({
+      pool,
+      llm,
+      fetchTool,
+      logger: noopLogger,
+      topic: `${RBI_TOPIC} blog-${Date.now()}`,
+      userMessage: RBI_USER_MESSAGE.replace('an X post', 'a blog article'),
+      articleType: 'News/context',
+      runId: 'r',
+    });
+    contentIdsThisTest.push(pkg.contentId);
+
+    expect(fetchTool.calls.length).toBeGreaterThan(0);
+    expect(pkg.title).toContain('First Time Since 2023');
+    expect(pkg.editorialSummary?.kind).toBe('researched');
+    const qa = await getQaResultForVersion(pool, pkg.contentId, 1);
+    expect(qa?.result.editorial?.temporalAccuracy.status).toBe('PASS');
+    expect(qa?.result.editorial?.numberAccuracy.status).toBe('PASS');
+    expect(qa?.result.editorial?.meaningPreservation.status).toBe('PASS');
   });
 });

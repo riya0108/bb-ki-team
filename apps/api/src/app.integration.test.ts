@@ -8,11 +8,13 @@ import type { AddressInfo } from 'node:net';
 
 import type { Logger } from '@bb/core';
 import { createFakeLlmClient } from '@bb/core/testing';
-import { createPool, insertContentDna } from '@bb/db';
+import { createPool, insertContentDna, insertContentItem } from '@bb/db';
 import type { Pool } from '@bb/db';
 import { FetchToolError } from '@bb/mcp-client';
 import type { FetchTool, ImageGenTool, YoutubeTranscriptTool } from '@bb/mcp-client';
-import type { FetchResult } from '@bb/shared-types';
+import type { FetchResult, QaResult } from '@bb/shared-types';
+import { buildRbiEditorialBrief } from '@bb/shared-types/testing';
+import { submitForReview } from '@bb/workflows';
 import type { Server } from 'http';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
@@ -282,6 +284,35 @@ describeIfDb('apps/api HTTP surface (integration, real Postgres)', () => {
     expect(editResponse.status).toBe(200);
     const editBody = (await editResponse.json()) as { package: { finalCopy: string } };
     expect(editBody.package.finalCopy).toBe('A sharp single X post.');
+  });
+
+  it('re-runs fact/meaning QA on a manual edit and exposes it via GET /content/:id/qa (RBI regression)', async () => {
+    const brief = buildRbiEditorialBrief({ contentDnaVersion: dnaVersion });
+    const item = await insertContentItem(pool, {
+      platform: 'x',
+      createdByAgent: 'agent-02-x',
+      mode: 'single_topic',
+      topic: brief.topic,
+      contentDnaVersion: dnaVersion,
+      text: 'RBI just hiked rates for the first time since 2023.',
+      package: { mode: 'single', editorialBrief: brief },
+    });
+    contentIdsThisTest.push(item.id);
+    await submitForReview(pool, item.id);
+
+    const reviseResponse = await fetch(`${baseUrl}/content/${item.id}/revisions`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ newText: 'RBI just hiked rates again. Brace your EMI.', changedById: 'riya' }),
+    });
+    expect(reviseResponse.status).toBe(201);
+
+    const qaResponse = await fetch(`${baseUrl}/content/${item.id}/qa`);
+    expect(qaResponse.status).toBe(200);
+    const qaBody = (await qaResponse.json()) as { version: number; qa: QaResult | null };
+    expect(qaBody.version).toBe(2);
+    expect(qaBody.qa?.editorial?.temporalAccuracy.status).toBe('FAIL');
+    expect(qaBody.qa?.overallStatus).toBe('BLOCKED');
   });
 
   it('returns 404 with a structured body for an unknown content id', async () => {

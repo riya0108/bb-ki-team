@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { AgentModeSchema, ContentStatusSchema } from './contentItem.js';
+import { EditorialSummarySchema } from './editorialBrief.js';
 import { PublishActionSchema } from './publishAction.js';
 
 // Mirrors the LINKEDIN_PACKAGE output contract, spec section 5.7.
@@ -24,5 +25,9 @@ export const LinkedinPackageSchema = z.object({
   approvalRequired: z.literal(true),
   publishAction: PublishActionSchema,
   scheduleDetails: z.string().nullable(),
+  // The verified editorial core this draft was written from (story, angle, key facts,
+  // uncertain claims, chosen hook) — surfaced for human review. null for drafts not
+  // produced through the editorial-intelligence pipeline (repurpose/quote/edit flows).
+  editorialSummary: EditorialSummarySchema.nullable().default(null),
 });
 export type LinkedinPackage = z.infer<typeof LinkedinPackageSchema>;

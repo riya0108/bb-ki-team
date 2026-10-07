@@ -12,6 +12,7 @@ function draft(overrides: Partial<DraftXOutput>): DraftXOutput {
     threadPosts: null,
     factCheckStatus: 'ok',
     hashtags: [],
+    supportingClaimIds: [],
     ...overrides,
   };
 }

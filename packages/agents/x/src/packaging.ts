@@ -1,4 +1,4 @@
-import type { ContentItem, XMode, XPackage } from '@bb/shared-types';
+import type { ContentItem, EditorialSummary, XMode, XPackage } from '@bb/shared-types';
 import { XPackageSchema } from '@bb/shared-types';
 
 import type { DraftXOutput } from './draftPost.js';
@@ -80,7 +80,12 @@ export function appendHashtags(output: DraftXOutput): DraftXOutput {
 // mode override it to 'quote' — spec 6.4 lists mode as single | thread | quote, a
 // mix of output *shape* and *purpose*; a quote-commentary post is always single-shaped
 // under the hood (see quote.ts) but labeled 'quote' at the package level.
-export function buildXPackage(item: ContentItem, draft: DraftXOutput, mode: XMode = draft.mode): XPackage {
+export function buildXPackage(
+  item: ContentItem,
+  draft: DraftXOutput,
+  mode: XMode = draft.mode,
+  editorialSummary: EditorialSummary | null = null,
+): XPackage {
   return XPackageSchema.parse({
     contentId: item.id,
     status: item.status,
@@ -96,5 +101,6 @@ export function buildXPackage(item: ContentItem, draft: DraftXOutput, mode: XMod
     contentDnaVersion: item.contentDnaVersion,
     approvalRequired: true,
     publishAction: 'none',
+    editorialSummary,
   });
 }

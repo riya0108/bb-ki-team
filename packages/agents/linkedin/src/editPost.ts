@@ -2,8 +2,15 @@ import type { LlmClient } from '@bb/core';
 import { BRAND_BRAIN } from '@bb/core';
 import { classifyEditInstruction, classifyLearningSignal, loadCurrentDna, recordLearningEvent } from '@bb/content-dna';
 import type { Pool } from '@bb/db';
+import {
+  briefSourceTexts,
+  buildEditorialSummary,
+  editorialBriefFromPackage,
+  loadSiblingDrafts,
+  renderProtectedFactsForEditor,
+} from '@bb/editorial-intelligence';
 import { buildQaGateUnavailableResult, runQaGate } from '@bb/qa-gate';
-import type { ContentDnaRecord, LearningEvent, LinkedinPackage } from '@bb/shared-types';
+import type { ContentDnaRecord, EditorialBrief, LearningEvent, LinkedinPackage } from '@bb/shared-types';
 import { ContentItemNotFoundError, addRevision, getContentItem, recordQaResult } from '@bb/workflows';
 
 import { DraftLinkedinPostOutputSchema, LINKEDIN_HARD_RULES, LINKEDIN_POST_STRUCTURE } from './draftPost.js';
@@ -11,7 +18,7 @@ import { buildLinkedinPackage } from './packaging.js';
 
 const CREATED_BY_AGENT = 'agent-01-linkedin';
 
-function buildReviseSystemPrompt(dna: ContentDnaRecord): string {
+function buildReviseSystemPrompt(dna: ContentDnaRecord, brief: EditorialBrief | null): string {
   return `You are Agent 01 — the Bull or Bear LinkedIn Thought Leadership Head Agent, in Edit mode
 (spec 5.1: "Make this sound more like me" -> revised full post).
 
@@ -34,7 +41,7 @@ ${LINKEDIN_HARD_RULES}
 
 Revise the post per the instruction below. Do not change the underlying topic, claims or facts —
 only revise wording, structure, tone and hooks. Preserve anything the instruction doesn't ask you to
-change.`;
+change.${renderProtectedFactsForEditor(brief)}`;
 }
 
 function buildReviseUserPrompt(originalPost: string, instruction: string): string {
@@ -69,10 +76,13 @@ export async function reviseLinkedinPost(input: ReviseLinkedinPostInput): Promis
   if (!item) throw new ContentItemNotFoundError(input.contentId);
 
   const dna = await loadCurrentDna(input.pool);
+  // addRevision below leaves content_items.package untouched, so the brief this post
+  // was drafted from stays attached and every edit is QA'd against the same claims.
+  const brief = editorialBriefFromPackage(item.package);
 
   const revised = await input.llm.completeStructured(
     {
-      system: buildReviseSystemPrompt(dna),
+      system: buildReviseSystemPrompt(dna, brief),
       messages: [{ role: 'user', content: buildReviseUserPrompt(item.currentText, input.instruction) }],
       runId: input.runId,
       stepId: `revise-${item.id}`,
@@ -88,20 +98,21 @@ export async function reviseLinkedinPost(input: ReviseLinkedinPostInput): Promis
     reason: input.instruction,
   });
 
-  // Phase 1 doesn't persist the original fetched source text alongside a content item,
-  // only its URLs (see shared-types/contentItem.ts) — so re-verification here is
-  // necessarily weaker than at drafting time. That is a real limitation, not something
-  // papered over: sourceReferences still reflects the item's real sources.
+  // The original fetched source text isn't persisted, only its URLs — but a post drafted
+  // through the editorial pipeline carries its brief's verified claim ledger, so edits
+  // are re-checked against the same claims. Posts without a brief (repurpose/PostCast)
+  // still get the weaker, URL-only re-verification: a real limitation, not papered over.
   const qa = await runQaGate({
     finalPost: revised.finalPost,
     sourceReferences: revisedItem.sourceUrls,
-    sourceTexts: [],
+    sourceTexts: brief ? briefSourceTexts(brief) : [],
     contentDna: dna,
     status: revisedItem.status,
     llm: input.llm,
     runId: input.runId,
     stepId: `qa-${revisedItem.id}-v${revisedItem.currentVersion}`,
     platform: 'LinkedIn',
+    ...(brief ? { editorial: { brief, siblingDrafts: await loadSiblingDrafts(input.pool, brief.id, revisedItem.id) } } : {}),
   }).catch((error: unknown) => buildQaGateUnavailableResult(error instanceof Error ? error.message : String(error)));
   await recordQaResult(input.pool, revisedItem.id, revisedItem.currentVersion, qa);
 
@@ -121,5 +132,8 @@ export async function reviseLinkedinPost(input: ReviseLinkedinPostInput): Promis
     });
   }
 
-  return { package: buildLinkedinPackage(revisedItem, revised, qa), learningEvent };
+  return {
+    package: buildLinkedinPackage(revisedItem, revised, qa, brief ? buildEditorialSummary(brief) : null),
+    learningEvent,
+  };
 }

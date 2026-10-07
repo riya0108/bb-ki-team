@@ -4,6 +4,7 @@ try {
   // no .env file present — tests below are skipped without TEST_DATABASE_URL.
 }
 
+import type { Logger } from '@bb/core';
 import { createFakeLlmClient } from '@bb/core/testing';
 import { createChatSession, createPool, insertContentDna, listChatMessages } from '@bb/db';
 import type { Pool } from '@bb/db';
@@ -71,6 +72,8 @@ const unusedFetchTool: FetchTool = {
   },
 };
 
+const noopLogger = { info: () => undefined, warn: () => undefined, error: () => undefined } as unknown as Logger;
+
 describeIfDb('packages/agents/blog chat (integration, real Postgres)', () => {
   let pool: Pool;
   let dnaVersion: number;
@@ -102,7 +105,7 @@ describeIfDb('packages/agents/blog chat (integration, real Postgres)', () => {
   });
 
   function buildDeps(llm: ReturnType<typeof createFakeLlmClient>): BlogChatDeps {
-    return { pool, llm, fetchTool: unusedFetchTool, publishConnectors: {}, scheduleConnectors: {} };
+    return { pool, llm, fetchTool: unusedFetchTool, logger: noopLogger, publishConnectors: {}, scheduleConnectors: {} };
   }
 
   it('drafts an article from a chat message and persists both chat turns', async () => {

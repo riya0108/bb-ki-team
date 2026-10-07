@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto';
 
 import { loadCurrentDna } from '@bb/content-dna';
-import { listPublishEventsForContent, listRevisionsForContent } from '@bb/db';
+import { getQaResultForVersion, listPublishEventsForContent, listRevisionsForContent } from '@bb/db';
+import { briefSourceTexts, editorialBriefFromPackage, htmlToPlainText, loadSiblingDrafts } from '@bb/editorial-intelligence';
 import { buildQaGateUnavailableResult, runQaGate } from '@bb/qa-gate';
 import { ContentStatusSchema } from '@bb/shared-types';
 import {
@@ -59,6 +60,16 @@ export function createContentRouter(deps: AppDeps): Router {
     const item = await getContentItem(deps.pool, id);
     if (!item) throw new ContentItemNotFoundError(id);
     res.status(200).json({ item });
+  });
+
+  // The QA result for the item's CURRENT version (null if QA hasn't recorded one yet) —
+  // lets a reviewer see fact/meaning flags before approving that exact version.
+  router.get('/:id/qa', async (req, res) => {
+    const id = req.params.id ?? '';
+    const item = await getContentItem(deps.pool, id);
+    if (!item) throw new ContentItemNotFoundError(id);
+    const stored = await getQaResultForVersion(deps.pool, id, item.currentVersion);
+    res.status(200).json({ version: item.currentVersion, qa: stored?.result ?? null });
   });
 
   const ApproveSchema = z.object({ version: z.number().int().positive(), approvedBy: z.string().min(1) });
@@ -171,16 +182,22 @@ export function createContentRouter(deps: AppDeps): Router {
     // VISUAL_BLOCKED_MISSING_TRUTH_LAYER check) stays blocked for it.
     const runId = randomUUID();
     const dna = await loadCurrentDna(deps.pool);
+    // A human edit is held to the same verified claims as the agent's draft: if this
+    // item was written from an EditorialBrief, the fact/meaning dimensions run too.
+    const brief = editorialBriefFromPackage(item.package);
+    // QA judges prose, not markup (same as the Blog head agent).
+    const qaText = item.platform === 'blog' ? htmlToPlainText(item.currentText) : item.currentText;
     const qa = await runQaGate({
-      finalPost: item.currentText,
+      finalPost: qaText,
       sourceReferences: item.sourceUrls,
-      sourceTexts: [],
+      sourceTexts: brief ? briefSourceTexts(brief) : [],
       contentDna: dna,
       status: item.status,
       llm: deps.llm,
       runId,
       stepId: `qa-${item.id}-v${item.currentVersion}`,
       platform: QA_PLATFORM_LABELS[item.platform] ?? item.platform,
+      ...(brief ? { editorial: { brief, siblingDrafts: await loadSiblingDrafts(deps.pool, brief.id, item.id) } } : {}),
     }).catch((error: unknown) => buildQaGateUnavailableResult(error instanceof Error ? error.message : String(error)));
     await recordQaResult(deps.pool, item.id, item.currentVersion, qa);
 

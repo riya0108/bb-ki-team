@@ -1407,3 +1407,48 @@ select:focus {
     font-size: 16px;
   }
 }
+
+/* Editorial brief panel (packages/editorial-intelligence): story, angle, hook,
+   verified facts and fact/meaning QA flags for the version under review. */
+.editorial-panel h2 {
+  margin-bottom: 8px;
+}
+
+.editorial-kind {
+  display: inline-block;
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
+  color: var(--text-dim);
+  margin-bottom: 10px;
+}
+
+.editorial-kind.researched {
+  border-color: var(--green);
+  color: var(--green);
+}
+
+.editorial-kind.insufficient_evidence {
+  border-color: var(--red);
+  color: var(--red);
+}
+
+.editorial-block {
+  margin-bottom: 12px;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.editorial-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-faint);
+  margin-bottom: 4px;
+}
+
+.editorial-dim {
+  color: var(--text-dim);
+  font-size: 12px;
+}

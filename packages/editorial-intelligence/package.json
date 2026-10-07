@@ -1,0 +1,20 @@
+{
+  "name": "@bb/editorial-intelligence",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./testing": "./src/testing/index.ts"
+  },
+  "dependencies": {
+    "@bb/core": "0.1.0",
+    "@bb/db": "0.1.0",
+    "@bb/mcp-client": "0.1.0",
+    "@bb/qa-gate": "0.1.0",
+    "@bb/shared-types": "0.1.0",
+    "zod": "^4.4.3"
+  }
+}

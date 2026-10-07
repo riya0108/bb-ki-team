@@ -16,6 +16,7 @@ import {
 } from '../api/client';
 import { useOperatorName } from '../hooks/useOperatorName';
 import { ActivityLog } from './ActivityLog';
+import { EditorialPanel } from './EditorialPanel';
 import { VisualPanel } from './VisualPanel';
 
 interface DraftCanvasProps {
@@ -188,6 +189,8 @@ export function DraftCanvas({ contentId, onChanged }: DraftCanvasProps) {
       ) : (
         <textarea className="draft-textarea" value={text} onChange={(e) => setText(e.target.value)} />
       )}
+
+      <EditorialPanel item={item} />
 
       <VisualPanel
         contentId={item.id}

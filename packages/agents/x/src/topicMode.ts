@@ -1,6 +1,15 @@
-import type { LlmClient } from '@bb/core';
+import type { LlmClient, Logger } from '@bb/core';
 import { loadCurrentDna } from '@bb/content-dna';
 import type { Pool } from '@bb/db';
+import {
+  briefSourceReferences,
+  briefSourceTexts,
+  buildEditorialSummary,
+  draftWithMeaningGuard,
+  loadSiblingDrafts,
+  prepareEditorialBrief,
+} from '@bb/editorial-intelligence';
+import type { FetchTool } from '@bb/mcp-client';
 import { buildQaGateUnavailableResult, runQaGate } from '@bb/qa-gate';
 import type { ContentDnaRecord, XPackage } from '@bb/shared-types';
 import { createContentItem, recordQaResult, submitForReview } from '@bb/workflows';
@@ -53,8 +62,16 @@ export async function proposeXAngles(
 export interface DraftXTopicPostInput {
   pool: Pool;
   llm: LlmClient;
+  // Research runs through the agent's scoped fetch MCP tool (spec 33: factual topics are
+  // researched automatically, without the user asking).
+  fetchTool: FetchTool;
+  logger: Logger;
   topic: string;
-  angle: string;
+  // null lets the editorial pipeline choose the strongest verified angle.
+  angle: string | null;
+  // The user's original chat message, when there is one — carries facts and hook
+  // suggestions the intent classifier's short topic string drops (spec 34/35).
+  userMessage?: string | null;
   // 'single_topic' -> spec 6.1's Single-post mode; 'thread' -> Thread mode. Drives
   // both the persisted AgentMode and whether draftXPost is forced into that shape.
   mode: 'single_topic' | 'thread';
@@ -68,11 +85,19 @@ export async function draftXTopicPost(input: DraftXTopicPostInput): Promise<XPac
   const dna = await loadCurrentDna(input.pool);
   const forceMode = input.mode === 'thread' ? 'thread' : 'single';
 
-  const draft = appendHashtags(
-    enforceXLengthLimit(
-      await draftXPost({
+  // Topic -> research -> verified EditorialBrief, before any drafting (spec 33).
+  const brief = await prepareEditorialBrief(
+    { pool: input.pool, llm: input.llm, fetchTool: input.fetchTool, logger: input.logger },
+    { topic: input.topic, userMessage: input.userMessage ?? null, angle: input.angle, contentDna: dna, runId: input.runId },
+  );
+  const angle = input.angle ?? brief.selectedAngle?.angle ?? input.topic;
+
+  const { draft: rawDraft } = await draftWithMeaningGuard({
+    brief,
+    draft: (revisionNotes) =>
+      draftXPost({
         topic: input.topic,
-        angle: input.angle,
+        angle,
         coreClaim: null,
         sourceTexts: [],
         contentDna: dna,
@@ -80,36 +105,53 @@ export async function draftXTopicPost(input: DraftXTopicPostInput): Promise<XPac
         runId: input.runId,
         stepId: `draft-x-${input.mode}`,
         forceMode,
+        editorialBrief: brief,
+        revisionNotes,
       }),
-    ),
-  );
+    textOf: (d) => [d.finalCopy, ...(d.threadPosts ?? [])].join('\n'),
+    logger: input.logger,
+    runId: input.runId,
+    stepId: `draft-x-${input.mode}`,
+  });
+  const draft = appendHashtags(enforceXLengthLimit(rawDraft));
+  const sourceReferences = briefSourceReferences(brief);
+  const fullText = draft.threadPosts ? draft.threadPosts.join('\n\n') : draft.finalCopy;
 
   const item = await createContentItem(input.pool, {
     platform: 'x',
     createdByAgent: CREATED_BY_AGENT,
     mode: input.mode,
     topic: input.topic,
-    angle: input.angle,
+    angle,
+    sourceUrls: sourceReferences,
     contentDnaVersion: dna.version,
     text: draft.finalCopy,
-    riskLevel: 'low',
-    package: { mode: draft.mode, hookOptions: draft.hookOptions, threadPosts: draft.threadPosts, hashtags: draft.hashtags },
+    riskLevel: brief.riskLevel,
+    package: {
+      mode: draft.mode,
+      hookOptions: draft.hookOptions,
+      threadPosts: draft.threadPosts,
+      hashtags: draft.hashtags,
+      supportingClaimIds: draft.supportingClaimIds,
+      editorialBrief: brief,
+    },
   });
 
   const qa = await runQaGate({
-    finalPost: draft.finalCopy,
-    sourceReferences: [],
-    sourceTexts: [],
+    finalPost: fullText,
+    sourceReferences,
+    sourceTexts: briefSourceTexts(brief),
     contentDna: dna,
     status: item.status,
     llm: input.llm,
     runId: input.runId,
     stepId: `qa-${item.id}`,
     platform: 'X',
+    editorial: { brief, siblingDrafts: await loadSiblingDrafts(input.pool, brief.id, item.id), opening: draft.finalCopy },
   }).catch((error: unknown) => buildQaGateUnavailableResult(error instanceof Error ? error.message : String(error)));
   await recordQaResult(input.pool, item.id, item.currentVersion, qa);
 
   const reviewedItem = await submitForReview(input.pool, item.id);
 
-  return buildXPackage(reviewedItem, draft);
+  return buildXPackage(reviewedItem, draft, draft.mode, buildEditorialSummary(brief));
 }

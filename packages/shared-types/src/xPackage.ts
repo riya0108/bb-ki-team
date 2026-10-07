@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { ContentStatusSchema } from './contentItem.js';
+import { EditorialSummarySchema } from './editorialBrief.js';
 import { PublishActionSchema } from './publishAction.js';
 
 // spec section 6.4's `mode: single | thread | quote`. Distinct from AgentModeSchema
@@ -37,5 +38,9 @@ export const XPackageSchema = z.object({
   // XPackageSchema.parse(...) keeps working unchanged (BB-Visual-Agent-Skill's
   // integration contract: "keep visual data additive").
   visualAssetId: z.string().uuid().nullable().default(null),
+  // The verified editorial core this draft was written from (story, angle, key facts,
+  // uncertain claims, chosen hook) — surfaced for human review. null for drafts not
+  // produced through the editorial-intelligence pipeline (repurpose/quote/edit flows).
+  editorialSummary: EditorialSummarySchema.nullable().default(null),
 });
 export type XPackage = z.infer<typeof XPackageSchema>;

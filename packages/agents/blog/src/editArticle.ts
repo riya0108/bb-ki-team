@@ -2,8 +2,15 @@ import type { LlmClient } from '@bb/core';
 import { BRAND_BRAIN } from '@bb/core';
 import { classifyEditInstruction, classifyLearningSignal, loadCurrentDna, recordLearningEvent } from '@bb/content-dna';
 import type { Pool } from '@bb/db';
+import {
+  briefSourceTexts,
+  buildEditorialSummary,
+  editorialBriefFromPackage,
+  loadSiblingDrafts,
+  renderProtectedFactsForEditor,
+} from '@bb/editorial-intelligence';
 import { buildQaGateUnavailableResult, runQaGate } from '@bb/qa-gate';
-import type { BlogPackage, ContentDnaRecord, LearningEvent } from '@bb/shared-types';
+import type { BlogPackage, ContentDnaRecord, EditorialBrief, LearningEvent } from '@bb/shared-types';
 import { ContentItemNotFoundError, addRevision, getContentItem, recordQaResult } from '@bb/workflows';
 
 import { DraftBlogArticleOutputSchema } from './draftArticle.js';
@@ -15,7 +22,7 @@ import { buildBlogPackage } from './packaging.js';
 
 const CREATED_BY_AGENT = 'agent-05-blog';
 
-function buildReviseSystemPrompt(dna: ContentDnaRecord): string {
+function buildReviseSystemPrompt(dna: ContentDnaRecord, brief: EditorialBrief | null): string {
   return `You are Agent 05 — the Bull or Bear Blog HTML Agent (spec section 12), in Edit mode: the
 human has asked for a change to an already-drafted article (a rewritten section, a formatting/
 structure tweak, a tone adjustment, a trim, an added or removed component) rather than a brand new
@@ -37,7 +44,7 @@ or quotes while revising; do not change the underlying claims unless explicitly 
 
 Optional visual components (comparisonStat, revealCards, poll, pullQuote) work the same as at
 drafting time — keep, drop, or add one only if it genuinely fits, never to decorate. Each one's
-afterSectionIndex is a 0-based index into the (possibly now-different) "sections" array.`;
+afterSectionIndex is a 0-based index into the (possibly now-different) "sections" array.${renderProtectedFactsForEditor(brief)}`;
 }
 
 function buildReviseUserPrompt(current: DraftBlogArticleOutput, instruction: string): string {
@@ -85,12 +92,14 @@ export async function reviseBlogArticle(input: ReviseBlogArticleInput): Promise<
   const slug = typeof storedPackage.slug === 'string' ? storedPackage.slug : '';
   if (!slug) throw new Error(`Blog content item ${item.id} has no stored slug to edit against`);
   const currentDraft = DraftBlogArticleOutputSchema.parse(storedPackage);
+  // Carried into the revised package so every edit stays held to the same verified claims.
+  const brief = editorialBriefFromPackage(storedPackage);
 
   const dna = await loadCurrentDna(input.pool);
 
   const revised = await input.llm.completeStructured(
     {
-      system: buildReviseSystemPrompt(dna),
+      system: buildReviseSystemPrompt(dna, brief),
       messages: [{ role: 'user', content: buildReviseUserPrompt(currentDraft, input.instruction) }],
       runId: input.runId,
       stepId: `revise-${item.id}`,
@@ -126,7 +135,7 @@ export async function reviseBlogArticle(input: ReviseBlogArticleInput): Promise<
     changedBy: 'agent',
     changedById: CREATED_BY_AGENT,
     reason: input.instruction,
-    package: { ...revised, slug },
+    package: { ...revised, slug, ...(brief ? { editorialBrief: brief } : {}) },
   });
 
   const plainText = [
@@ -145,13 +154,22 @@ export async function reviseBlogArticle(input: ReviseBlogArticleInput): Promise<
   const qa = await runQaGate({
     finalPost: plainText,
     sourceReferences: revisedItem.sourceUrls,
-    sourceTexts: [],
+    sourceTexts: brief ? briefSourceTexts(brief) : [],
     contentDna: dna,
     status: revisedItem.status,
     llm: input.llm,
     runId: input.runId,
     stepId: `qa-${revisedItem.id}-v${revisedItem.currentVersion}`,
     platform: 'Blog article',
+    ...(brief
+      ? {
+          editorial: {
+            brief,
+            siblingDrafts: await loadSiblingDrafts(input.pool, brief.id, revisedItem.id),
+            opening: [title, revised.deck].join('. '),
+          },
+        }
+      : {}),
   }).catch((error: unknown) => buildQaGateUnavailableResult(error instanceof Error ? error.message : String(error)));
   await recordQaResult(input.pool, revisedItem.id, revisedItem.currentVersion, qa);
 
@@ -171,5 +189,8 @@ export async function reviseBlogArticle(input: ReviseBlogArticleInput): Promise<
     });
   }
 
-  return { package: buildBlogPackage(revisedItem, revised, slug, qa), learningEvent };
+  return {
+    package: buildBlogPackage(revisedItem, revised, slug, qa, brief ? buildEditorialSummary(brief) : null),
+    learningEvent,
+  };
 }

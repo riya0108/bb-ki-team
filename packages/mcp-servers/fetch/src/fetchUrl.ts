@@ -56,7 +56,9 @@ export async function fetchAndExtract(url: string, fetchImpl: typeof fetch = fet
     text = extracted.text;
   } else if (contentType.includes('application/pdf')) {
     text = await extractTextFromPdf(buffer);
-  } else if (contentType.startsWith('text/')) {
+  } else if (contentType.startsWith('text/') || /^application\/([\w.+-]+\+)?xml\b/.test(contentType)) {
+    // XML (RSS/Atom feeds) is passed through raw, like plain text — the research
+    // layer parses feed items itself; Readability would flatten the item structure.
     text = buffer.toString('utf8');
   } else {
     return errorOutcome(url, 'unsupported_content_type', `Unsupported content-type: ${contentType}`);

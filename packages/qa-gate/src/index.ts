@@ -1,5 +1,12 @@
 import type { LlmClient } from '@bb/core';
-import type { ContentDnaRecord, ContentStatus, QaDimensionResult, QaResult } from '@bb/shared-types';
+import type {
+  ContentDnaRecord,
+  ContentStatus,
+  EditorialBrief,
+  EditorialQaResult,
+  QaDimensionResult,
+  QaResult,
+} from '@bb/shared-types';
 
 import { checkEmDash } from './deterministic/emDash.js';
 import { checkForbiddenPhrases } from './deterministic/forbiddenPhrases.js';
@@ -9,6 +16,8 @@ import { checkPrivacy } from './deterministic/privacy.js';
 import { checkSourceIntegrity } from './deterministic/sourceIntegrity.js';
 import { checkApprovalState, checkEditability, checkPublishing } from './deterministic/trivialChecks.js';
 import { checkUnsupportedNumbers } from './deterministic/unsupportedNumbers.js';
+import type { SiblingDraft } from './editorial/editorialQa.js';
+import { runEditorialQa } from './editorial/editorialQa.js';
 import {
   checkClarity,
   checkHookHonesty,
@@ -26,6 +35,10 @@ export * from './deterministic/sourceIntegrity.js';
 export * from './deterministic/trivialChecks.js';
 export * from './deterministic/unsupportedNumbers.js';
 export * from './rubric.js';
+export * from './editorial/editorialQa.js';
+export * from './editorial/meaningDrift.js';
+export * from './editorial/quantities.js';
+export * from './editorial/text.js';
 
 export interface RunQaGateInput {
   finalPost: string;
@@ -39,6 +52,15 @@ export interface RunQaGateInput {
   // Human-readable label passed straight through to the rubric checks (e.g.
   // 'LinkedIn', 'X', 'Instagram caption') — see RubricCheckInput.platform.
   platform: string;
+  // Present when the draft was written from an EditorialBrief: adds the fact/meaning
+  // dimensions (claim traceability, meaning preservation, temporal/number/attribution/
+  // causality accuracy, hook traceability, cross-platform consistency). Opinion-only
+  // briefs carry no claims to check against, so they skip it.
+  editorial?: {
+    brief: EditorialBrief;
+    siblingDrafts: readonly SiblingDraft[];
+    opening?: string;
+  };
 }
 
 function worstStatus(results: QaDimensionResult[]): 'PASS' | 'PASS_WITH_WARNINGS' | 'BLOCKED' {
@@ -111,8 +133,32 @@ export async function runQaGate(input: RunQaGateInput): Promise<QaResult> {
     publishing,
   };
 
-  const overallStatus = worstStatus(Object.values(dimensions));
-  const requiredUserActions = Object.entries(dimensions).flatMap(([name, result]) => requiredActionsFrom(name, result));
+  let editorial: EditorialQaResult | undefined;
+  if (input.editorial && input.editorial.brief.kind !== 'opinion') {
+    editorial = await runEditorialQa({
+      draft: finalPost,
+      brief: input.editorial.brief,
+      siblingDrafts: input.editorial.siblingDrafts,
+      ...(input.editorial.opening !== undefined ? { opening: input.editorial.opening } : {}),
+      platform,
+      llm,
+      runId,
+      stepId,
+    });
+  }
+  const editorialDimensions: Record<string, QaDimensionResult> = editorial
+    ? Object.fromEntries(
+        Object.entries(editorial)
+          .filter((entry): entry is [string, QaDimensionResult] => typeof entry[1] !== 'string')
+          .map(([name, result]) => [`editorial.${name}`, result]),
+      )
+    : {};
+
+  // A failed factual gate always wins: good writing (rubric PASSes) can't lift a
+  // BLOCKED editorial dimension (spec 63).
+  const allDimensions = { ...dimensions, ...editorialDimensions };
+  const overallStatus = worstStatus(Object.values(allDimensions));
+  const requiredUserActions = Object.entries(allDimensions).flatMap(([name, result]) => requiredActionsFrom(name, result));
 
   return {
     overallStatus,
@@ -131,6 +177,7 @@ export async function runQaGate(input: RunQaGateInput): Promise<QaResult> {
     riskFlags: topicRiskFlags,
     requiredUserActions,
     publishAllowed: false,
+    ...(editorial ? { editorial } : {}),
   };
 }
 

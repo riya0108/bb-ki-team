@@ -5,6 +5,7 @@ import type {
   ContentStatus,
   LearningEvent,
   PublishEvent,
+  QaResult,
   Revision,
   VisualAsset,
   VisualReferenceAsset,
@@ -96,6 +97,10 @@ export function listContent(filter?: { status?: ContentStatus; platform?: Platfo
 
 export function getContent(id: string): Promise<{ item: ContentItem }> {
   return request(`/content/${id}`);
+}
+
+export function getContentQa(id: string): Promise<{ version: number; qa: QaResult | null }> {
+  return request(`/content/${id}/qa`);
 }
 
 export function approveContent(id: string, version: number, approvedBy: string): Promise<{ item: ContentItem }> {

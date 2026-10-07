@@ -13,6 +13,7 @@
     "@bb/content-dna": "0.1.0",
     "@bb/core": "0.1.0",
     "@bb/db": "0.1.0",
+    "@bb/editorial-intelligence": "0.1.0",
     "@bb/mcp-client": "0.1.0",
     "@bb/qa-gate": "0.1.0",
     "@bb/shared-types": "0.1.0",

@@ -1,4 +1,4 @@
-import type { BlogPackage, ContentItem, QaResult } from '@bb/shared-types';
+import type { BlogPackage, ContentItem, EditorialSummary, QaResult } from '@bb/shared-types';
 import { BlogPackageSchema } from '@bb/shared-types';
 
 import type { DraftBlogArticleOutput } from './draftArticle.js';
@@ -8,6 +8,7 @@ export function buildBlogPackage(
   draft: DraftBlogArticleOutput,
   slug: string,
   qa: QaResult,
+  editorialSummary: EditorialSummary | null = null,
 ): BlogPackage {
   const title = draft.titleOptions[0];
   if (!title) throw new Error('buildBlogPackage: draft has no title options');
@@ -32,5 +33,6 @@ export function buildBlogPackage(
     contentDnaVersion: item.contentDnaVersion,
     approvalRequired: true,
     publishAction: 'none',
+    editorialSummary,
   });
 }

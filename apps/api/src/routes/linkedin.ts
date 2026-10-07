@@ -50,11 +50,20 @@ export function createLinkedinRouter(deps: AppDeps): Router {
     res.status(200).json({ runId, angles });
   });
 
-  const SingleTopicDraftSchema = z.object({ topic: z.string().min(1), angle: z.string().min(1) });
+  // angle is optional: without one, the editorial pipeline picks the strongest verified angle.
+  const SingleTopicDraftSchema = z.object({ topic: z.string().min(1), angle: z.string().min(1).nullable().default(null) });
   router.post('/single-topic/draft', async (req, res) => {
     const { topic, angle } = parseWith(SingleTopicDraftSchema, req.body);
     const runId = randomUUID();
-    const pkg = await draftSingleTopicPost({ pool: deps.pool, llm: deps.llm, topic, angle, runId });
+    const pkg = await draftSingleTopicPost({
+      pool: deps.pool,
+      llm: deps.llm,
+      fetchTool: deps.fetchTool,
+      logger: deps.logger,
+      topic,
+      angle,
+      runId,
+    });
     res.status(201).json({ runId, package: pkg });
   });
 

@@ -4,10 +4,19 @@ try {
   // no .env file present — tests below are skipped without TEST_DATABASE_URL.
 }
 
+import type { Logger } from '@bb/core';
 import { createFakeLlmClient } from '@bb/core/testing';
 import { loadCurrentDna } from '@bb/content-dna';
-import { createPool, insertContentDna } from '@bb/db';
+import { createPool, getQaResultForVersion, insertContentDna } from '@bb/db';
 import type { Pool } from '@bb/db';
+import {
+  createRbiFetchTool,
+  createUnreachableFetchTool,
+  RBI_GOOD_HOOK,
+  RBI_TOPIC,
+  RBI_USER_MESSAGE,
+  rbiEditorialResponse,
+} from '@bb/editorial-intelligence/testing';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 import { draftXTopicPost, proposeXAngles } from './topicMode.js';
@@ -55,6 +64,41 @@ function buildLlm(mode: 'single' | 'thread'): ReturnType<typeof createFakeLlmCli
   });
 }
 
+const noopLogger = { info: () => undefined, warn: () => undefined, error: () => undefined } as unknown as Logger;
+
+// Writer for the RBI end-to-end tests: echoes the first approved hook from the brief it
+// was given (so the test proves the brief reached the writer), or a fixed drifting post.
+function rbiLlm(writer: (system: string, user: string, call: number) => string): ReturnType<typeof createFakeLlmClient> {
+  let writerCalls = 0;
+  return createFakeLlmClient((input) => {
+    const editorial = rbiEditorialResponse(input);
+    if (editorial !== null) return editorial;
+    const system = input.system ?? '';
+    if (system.includes('X-native principles')) {
+      writerCalls += 1;
+      return writer(system, input.messages[0]?.content ?? '', writerCalls);
+    }
+    return JSON.stringify({ status: 'PASS', notes: 'ok' });
+  });
+}
+
+function xDraft(finalCopy: string): string {
+  return JSON.stringify({
+    mode: 'single',
+    hookOptions: [finalCopy],
+    finalCopy,
+    threadPosts: null,
+    factCheckStatus: 'Verified against RBI and Reuters.',
+    supportingClaimIds: ['claim_001'],
+  });
+}
+
+function approvedHookFrom(user: string): string {
+  const match = /APPROVED HOOKS[^\n]*\n- \[[^\]]*\] (.+)/.exec(user);
+  if (!match?.[1]) throw new Error('writer prompt carried no approved hook');
+  return match[1];
+}
+
 describeIfDb('packages/agents/x single-post and thread modes (integration, real Postgres)', () => {
   let pool: Pool;
   let dnaVersion: number;
@@ -88,6 +132,8 @@ describeIfDb('packages/agents/x single-post and thread modes (integration, real 
     const pkg = await draftXTopicPost({
       pool,
       llm: buildLlm('single'),
+      fetchTool: createUnreachableFetchTool(),
+      logger: noopLogger,
       topic: 'UPI adoption',
       angle: 'An angle',
       mode: 'single_topic',
@@ -105,6 +151,8 @@ describeIfDb('packages/agents/x single-post and thread modes (integration, real 
     const pkg = await draftXTopicPost({
       pool,
       llm: buildLlm('thread'),
+      fetchTool: createUnreachableFetchTool(),
+      logger: noopLogger,
       topic: 'UPI adoption',
       angle: 'An angle that needs a thread',
       mode: 'thread',
@@ -124,5 +172,70 @@ describeIfDb('packages/agents/x single-post and thread modes (integration, real 
       [pkg.contentId],
     );
     expect(row.rows[0]?.package.threadPosts).toHaveLength(3);
+  });
+  it('RBI end-to-end: researches automatically and drafts from the verified brief, preserving "first since 2023"', async () => {
+    const fetchTool = createRbiFetchTool();
+    const pkg = await draftXTopicPost({
+      pool,
+      llm: rbiLlm((_system, user) => xDraft(approvedHookFrom(user))),
+      fetchTool,
+      logger: noopLogger,
+      topic: `${RBI_TOPIC} x-${Date.now()}`,
+      angle: null,
+      userMessage: RBI_USER_MESSAGE,
+      mode: 'single_topic',
+      runId: 'test-run',
+    });
+    contentIdsThisTest.push(pkg.contentId);
+
+    expect(fetchTool.calls.length).toBeGreaterThan(0);
+    expect(pkg.finalCopy).toBe(RBI_GOOD_HOOK);
+    expect(pkg.finalCopy).toContain('for the first time since 2023');
+    expect(pkg.finalCopy).not.toMatch(/\bagain\b/);
+    expect(pkg.angle).toBe('The first hike since 2023 lands on borrowers');
+    expect(pkg.editorialSummary?.selectedHook).toBe(RBI_GOOD_HOOK);
+    expect(pkg.sourceReferences.some((u) => u.includes('rbi.org.in'))).toBe(true);
+
+    const qa = await getQaResultForVersion(pool, pkg.contentId, 1);
+    expect(qa?.result.editorial?.temporalAccuracy.status).toBe('PASS');
+    expect(qa?.result.editorial?.meaningPreservation.status).toBe('PASS');
+    expect(qa?.result.editorial?.hookTraceability.status).toBe('PASS');
+  });
+
+  it('RBI regression: a writer that says "again" is redrafted once, and if it persists QA blocks it for human review', async () => {
+    const stubborn = await draftXTopicPost({
+      pool,
+      llm: rbiLlm(() => xDraft('RBI just hiked rates again. If you have a home loan, your EMI could rise.')),
+      fetchTool: createRbiFetchTool(),
+      logger: noopLogger,
+      topic: `${RBI_TOPIC} stubborn-${Date.now()}`,
+      angle: null,
+      userMessage: RBI_USER_MESSAGE,
+      mode: 'single_topic',
+      runId: 'test-run',
+    });
+    contentIdsThisTest.push(stubborn.contentId);
+    const qa = await getQaResultForVersion(pool, stubborn.contentId, 1);
+    expect(stubborn.status).toBe('in_review');
+    expect(qa?.result.editorial?.temporalAccuracy.status).toBe('FAIL');
+    expect(qa?.result.overallStatus).toBe('BLOCKED');
+
+    const corrected = await draftXTopicPost({
+      pool,
+      llm: rbiLlm((_system, user, call) =>
+        call === 1
+          ? xDraft('RBI just hiked rates again. If you have a home loan, your EMI could rise.')
+          : (expect(user).toContain('first occurrence'), xDraft(approvedHookFrom(user))),
+      ),
+      fetchTool: createRbiFetchTool(),
+      logger: noopLogger,
+      topic: `${RBI_TOPIC} corrected-${Date.now()}`,
+      angle: null,
+      userMessage: RBI_USER_MESSAGE,
+      mode: 'single_topic',
+      runId: 'test-run',
+    });
+    contentIdsThisTest.push(corrected.contentId);
+    expect(corrected.finalCopy).toContain('first time since 2023');
   });
 });

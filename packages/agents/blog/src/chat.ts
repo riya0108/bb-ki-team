@@ -1,5 +1,5 @@
 import { classifyChatIntent, loadRecentChatHistory, recordAssistantChatMessage, recordUserChatMessage } from '@bb/chat';
-import type { LlmClient } from '@bb/core';
+import type { LlmClient, Logger } from '@bb/core';
 import type { Pool } from '@bb/db';
 import type { FetchTool } from '@bb/mcp-client';
 import type { PublishConnector, ScheduleConnector } from '@bb/workflows';
@@ -14,6 +14,7 @@ export interface BlogChatDeps {
   pool: Pool;
   llm: LlmClient;
   fetchTool: FetchTool;
+  logger: Logger;
   publishConnectors: Record<string, PublishConnector>;
   scheduleConnectors: Record<string, ScheduleConnector>;
 }
@@ -70,10 +71,20 @@ async function dispatch(
   action: BlogChatAction,
   context: BlogChatContext,
   runId: string,
+  message: string,
 ): Promise<{ reply: string; result: unknown }> {
   switch (action.action) {
     case 'draft': {
-      const pkg = await runBlogArticle({ pool: deps.pool, llm: deps.llm, topic: action.topic, articleType: action.articleType, runId });
+      const pkg = await runBlogArticle({
+        pool: deps.pool,
+        llm: deps.llm,
+        fetchTool: deps.fetchTool,
+        logger: deps.logger,
+        topic: action.topic,
+        articleType: action.articleType,
+        userMessage: message,
+        runId,
+      });
       return { reply: `Wrote a blog article: "${pkg.title}". It's now in review.`, result: pkg };
     }
     case 'from_source': {
@@ -81,8 +92,10 @@ async function dispatch(
         pool: deps.pool,
         llm: deps.llm,
         fetchTool: deps.fetchTool,
+        logger: deps.logger,
         source: action.source,
         topic: action.topic,
+        userMessage: message,
         runId,
       });
       return { reply: `Wrote a source-led blog article: "${pkg.title}". It's now in review.`, result: pkg };
@@ -159,7 +172,7 @@ export async function handleBlogChatMessage(
   let reply: string;
   let result: unknown;
   try {
-    ({ reply, result } = await dispatch(deps, classified, context, runId));
+    ({ reply, result } = await dispatch(deps, classified, context, runId, message));
   } catch (error) {
     if (error instanceof NoOpenDraftError) {
       reply = error.message;

@@ -1,4 +1,4 @@
-import type { ContentItem, LinkedinPackage, QaResult } from '@bb/shared-types';
+import type { ContentItem, EditorialSummary, LinkedinPackage, QaResult } from '@bb/shared-types';
 import { LinkedinPackageSchema } from '@bb/shared-types';
 
 import type { DraftLinkedinPostOutput } from './draftPost.js';
@@ -11,6 +11,7 @@ export function buildLinkedinPackage(
   item: ContentItem,
   draft: DraftLinkedinPostOutput,
   qa: QaResult,
+  editorialSummary: EditorialSummary | null = null,
 ): LinkedinPackage {
   return LinkedinPackageSchema.parse({
     contentId: item.id,
@@ -31,5 +32,6 @@ export function buildLinkedinPackage(
     approvalRequired: true,
     publishAction: 'none',
     scheduleDetails: null,
+    editorialSummary,
   });
 }

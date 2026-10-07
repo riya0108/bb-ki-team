@@ -1,6 +1,7 @@
 import type { LlmClient } from '@bb/core';
 import { BRAND_BRAIN } from '@bb/core';
-import type { ContentDnaRecord } from '@bb/shared-types';
+import { renderBriefForWriter, STORY_FIRST_WRITING_RULES } from '@bb/editorial-intelligence';
+import type { ContentDnaRecord, EditorialBrief } from '@bb/shared-types';
 import { z } from 'zod';
 
 // Spec section 5.6's HOOK/CONTEXT/INSIGHT/MECHANISM/EXAMPLE/SO WHAT/CLOSE/CTA contract,
@@ -19,6 +20,14 @@ export const LINKEDIN_HARD_RULES = [
   'Always preserve editability: write a complete, concrete post, not a fill-in-the-blank template.',
 ].join('\n');
 
+// Spec 23 (editorial refactor): LinkedIn's job is STOP -> UNDERSTAND -> THINK, built on
+// the same verified core as X and Blog — concrete facts, not corporate filler.
+export const LINKEDIN_EDITORIAL_RULES: readonly string[] = [
+  'Shape: strong hook, what happened, the interesting detail, why it matters, who is affected, implications, what to watch, optional takeaway.',
+  'Use concrete facts from the brief. No generic corporate LinkedIn language: not "In today\'s rapidly changing world", "This is a reminder that", "As we navigate", "Businesses must adapt".',
+  'Keep the same verified factual core as every other platform: the same event, dates, numbers, entities, attribution, uncertainty and temporal meaning.',
+];
+
 export const DraftLinkedinPostOutputSchema = z.object({
   hookOptions: z.array(z.string()).min(1).max(3),
   finalPost: z.string().min(1),
@@ -26,6 +35,8 @@ export const DraftLinkedinPostOutputSchema = z.object({
   firstCommentOptional: z.string().nullable(),
   factCheckStatus: z.string(),
   originalityStatus: z.string(),
+  // The brief claim IDs the opening hook rests on (empty for opinion/no-brief drafts).
+  supportingClaimIds: z.array(z.string()).default([]),
 });
 export type DraftLinkedinPostOutput = z.infer<typeof DraftLinkedinPostOutputSchema>;
 
@@ -38,6 +49,9 @@ export interface DraftLinkedinPostInput {
   llm: LlmClient;
   runId: string;
   stepId: string;
+  // The verified editorial core (spec 20); replaces raw sourceTexts when present.
+  editorialBrief?: EditorialBrief | null;
+  revisionNotes?: readonly string[];
 }
 
 function buildSystemPrompt(dna: ContentDnaRecord): string {
@@ -71,12 +85,36 @@ creator's own perspective, analysis, example, disagreement or interpretation.
 Hard rules (spec 5.8):
 ${LINKEDIN_HARD_RULES}
 
+Story-first writing rules:
+${STORY_FIRST_WRITING_RULES.map((r) => `- ${r}`).join('\n')}
+LinkedIn editorial rules:
+${LINKEDIN_EDITORIAL_RULES.map((r) => `- ${r}`).join('\n')}
+Priority order, never reversed: factual truth > verified editorial meaning > brand voice > platform
+optimisation > engagement.
+
 Classify every material claim per the taxonomy (FACT / ATTRIBUTED_CLAIM / INTERPRETATION / OPINION /
 PREDICTION / UNKNOWN) in your own reasoning before writing. The final post must read naturally, but
 must never state an UNKNOWN or PREDICTION as if it were a FACT.`;
 }
 
 function buildUserPrompt(input: DraftLinkedinPostInput): string {
+  const revision =
+    input.revisionNotes && input.revisionNotes.length > 0
+      ? `\n\nYour previous draft changed the meaning of verified facts. Fix ALL of these:\n${input.revisionNotes.map((n) => `- ${n}`).join('\n')}`
+      : '';
+  if (input.editorialBrief) {
+    return `Angle: ${input.angle}
+
+${renderBriefForWriter(input.editorialBrief)}
+
+Write one original LinkedIn post from this brief: the brief decides WHAT is true and what the story
+is; you decide only how to express it on LinkedIn. Open with one of the approved hooks (or a
+tightening that keeps every fact and qualifier). Respond with the required JSON shape: hookOptions
+(1-3 opening hooks grounded in the brief), finalPost, visualSuggestion (or null),
+firstCommentOptional (or null), factCheckStatus (one sentence: what is verified vs. interpretation/
+opinion), originalityStatus (one sentence), supportingClaimIds (claim IDs the opening rests on).${revision}`;
+  }
+
   const sourceBlock =
     input.sourceTexts.length > 0
       ? input.sourceTexts.map((text, i) => `--- Source ${i + 1} ---\n${text.slice(0, 4000)}`).join('\n\n')
@@ -93,7 +131,7 @@ hookOptions (1-3 alternative opening hooks for the same post), finalPost (the co
 text, following the structure above), visualSuggestion (a short description of a supporting visual,
 or null), firstCommentOptional (a short first comment that extends the post, or null), factCheckStatus
 (one sentence: what in this post is sourced vs. opinion/interpretation), originalityStatus (one
-sentence: how this post's angle/wording differs from the source material).`;
+sentence: how this post's angle/wording differs from the source material).${revision}`;
 }
 
 export async function draftLinkedinPost(input: DraftLinkedinPostInput): Promise<DraftLinkedinPostOutput> {

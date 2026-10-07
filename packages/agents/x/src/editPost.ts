@@ -2,8 +2,15 @@ import type { LlmClient } from '@bb/core';
 import { BRAND_BRAIN } from '@bb/core';
 import { classifyEditInstruction, classifyLearningSignal, loadCurrentDna, recordLearningEvent } from '@bb/content-dna';
 import type { Pool } from '@bb/db';
+import {
+  briefSourceTexts,
+  buildEditorialSummary,
+  editorialBriefFromPackage,
+  loadSiblingDrafts,
+  renderProtectedFactsForEditor,
+} from '@bb/editorial-intelligence';
 import { buildQaGateUnavailableResult, runQaGate } from '@bb/qa-gate';
-import type { ContentDnaRecord, LearningEvent, XPackage } from '@bb/shared-types';
+import type { ContentDnaRecord, EditorialBrief, LearningEvent, XPackage } from '@bb/shared-types';
 import { ContentItemNotFoundError, addRevision, getContentItem, recordQaResult } from '@bb/workflows';
 
 import { DraftXOutputSchema, MAX_X_HASHTAGS, X_NATIVE_PRINCIPLES } from './draftPost.js';
@@ -11,7 +18,7 @@ import { appendHashtags, buildXPackage, enforceXLengthLimit } from './packaging.
 
 const CREATED_BY_AGENT = 'agent-02-x';
 
-function buildReviseSystemPrompt(dna: ContentDnaRecord, wasThread: boolean): string {
+function buildReviseSystemPrompt(dna: ContentDnaRecord, wasThread: boolean, brief: EditorialBrief | null): string {
   return `You are Agent 02 — the Bull or Bear X Content Head Agent, in Edit mode (spec 6.1:
 rewrite/edit mode).
 
@@ -36,7 +43,7 @@ The original post below may end with a trailing hashtag line — that line is no
 creator's own wording; it was appended separately and will be regenerated. Write finalCopy and
 threadPosts without any hashtag line, and separately choose up to ${MAX_X_HASHTAGS} hashtags for
 the hashtags field (same reach/engagement standard as drafting: real, high-traffic tags an engaged
-finance/business audience follows or searches, only if genuinely relevant to the revised post).`;
+finance/business audience follows or searches, only if genuinely relevant to the revised post).${renderProtectedFactsForEditor(brief)}`;
 }
 
 function buildReviseUserPrompt(originalPost: string, instruction: string): string {
@@ -66,12 +73,15 @@ export async function reviseXPost(input: ReviseXPostInput): Promise<ReviseXPostR
 
   const dna = await loadCurrentDna(input.pool);
   const wasThread = (item.package as { mode?: string } | null)?.mode === 'thread';
+  // The brief this post was drafted from (if any) travels with every revision, so edits
+  // stay held to the same verified claims and cross-platform checks.
+  const brief = editorialBriefFromPackage(item.package);
 
   const revised = appendHashtags(
     enforceXLengthLimit(
       await input.llm.completeStructured(
         {
-          system: buildReviseSystemPrompt(dna, wasThread),
+          system: buildReviseSystemPrompt(dna, wasThread, brief),
           messages: [{ role: 'user', content: buildReviseUserPrompt(item.currentText, input.instruction) }],
           runId: input.runId,
           stepId: `revise-${item.id}`,
@@ -87,19 +97,29 @@ export async function reviseXPost(input: ReviseXPostInput): Promise<ReviseXPostR
     changedBy: 'agent',
     changedById: CREATED_BY_AGENT,
     reason: input.instruction,
-    package: { mode: revised.mode, hookOptions: revised.hookOptions, threadPosts: revised.threadPosts, hashtags: revised.hashtags },
+    package: {
+      mode: revised.mode,
+      hookOptions: revised.hookOptions,
+      threadPosts: revised.threadPosts,
+      hashtags: revised.hashtags,
+      supportingClaimIds: revised.supportingClaimIds,
+      ...(brief ? { editorialBrief: brief } : {}),
+    },
   });
 
   const qa = await runQaGate({
-    finalPost: revised.finalCopy,
+    finalPost: revised.threadPosts ? revised.threadPosts.join('\n\n') : revised.finalCopy,
     sourceReferences: revisedItem.sourceUrls,
-    sourceTexts: [],
+    sourceTexts: brief ? briefSourceTexts(brief) : [],
     contentDna: dna,
     status: revisedItem.status,
     llm: input.llm,
     runId: input.runId,
     stepId: `qa-${revisedItem.id}-v${revisedItem.currentVersion}`,
     platform: 'X',
+    ...(brief
+      ? { editorial: { brief, siblingDrafts: await loadSiblingDrafts(input.pool, brief.id, revisedItem.id), opening: revised.finalCopy } }
+      : {}),
   }).catch((error: unknown) => buildQaGateUnavailableResult(error instanceof Error ? error.message : String(error)));
   await recordQaResult(input.pool, revisedItem.id, revisedItem.currentVersion, qa);
 
@@ -119,5 +139,8 @@ export async function reviseXPost(input: ReviseXPostInput): Promise<ReviseXPostR
     });
   }
 
-  return { package: buildXPackage(revisedItem, revised), learningEvent };
+  return {
+    package: buildXPackage(revisedItem, revised, revised.mode, brief ? buildEditorialSummary(brief) : null),
+    learningEvent,
+  };
 }

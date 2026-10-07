@@ -16,3 +16,7 @@ export * from './fetchResult.js';
 export * from './youtubeTranscript.js';
 export * from './visualAsset.js';
 export * from './visualReferenceAsset.js';
+export * from './claim.js';
+export * from './storyEssence.js';
+export * from './hook.js';
+export * from './editorialBrief.js';

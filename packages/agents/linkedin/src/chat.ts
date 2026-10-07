@@ -40,7 +40,7 @@ const RepurposeSourceActionSchema = z.union([
 const LinkedinChatActionSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('source_discovery') }),
   z.object({ action: z.literal('angles'), topic: z.string().min(1) }),
-  z.object({ action: z.literal('draft'), topic: z.string().min(1), angle: z.string().min(1) }),
+  z.object({ action: z.literal('draft'), topic: z.string().min(1), angle: z.string().min(1).nullable().default(null) }),
   z.object({
     action: z.literal('repurpose'),
     source: RepurposeSourceActionSchema,
@@ -57,7 +57,7 @@ type LinkedinChatAction = z.infer<typeof LinkedinChatActionSchema>;
 const CATALOG_DESCRIPTION = `Supported actions:
 - source_discovery {}: find topics from the creator's trusted LinkedIn sources and draft posts on them. Use for requests like "find me topics from my trusted creators".
 - angles { topic }: propose 2-3 angles for a topic the user names, without drafting yet.
-- draft { topic, angle }: draft a full post for an already-chosen topic + angle (use after angles have been discussed, or if the user gives both directly).
+- draft { topic, angle }: draft a full post on a topic. angle is optional — use the user's (or an already-discussed) angle if there is one, otherwise null (the editorial pipeline researches the story and picks the strongest verified angle). topic is a short statement of the story, keeping any facts the user stated.
 - repurpose { source: { kind: 'url', url } | { kind: 'text', label, text }, mode: 'repurpose' | 'voice_note' }: turn an article/PDF/transcript/voice-note text into post drafts.
 - youtube_link { videoUrl }: turn a YouTube video into post drafts.
 - edit { instruction }: revise the draft that is CURRENTLY OPEN in the dashboard per a natural-language instruction (e.g. "make this less aggressive"). There is no separate "which draft" parameter — it always means the open one.
@@ -89,6 +89,7 @@ async function dispatch(
   action: LinkedinChatAction,
   context: LinkedinChatContext,
   runId: string,
+  message: string,
 ): Promise<{ reply: string; result: unknown }> {
   switch (action.action) {
     case 'source_discovery': {
@@ -103,9 +104,18 @@ async function dispatch(
       return { reply: `Here are some angles for "${action.topic}":\n${list}`, result: angles };
     }
     case 'draft': {
-      const pkg = await draftSingleTopicPost({ pool: deps.pool, llm: deps.llm, topic: action.topic, angle: action.angle, runId });
+      const pkg = await draftSingleTopicPost({
+        pool: deps.pool,
+        llm: deps.llm,
+        fetchTool: deps.fetchTool,
+        logger: deps.logger,
+        topic: action.topic,
+        angle: action.angle,
+        userMessage: message,
+        runId,
+      });
       return {
-        reply: `Drafted a LinkedIn post about "${action.topic}" (angle: "${action.angle}"). It's now in review.`,
+        reply: `Drafted a LinkedIn post about "${action.topic}" (angle: "${pkg.angle ?? action.topic}"). It's now in review.`,
         result: pkg,
       };
     }
@@ -195,7 +205,7 @@ export async function handleLinkedinChatMessage(
   let reply: string;
   let result: unknown;
   try {
-    ({ reply, result } = await dispatch(deps, classified, context, runId));
+    ({ reply, result } = await dispatch(deps, classified, context, runId, message));
   } catch (error) {
     if (error instanceof NoOpenDraftError) {
       reply = error.message;

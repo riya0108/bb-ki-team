@@ -32,6 +32,9 @@ describe('fetchAndExtract (against a local fixture HTTP server)', () => {
       } else if (req.url === '/plain.txt') {
         res.writeHead(200, { 'content-type': 'text/plain' });
         res.end('just plain text');
+      } else if (req.url === '/feed.xml') {
+        res.writeHead(200, { 'content-type': 'application/rss+xml; charset=utf-8' });
+        res.end('<rss><channel><item><title>Headline</title></item></channel></rss>');
       } else if (req.url === '/unsupported.bin') {
         res.writeHead(200, { 'content-type': 'application/octet-stream' });
         res.end('binary junk');
@@ -72,6 +75,13 @@ describe('fetchAndExtract (against a local fixture HTTP server)', () => {
     expect(outcome.ok).toBe(true);
     if (!outcome.ok) return;
     expect(outcome.result.text).toBe('just plain text');
+  });
+
+  it('passes RSS/XML feeds through as raw text for the research layer to parse', async () => {
+    const outcome = await fetchAndExtract(`${baseUrl}/feed.xml`);
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.result.text).toContain('<item><title>Headline</title></item>');
   });
 
   it('returns a structured error for an unsupported content type, never fabricating content', async () => {

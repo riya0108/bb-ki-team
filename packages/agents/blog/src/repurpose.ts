@@ -1,4 +1,4 @@
-import type { LlmClient } from '@bb/core';
+import type { LlmClient, Logger } from '@bb/core';
 import type { Pool } from '@bb/db';
 import type { FetchTool } from '@bb/mcp-client';
 import { FetchToolError } from '@bb/mcp-client';
@@ -24,6 +24,8 @@ export interface RunBlogArticleFromSourceInput {
   pool: Pool;
   llm: LlmClient;
   fetchTool: FetchTool;
+  logger: Logger;
+  userMessage?: string | null;
   source: BlogSource;
   topic: string;
   sampleArticleTexts?: string[];
@@ -37,7 +39,10 @@ export async function runBlogArticleFromSource(input: RunBlogArticleFromSourceIn
   return runBlogArticle({
     pool: input.pool,
     llm: input.llm,
+    fetchTool: input.fetchTool,
+    logger: input.logger,
     topic: input.topic,
+    userMessage: input.userMessage ?? null,
     articleType: 'Source-led article',
     sourceTexts: [text],
     sourceReferences: [reference],

@@ -1,6 +1,7 @@
 import type { LlmClient } from '@bb/core';
 import { BRAND_BRAIN } from '@bb/core';
-import type { ContentDnaRecord } from '@bb/shared-types';
+import { renderBriefForWriter, STORY_FIRST_WRITING_RULES } from '@bb/editorial-intelligence';
+import type { ContentDnaRecord, EditorialBrief } from '@bb/shared-types';
 import { z } from 'zod';
 
 // Spec section 12.8 — the site's own written editorial observations, used as the
@@ -13,6 +14,16 @@ const EDITORIAL_OBSERVATIONS: readonly string[] = [
   'The site uses plain, direct language and avoids unnecessary jargon.',
   'Practical usefulness matters: explainers, comparisons, guides and concrete takeaways.',
   'Preserve the brand\'s independence — never pretend to be a licensed financial, legal or tax adviser.',
+];
+
+// Spec 24 (editorial refactor): Blog's job is CLICK -> UNDERSTAND -> EXPLORE -> SEARCH/SHARE.
+// More depth than X or LinkedIn, never more facts than the verified claim set.
+export const BLOG_EDITORIAL_RULES: readonly string[] = [
+  'The title is built on the strongest verified angle from the brief.',
+  'The introduction immediately answers: what happened, why it is unusual or important, and why the reader should care.',
+  'No textbook filler openings: not "In today\'s fast-paced financial landscape", "The world of finance is constantly evolving", "In recent years".',
+  'Go deeper than social posts (mechanism, context, what to watch), but every factual statement must come from the brief\'s verified claims; anything else is clearly labelled interpretation or opinion.',
+  'Cite the brief\'s sources near the claims they support, and list them in "sources".',
 ];
 
 const BlogSectionOutputSchema = z.object({
@@ -83,6 +94,8 @@ export const DraftBlogArticleOutputSchema = z.object({
   revealCards: RevealCardsOutputSchema.nullable().default(null),
   poll: PollOutputSchema.nullable().default(null),
   pullQuote: PullQuoteOutputSchema.nullable().default(null),
+  // The brief claim IDs the title/introduction rest on (empty for opinion/no-brief drafts).
+  supportingClaimIds: z.array(z.string()).default([]),
 });
 export type DraftBlogArticleOutput = z.infer<typeof DraftBlogArticleOutputSchema>;
 
@@ -96,6 +109,9 @@ export interface DraftBlogArticleInput {
   llm: LlmClient;
   runId: string;
   stepId: string;
+  // The verified editorial core (spec 20); replaces raw sourceTexts when present.
+  editorialBrief?: EditorialBrief | null;
+  revisionNotes?: readonly string[];
 }
 
 function buildSystemPrompt(dna: ContentDnaRecord, sampleArticleTexts: string[]): string {
@@ -138,6 +154,13 @@ Never use an unsupported number. Every material claim must be traceable to the s
 material, or clearly framed as opinion/interpretation. Do not invent image URLs, sources, or
 quotes.
 
+Story-first writing rules:
+${STORY_FIRST_WRITING_RULES.map((r) => `- ${r}`).join('\n')}
+Blog editorial rules:
+${BLOG_EDITORIAL_RULES.map((r) => `- ${r}`).join('\n')}
+Priority order, never reversed: factual truth > verified editorial meaning > brand voice > platform
+optimisation > engagement.
+
 Optional visual components — the final HTML is a richly formatted page (styled cards, a
 comparison-stat callout, a poll), not a plain wall of text. Include each one only when the
 content genuinely supports it — never fabricate a stat or invent a list of "hidden" items just
@@ -158,8 +181,16 @@ end. Omit (null) any component that doesn't fit this particular article.`;
 }
 
 function buildUserPrompt(input: DraftBlogArticleInput): string {
-  const sourceBlock =
-    input.sourceTexts.length > 0
+  const revision =
+    input.revisionNotes && input.revisionNotes.length > 0
+      ? `\n\nYour previous draft changed the meaning of verified facts. Fix ALL of these:\n${input.revisionNotes.map((n) => `- ${n}`).join('\n')}`
+      : '';
+  const sourceBlock = input.editorialBrief
+    ? `${renderBriefForWriter(input.editorialBrief)}
+
+The brief decides WHAT is true and what the story is; you decide only how to express it as a Bull
+or Bear article. Build the title on the selected angle and open with the strongest verified fact.`
+    : input.sourceTexts.length > 0
       ? input.sourceTexts.map((text, i) => `--- Source ${i + 1} ---\n${text.slice(0, 8000)}`).join('\n\n')
       : '(no source material supplied — original opinion/analysis; do not invent facts to fill the gap)';
 
@@ -177,7 +208,8 @@ null), conclusion, disclaimer (or null — only for regulated subject matter), s
 can be empty), articleSummary (a concise editorial summary of the piece), estimatedReadTime (e.g.
 "5 min", or null), seoStatus (one sentence), styleMatchStatus (one sentence: how this matches the
 supplied style baseline), comparisonStat/revealCards/poll/pullQuote (each null unless the content
-genuinely supports it — see the visual components guidance above).`;
+genuinely supports it — see the visual components guidance above), supportingClaimIds (claim IDs
+from the editorial brief that the title and introduction rest on, or an empty list).${revision}`;
 }
 
 export async function draftBlogArticle(input: DraftBlogArticleInput): Promise<DraftBlogArticleOutput> {
