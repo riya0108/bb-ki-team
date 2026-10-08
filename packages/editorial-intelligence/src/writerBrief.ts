@@ -20,10 +20,16 @@ export const STORY_FIRST_WRITING_RULES: readonly string[] = [
   'The best hook is not the loudest one. It is the strongest TRUE statement that makes the reader care.',
 ];
 
-function claimLine(c: Claim): string {
+const TIME_BOUND = new Set(['ongoing', 'expected', 'possible', 'proposed', 'announced']);
+
+// Spec 29: a time-bound figure carries its "as of" date into the writer's view, so an
+// interim number (a mid-event tally, a running total) can't be written up as final.
+function claimLine(c: Claim, sourceDates: ReadonlyMap<string, string> = new Map()): string {
   const qualifier = c.temporalContext.qualifier ? ` | keep exactly: "${c.temporalContext.qualifier}"` : '';
   const attribution = c.attributedTo ? ` | attribute to ${c.attributedTo}` : '';
-  return `- ${c.id} [${c.type}, ${c.verificationStatus}${qualifier}${attribution}] ${c.text}`;
+  const asOf = c.temporalContext.claimDate ?? c.sourceIds.map((id) => sourceDates.get(id)).find((d): d is string => d !== undefined) ?? null;
+  const dated = asOf ? ` | as of ${asOf.slice(0, 10)}${TIME_BOUND.has(c.temporalContext.status) ? ' (time-bound: say "as of" or give the date; never present it as final/current)' : ''}` : '';
+  return `- ${c.id} [${c.type}, ${c.verificationStatus}${qualifier}${attribution}${dated}] ${c.text}`;
 }
 
 export function renderBriefForWriter(brief: EditorialBrief): string {
@@ -35,6 +41,8 @@ quotes or events as if verified: there is no verified research behind this piece
   }
 
   const byId = new Map(brief.claims.map((c) => [c.id, c]));
+  const sourceDates = new Map(brief.sources.filter((s) => s.publishedAt !== null).map((s) => [s.id, s.publishedAt ?? '']));
+  const line = (c: Claim): string => claimLine(c, sourceDates);
   const usable = brief.claims.filter(isUsableClaim).sort((a, b) => b.importance - a.importance);
   const notUsable = brief.claims.filter((c) => !isUsableClaim(c));
   const protectedClaims = brief.protectedClaimIds.map((id) => byId.get(id)).filter((c): c is Claim => c !== undefined);
@@ -62,6 +70,15 @@ quotes or events as if verified: there is no verified research behind this piece
 - Hidden mechanism: ${essence.hiddenMechanism ?? 'not established'}
 - Tension: ${essence.tension ?? 'none established'}
 - Most important fact: ${byId.get(essence.mostImportantFactClaimId)?.text ?? essence.mostImportantFactClaimId}`);
+    const investigation = [
+      essence.commonExplanation ? `- Common explanation (test it, don't just repeat it): ${essence.commonExplanation}` : null,
+      essence.strongestCounterargument ? `- Strongest counterargument: ${essence.strongestCounterargument}` : null,
+      essence.counterEvidenceClaimIds.length > 0 ? `- Evidence cutting against the angle: ${essence.counterEvidenceClaimIds.join(', ')}` : null,
+      essence.whatDataDoesNotShow.length > 0 ? `- What the data does NOT show: ${essence.whatDataDoesNotShow.join('; ')}` : null,
+      essence.openQuestions.length > 0 ? `- Open questions (unknown, say so): ${essence.openQuestions.join('; ')}` : null,
+      essence.whatToWatch.length > 0 ? `- What to watch: ${essence.whatToWatch.join('; ')}` : null,
+    ].filter((l): l is string => l !== null);
+    if (investigation.length > 0) sections.push(`INVESTIGATION NOTES\n${investigation.join('\n')}`);
   }
 
   if (brief.selectedAngle) {
@@ -76,17 +93,17 @@ ${brief.selectedHooks.map((h) => `- [${h.supportingClaimIds.join(', ')}] ${h.tex
   }
 
   sections.push(`VERIFIED CLAIMS you may state as fact (most important first):
-${usable.map(claimLine).join('\n') || '(none)'}`);
+${usable.map(line).join('\n') || '(none)'}`);
 
   if (protectedClaims.length > 0) {
     sections.push(`PROTECTED FACTS — if you use one, its meaning must stay exactly the same (temporal status,
 certainty, numbers and units, attribution):
-${protectedClaims.map(claimLine).join('\n')}`);
+${protectedClaims.map(line).join('\n')}`);
   }
 
   if (notUsable.length > 0) {
     sections.push(`NOT VERIFIED — never state these as fact. Leave them out, or present them explicitly as unconfirmed:
-${notUsable.map(claimLine).join('\n')}`);
+${notUsable.map(line).join('\n')}`);
   }
 
   if (brief.thingsNotToSay.length > 0) {
@@ -174,8 +191,8 @@ export function renderProtectedFactsForEditor(brief: EditorialBrief | null): str
 
 This post was written from a verified editorial brief. Whatever the instruction says, keep these
 facts' meaning exactly (temporal status, certainty, numbers and units, attribution):
-${protectedClaims.map(claimLine).join('\n') || '(none)'}
-${unusable.length > 0 ? `Never state these as fact:\n${unusable.map(claimLine).join('\n')}\n` : ''}${brief.thingsNotToSay.length > 0 ? `Never say:\n${brief.thingsNotToSay.map((t) => `- ${t}`).join('\n')}\n` : ''}If the instruction asks for something that would break one of these, keep the fact and say so in
+${protectedClaims.map((c) => claimLine(c)).join('\n') || '(none)'}
+${unusable.length > 0 ? `Never state these as fact:\n${unusable.map((c) => claimLine(c)).join('\n')}\n` : ''}${brief.thingsNotToSay.length > 0 ? `Never say:\n${brief.thingsNotToSay.map((t) => `- ${t}`).join('\n')}\n` : ''}If the instruction asks for something that would break one of these, keep the fact and say so in
 factCheckStatus.`;
 }
 

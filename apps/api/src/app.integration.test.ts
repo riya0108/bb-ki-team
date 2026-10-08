@@ -413,4 +413,41 @@ describeIfDb('apps/api HTTP surface (integration, real Postgres)', () => {
       await new Promise<void>((resolve) => learningServer.close(() => resolve()));
     }
   });
+
+  it('records editorial feedback as reusable memory and manages style references without storing text', async () => {
+    await pool.query('DELETE FROM editorial_memories');
+    const post = (path: string, body?: unknown) =>
+      fetch(`${baseUrl}${path}`, { method: 'POST', headers: { 'content-type': 'application/json' }, ...(body ? { body: JSON.stringify(body) } : {}) });
+
+    const feedback = await post('/blog/memory/feedback', { feedback: 'Quiz felt forced. Needs more historical context.' });
+    expect(feedback.status).toBe(201);
+    const created = (await feedback.json()) as { memories: { memoryId: string; subject: string; status: string }[] };
+    expect(created.memories.map((m) => `${m.subject}:${m.status}`).sort()).toEqual(['component:quiz:CONFIRMED', 'context:more_history:CONFIRMED']);
+
+    const list = (await (await fetch(`${baseUrl}/blog/memory`)).json()) as { memories: { memoryId: string }[] };
+    expect(list.memories).toHaveLength(2);
+
+    const quizId = created.memories.find((m) => m.subject === 'component:quiz')?.memoryId ?? '';
+    const rejected = (await (await post(`/blog/memory/${quizId}/reject`)).json()) as { memory: { status: string } };
+    expect(rejected.memory.status).toBe('REJECTED');
+    expect((await post('/blog/memory/not-a-uuid/confirm')).status).toBe(400);
+    expect((await post('/blog/memory/00000000-0000-4000-8000-000000000999/confirm')).status).toBe(404);
+
+    const referenceText = Array.from({ length: 18 }, (_, i) => `Paragraph ${i + 1} explains how repo-linked loans reprice when the policy rate moves, and why borrowers notice it a quarter later.`).join('\n\n');
+    const reference = await post('/blog/style/references', { kind: 'approved_reference', label: 'Test reference', source: { kind: 'text', text: referenceText } });
+    expect(reference.status).toBe(201);
+    const { sample } = (await reference.json()) as { sample: Record<string, unknown> & { id: string; metrics: { wordCount: number } } };
+    expect(sample.metrics.wordCount).toBeGreaterThan(200);
+    expect(JSON.stringify(sample)).not.toContain('repo-linked loans reprice');
+
+    const profile = (await (await fetch(`${baseUrl}/blog/style/profile`)).json()) as { profile: { referenceCount: number } };
+    expect(profile.profile.referenceCount).toBeGreaterThanOrEqual(1);
+
+    const tooShort = await post('/blog/style/references', { kind: 'user_supplied', label: 'Short', source: { kind: 'text', text: 'Too short.' } });
+    expect(tooShort.status).toBe(422);
+
+    expect((await fetch(`${baseUrl}/blog/style/samples/${sample.id}`, { method: 'DELETE' })).status).toBe(204);
+    await pool.query('DELETE FROM blog_style_samples WHERE id = $1', [sample.id]);
+    await pool.query('DELETE FROM editorial_memories');
+  });
 });

@@ -24,6 +24,14 @@ const PRIMARY_DOMAINS = [
   'worldbank.org',
   'bis.org',
   'who.int',
+  'oecd.org',
+  'un.org',
+  'ilo.org',
+  'wto.org',
+  'unctad.org',
+  // Official sports bodies (medal tables, results) are the primary record for sport.
+  'olympics.com',
+  'ocasia.org',
 ];
 
 const SECONDARY_DOMAINS = [
@@ -67,6 +75,27 @@ const SPECIALIST_DOMAINS = [
   'crisil.com',
   'icra.in',
   'valueresearchonline.com',
+  'nber.org',
+  'ourworldindata.org',
+  'pewresearch.org',
+];
+
+// Tier 4: useful to discover a claim, never to establish one — even when a registry
+// row or a publisher-name lookup would otherwise rank them higher.
+const DISCOVERY_ONLY_DOMAINS = [
+  'wikipedia.org',
+  'reddit.com',
+  'x.com',
+  'twitter.com',
+  'facebook.com',
+  'instagram.com',
+  'linkedin.com',
+  'quora.com',
+  'medium.com',
+  'substack.com',
+  'youtube.com',
+  'blogspot.com',
+  'wordpress.com',
 ];
 
 const PUBLISHER_TIERS: Record<string, EvidenceTier> = {
@@ -126,10 +155,16 @@ function matchesDomain(host: string, domain: string): boolean {
 export function tierForUrl(url: string): EvidenceTier {
   const host = hostOf(url);
   if (!host) return 'discovery';
+  if (DISCOVERY_ONLY_DOMAINS.some((d) => matchesDomain(host, d))) return 'discovery';
   if (PRIMARY_DOMAINS.some((d) => matchesDomain(host, d))) return 'primary';
   if (SECONDARY_DOMAINS.some((d) => matchesDomain(host, d))) return 'secondary';
   if (SPECIALIST_DOMAINS.some((d) => matchesDomain(host, d))) return 'specialist';
   return 'discovery';
+}
+
+export function isDiscoveryOnlyUrl(url: string): boolean {
+  const host = hostOf(url);
+  return host !== null && DISCOVERY_ONLY_DOMAINS.some((d) => matchesDomain(host, d));
 }
 
 export function tierForPublisher(name: string | null): EvidenceTier {

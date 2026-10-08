@@ -20,6 +20,15 @@ const DIMENSION_LABELS: Record<string, string> = {
   causalityAccuracy: 'Causality',
   hookTraceability: 'Hook traceable',
   crossPlatformConsistency: 'Cross-platform consistency',
+  editorial_critic: 'Editorial critic',
+  ai_slop: 'AI-slop filter',
+  meaning_drift: 'Meaning drift',
+  structure: 'Structure',
+  interactive_components: 'Interactive components',
+  html: 'HTML',
+  seo: 'SEO',
+  internal_links: 'Internal links',
+  reader_value: 'Reader value',
 };
 
 const KIND_LABELS: Record<EditorialBrief['kind'], string> = {
@@ -70,11 +79,15 @@ export function EditorialPanel({ item }: EditorialPanelProps) {
   const protectedIds = new Set(brief.protectedClaimIds);
   const rejectedHooks = brief.hookCandidates.filter((h) => h.rejected).length;
   const sources = brief.sources.filter((s) => s.tier !== 'discovery' && s.url);
-  const flags = qa?.editorial
-    ? Object.entries(qa.editorial).filter(
-        (entry): entry is [string, QaDimensionResult] => isDimension(entry[1]) && entry[1].status !== 'PASS',
-      )
-    : [];
+  const flags = [
+    ...(qa?.editorial
+      ? Object.entries(qa.editorial).filter(
+          (entry): entry is [string, QaDimensionResult] => isDimension(entry[1]) && entry[1].status !== 'PASS',
+        )
+      : []),
+    // Platform-specific gates (e.g. the Blog agent's critic, AI-slop, component and HTML checks).
+    ...Object.entries(qa?.platformChecks ?? {}).filter(([, dim]) => dim.status !== 'PASS'),
+  ];
 
   return (
     <div className="editorial-panel">

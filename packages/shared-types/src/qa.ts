@@ -50,5 +50,9 @@ export const QaResultSchema = z.object({
   requiredUserActions: z.array(z.string()).default([]),
   publishAllowed: z.boolean(),
   editorial: EditorialQaResultSchema.optional(),
+  // Platform-specific gates (e.g. the Blog agent's editorial critic, AI-slop filter,
+  // component-evidence and HTML checks). Folded into overallStatus exactly like the
+  // core dimensions; optional so every stored QA row predating them still parses.
+  platformChecks: z.record(z.string(), QaDimensionResultSchema).optional(),
 });
 export type QaResult = z.infer<typeof QaResultSchema>;

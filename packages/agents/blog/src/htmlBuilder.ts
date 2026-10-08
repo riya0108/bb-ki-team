@@ -6,9 +6,16 @@
 // model output (see htmlValidation.ts, which allowlists exactly this script's content).
 //
 // Visual design mirrors the Bull or Bear reference article format: a self-contained
-// styled HTML document (kicker/title/deck, essay body, optional comparison-stat
-// widget, optional flip-card "reveal" grid, optional two-option poll, optional pull
-// quote, sources footer) rather than a bare <article> fragment.
+// styled HTML document (kicker/title/deck, optional "short version", essay body,
+// optional table / comparison-stat / flip-card "reveal" grid / quiz / poll /
+// choose-an-option decision / timeline / pull quote, sources footer) rather than a
+// bare <article> fragment. Everything inside <main class="essay"> and the footer is
+// what the publisher copies into the site's MDX (blogPostFragmentFromHtml), so every
+// widget is self-contained there and no text can be read as an MDX expression.
+
+import type { DecisionComponent, QuizComponent, TableComponent, TimelineComponent } from '@bb/shared-types';
+
+import { ARTICLE_CSS } from './articleCss.js';
 
 export function slugify(text: string): string {
   return text
@@ -29,15 +36,48 @@ function escapeHtml(text: string): string {
     .replace(/'/g, '&#39;');
 }
 
+// Body text additionally escapes braces: the published body is MDX, where a literal
+// "{" in prose would be parsed as a JavaScript expression.
+function esc(text: string): string {
+  return escapeHtml(text).replace(/\{/g, '&#123;').replace(/\}/g, '&#125;');
+}
+
+// Only absolute http(s) URLs and site-relative paths are ever emitted as links.
+function safeHref(url: string): string | null {
+  const trimmed = url.trim();
+  if (/^https?:\/\/[^\s"'<>]+$/i.test(trimmed) || /^\/[^\s"'<>]*$/.test(trimmed)) return escapeHtml(trimmed);
+  return null;
+}
+
+export interface InlineLink {
+  anchorText: string;
+  url: string;
+}
+
 // Splits on blank lines into paragraphs; each becomes its own <p>. Never trusts the
 // model to have already wrapped its own <p> tags (spec 12.5: escape special
 // characters correctly — the model's raw text is treated as plain text, not markup).
-function paragraphsHtml(body: string): string {
+// Internal links (spec 35) are applied to the first occurrence of their anchor text,
+// after escaping, so the link is the only markup that can ever enter a paragraph.
+function paragraphsHtml(body: string, links: InlineLink[] = [], used = new Set<string>()): string {
   return body
     .split(/\n{2,}/)
     .map((para) => para.trim())
     .filter((para) => para.length > 0)
-    .map((para) => `<p>${escapeHtml(para)}</p>`)
+    .map((para) => {
+      let html = esc(para);
+      for (const link of links) {
+        if (used.has(link.url)) continue;
+        const href = safeHref(link.url);
+        const anchor = esc(link.anchorText.trim());
+        if (!href || anchor.length === 0) continue;
+        const at = html.indexOf(anchor);
+        if (at === -1) continue;
+        html = `${html.slice(0, at)}<a href="${href}">${anchor}</a>${html.slice(at + anchor.length)}`;
+        used.add(link.url);
+      }
+      return `<p>${html}</p>`;
+    })
     .join('\n');
 }
 
@@ -64,6 +104,8 @@ export interface RevealCard {
   teaser: string;
   title: string;
   text: string;
+  number?: string | null | undefined;
+  sourceNote?: string | null | undefined;
 }
 
 export interface RevealCardsWidget {
@@ -88,6 +130,11 @@ export interface PullQuoteWidget {
   afterSectionIndex: number;
 }
 
+export interface SourceLink {
+  label: string;
+  url: string | null;
+}
+
 export interface BuildArticleHtmlInput {
   title: string;
   deck: string;
@@ -98,15 +145,25 @@ export interface BuildArticleHtmlInput {
   conclusion: string;
   disclaimer: string | null;
   sources: string[];
+  // Clean, labelled sources (spec 27). Supersedes `sources` when non-empty.
+  sourceLinks?: SourceLink[] | null;
+  shortVersion?: string[] | null;
   comparisonStat?: ComparisonStatWidget | null;
   revealCards?: RevealCardsWidget | null;
   poll?: PollWidget | null;
   pullQuote?: PullQuoteWidget | null;
+  table?: TableComponent | null;
+  quiz?: QuizComponent | null;
+  decision?: DecisionComponent | null;
+  timeline?: TimelineComponent | null;
+  internalLinks?: InlineLink[] | null;
 }
 
 export interface BuiltArticle {
   html: string;
   headingIds: string[];
+  // Which component types were actually rendered, in document order.
+  components: string[];
 }
 
 // Disambiguates repeated heading text (e.g. two sections both titled "The catch")
@@ -128,38 +185,103 @@ function clampSectionIndex(index: number, sectionCount: number): number {
 
 // The one and only <script> this builder ever emits. Its source is fixed — it never
 // interpolates model-supplied text — so htmlValidation.ts can allowlist it exactly.
-// Both faces of every flip card, and both reveal panels of the poll, are already
-// present in the DOM (pre-rendered by this builder with escaped model text); this
-// script only toggles CSS classes, never writes innerHTML/textContent from data.
-export const INTERACTIVE_SCRIPT = `document.querySelectorAll('.flip-card').forEach(function (card) {
-  function flip() { card.classList.toggle('flipped'); }
-  card.addEventListener('click', flip);
-  card.addEventListener('keydown', function (event) {
-    if (event.key === 'Enter' || event.key === ' ') {
-      event.preventDefault();
-      flip();
-    }
-  });
-});
+// Every face/panel/answer is already present in the DOM (pre-rendered by this builder
+// with escaped model text); this script only toggles classes and attributes. The one
+// thing it ever writes is the quiz score, built from counts, never from content.
+// Every control is a native <button> (Enter/Space for free) except flip cards, which
+// carry role="button" + tabindex and handle Enter/Space themselves.
+export const INTERACTIVE_SCRIPT = `(function () {
+  function each(selector, root, fn) {
+    Array.prototype.forEach.call((root || document).querySelectorAll(selector), fn);
+  }
 
-document.querySelectorAll('.poll-btn').forEach(function (button) {
-  button.addEventListener('click', function () {
-    var choice = button.getAttribute('data-choice');
-    document.querySelectorAll('.poll-reveal').forEach(function (panel) {
-      panel.classList.toggle('show', panel.getAttribute('data-choice') === choice);
+  each('.flip-card', null, function (card) {
+    function flip() {
+      var flipped = card.classList.toggle('flipped');
+      card.setAttribute('aria-pressed', flipped ? 'true' : 'false');
+    }
+    card.addEventListener('click', flip);
+    card.addEventListener('keydown', function (event) {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        flip();
+      }
     });
   });
-});`;
+
+  each('.poll', null, function (poll) {
+    each('.poll-btn', poll, function (button) {
+      button.addEventListener('click', function () {
+        var choice = button.getAttribute('data-choice');
+        each('.poll-btn', poll, function (b) { b.setAttribute('aria-pressed', b === button ? 'true' : 'false'); });
+        each('.poll-reveal', poll, function (panel) {
+          panel.classList.toggle('show', panel.getAttribute('data-choice') === choice);
+        });
+      });
+    });
+  });
+
+  each('.decision', null, function (widget) {
+    each('.decision-btn', widget, function (button) {
+      button.addEventListener('click', function () {
+        var choice = button.getAttribute('data-choice');
+        each('.decision-btn', widget, function (b) { b.setAttribute('aria-pressed', b === button ? 'true' : 'false'); });
+        each('.decision-reveal', widget, function (panel) {
+          if (panel.getAttribute('data-choice') === choice) {
+            panel.removeAttribute('hidden');
+          } else {
+            panel.setAttribute('hidden', '');
+          }
+        });
+      });
+    });
+  });
+
+  each('.quiz', null, function (quiz) {
+    var total = quiz.querySelectorAll('.quiz-q').length;
+    var answered = 0;
+    var correct = 0;
+    each('.quiz-q', quiz, function (question) {
+      each('.quiz-opt', question, function (option) {
+        option.addEventListener('click', function () {
+          if (question.getAttribute('data-answered') === 'true') { return; }
+          question.setAttribute('data-answered', 'true');
+          var isCorrect = option.getAttribute('data-correct') === 'true';
+          answered += 1;
+          if (isCorrect) { correct += 1; }
+          option.classList.add(isCorrect ? 'is-correct' : 'is-wrong');
+          option.setAttribute('aria-pressed', 'true');
+          each('.quiz-opt', question, function (o) {
+            if (o.getAttribute('data-correct') === 'true') { o.classList.add('is-answer'); }
+            o.setAttribute('aria-disabled', 'true');
+          });
+          each('.quiz-result', question, function (panel) {
+            if (panel.getAttribute('data-result') === (isCorrect ? 'correct' : 'incorrect')) {
+              panel.removeAttribute('hidden');
+            }
+          });
+          if (answered === total) {
+            var score = quiz.querySelector('.quiz-score');
+            if (score) {
+              score.textContent = 'You got ' + correct + ' of ' + total + '.';
+              score.removeAttribute('hidden');
+            }
+          }
+        });
+      });
+    });
+  });
+})();`;
 
 function comparisonStatHtml(widget: ComparisonStatWidget): string {
   return `    <div class="gap-widget">
-      <div class="gap-label">${escapeHtml(widget.label)}</div>
+      <div class="gap-label">${esc(widget.label)}</div>
       <div class="gap-row">
-        <div class="gap-col guess"><div class="gap-num">${escapeHtml(widget.leftValue)}</div><div class="gap-sub">${escapeHtml(widget.leftCaption)}</div></div>
-        <div class="gap-arrow">&rarr;</div>
-        <div class="gap-col real"><div class="gap-num">${escapeHtml(widget.rightValue)}</div><div class="gap-sub">${escapeHtml(widget.rightCaption)}</div></div>
+        <div class="gap-col guess"><div class="gap-num">${esc(widget.leftValue)}</div><div class="gap-sub">${esc(widget.leftCaption)}</div></div>
+        <div class="gap-arrow" aria-hidden="true">&rarr;</div>
+        <div class="gap-col real"><div class="gap-num">${esc(widget.rightValue)}</div><div class="gap-sub">${esc(widget.rightCaption)}</div></div>
       </div>
-      <div class="gap-foot">${escapeHtml(widget.footnote)}</div>
+      <div class="gap-foot">${esc(widget.footnote)}</div>
     </div>`;
 }
 
@@ -170,17 +292,19 @@ function revealCardsHtml(widget: RevealCardsWidget): string {
       const centeredStyle = isLastAndOdd
         ? ' style="grid-column: 1 / -1; width: calc(50% - 7px); margin: 0 auto;"'
         : '';
-      return `        <div class="flip-card" tabindex="0" role="button" aria-label="Reveal ${escapeHtml(widget.title)} ${i + 1}"${centeredStyle}>
+      const number = card.number ? `\n              <div class="big-num">${esc(card.number)}</div>` : '';
+      const source = card.sourceNote ? `\n              <div class="b-source">${esc(card.sourceNote)}</div>` : '';
+      return `        <div class="flip-card" tabindex="0" role="button" aria-pressed="false" aria-label="Reveal card ${i + 1}: ${esc(card.teaser)}"${centeredStyle}>
           <div class="flip-inner">
             <div class="flip-face flip-front">
               <div class="num">#${i + 1}</div>
-              <div class="icon">${escapeHtml(card.icon)}</div>
-              <div class="teaser">${escapeHtml(card.teaser)}</div>
-              <div class="tap-hint">tap to reveal</div>
+              <div class="icon" aria-hidden="true">${esc(card.icon)}</div>${number}
+              <div class="teaser">${esc(card.teaser)}</div>
+              <div class="tap-hint" aria-hidden="true">tap to reveal</div>
             </div>
             <div class="flip-face flip-back">
-              <div class="b-title">${escapeHtml(card.title)}</div>
-              <div class="b-text">${escapeHtml(card.text)}</div>
+              <div class="b-title">${esc(card.title)}</div>
+              <div class="b-text">${esc(card.text)}</div>${source}
             </div>
           </div>
         </div>`;
@@ -188,7 +312,7 @@ function revealCardsHtml(widget: RevealCardsWidget): string {
     .join('\n');
 
   return `    <div class="reveal-wrap">
-      <div class="reveal-title">${escapeHtml(widget.title)}</div>
+      <div class="reveal-title">${esc(widget.title)}</div>
       <div class="reveal-sub">Tap each card to reveal it</div>
       <div class="flip-grid">
 ${cardsHtml}
@@ -198,72 +322,217 @@ ${cardsHtml}
 
 function pollHtml(widget: PollWidget): string {
   const buttonsHtml = widget.options
-    .map((opt, i) => `        <button class="poll-btn" type="button" data-choice="opt-${i}">${escapeHtml(opt.label)}</button>`)
+    .map((opt, i) => `        <button class="poll-btn" type="button" data-choice="opt-${i}" aria-pressed="false">${esc(opt.label)}</button>`)
     .join('\n');
   const panelsHtml = widget.options
-    .map((opt, i) => `      <div class="poll-reveal" data-choice="opt-${i}">${escapeHtml(opt.revealText)}</div>`)
+    .map((opt, i) => `        <div class="poll-reveal" data-choice="opt-${i}">${esc(opt.revealText)}</div>`)
     .join('\n');
 
   return `    <div class="poll">
-      <p class="poll-q">${escapeHtml(widget.question)}</p>
-      <div class="poll-actions">
+      <p class="poll-q" id="bb-poll-q">${esc(widget.question)}</p>
+      <div class="poll-actions" role="group" aria-labelledby="bb-poll-q">
 ${buttonsHtml}
       </div>
+      <div aria-live="polite">
 ${panelsHtml}
+      </div>
     </div>`;
 }
 
 function pullQuoteHtml(widget: PullQuoteWidget): string {
-  return `    <blockquote><p>${escapeHtml(widget.text)}</p></blockquote>`;
+  return `    <blockquote><p>${esc(widget.text)}</p></blockquote>`;
+}
+
+// Right-align a column when the model asked for it or when every body cell in it
+// reads as a figure.
+function isNumericColumn(table: TableComponent, column: number): boolean {
+  const declared = table.columns[column]?.align === 'right';
+  const cells = table.rows.map((r) => r[column] ?? '').filter((c) => c.length > 0);
+  return declared || (cells.length > 0 && cells.every((c) => /^[~≈<>]?[₹$€£]?\s?[\d.,]+\s?(%|bps|pp|x|cr|crore|lakh|bn|mn|k)?$/i.test(c.trim())));
+}
+
+function tableHtml(table: TableComponent): string {
+  const numeric = table.columns.map((_, i) => i > 0 && isNumericColumn(table, i));
+  const head = table.columns
+    .map((c, i) => `<th scope="col"${numeric[i] ? ' class="num"' : ''}>${esc(c.label)}</th>`)
+    .join('');
+  const body = table.rows
+    .map(
+      (row) =>
+        `<tr>${row
+          .map((cell, i) => (i === 0 ? `<th scope="row">${esc(cell)}</th>` : `<td${numeric[i] ? ' class="num"' : ''}>${esc(cell)}</td>`))
+          .join('')}</tr>`,
+    )
+    .join('');
+  const subtitle = table.subtitle ? `<span class="table-sub">${esc(table.subtitle)}</span>` : '';
+  const footnote = table.footnote ? `\n      <div class="table-foot">${esc(table.footnote)}</div>` : '';
+  return `    <figure class="table-figure">
+      <figcaption><span class="widget-title">${esc(table.title)}</span>${subtitle}</figcaption>
+      <div class="table-wrap" role="region" aria-label="${esc(table.title)} (scrolls horizontally)" tabindex="0">
+        <table class="data-table"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>
+      </div>
+      <div class="table-source">${esc(table.sourceNote)}</div>${footnote}
+    </figure>`;
+}
+
+const OPTION_LETTERS = ['A', 'B', 'C', 'D'];
+
+function quizHtml(quiz: QuizComponent): string {
+  const questions = quiz.questions
+    .map((q, qi) => {
+      const id = `bb-quiz-q-${qi + 1}`;
+      const options = q.options
+        .map(
+          (opt, oi) =>
+            `          <button type="button" class="quiz-opt" data-correct="${oi === q.correctOptionIndex ? 'true' : 'false'}" aria-pressed="false">${OPTION_LETTERS[oi] ?? ''}. ${esc(opt)}</button>`,
+        )
+        .join('\n');
+      const answer = q.options[q.correctOptionIndex] ?? '';
+      const source = q.sourceNote ? `<span class="quiz-source">${esc(q.sourceNote)}</span>` : '';
+      return `      <div class="quiz-q">
+        <p class="quiz-question" id="${id}">${qi + 1}. ${esc(q.question)}</p>
+        <div class="quiz-options" role="group" aria-labelledby="${id}">
+${options}
+        </div>
+        <div class="quiz-feedback" aria-live="polite">
+          <div class="quiz-result" data-result="correct" hidden><strong>Correct.</strong> ${esc(q.explanation)}${source}</div>
+          <div class="quiz-result" data-result="incorrect" hidden><strong>Not quite. The answer is ${OPTION_LETTERS[q.correctOptionIndex] ?? ''}: ${esc(answer)}.</strong> ${esc(q.explanation)}${source}</div>
+        </div>
+      </div>`;
+    })
+    .join('\n');
+  const count = quiz.questions.length;
+  return `    <div class="quiz">
+      <div class="widget-title">${esc(quiz.title)}</div>
+      <div class="widget-sub">Test yourself: ${count} question${count === 1 ? '' : 's'}</div>
+${questions}
+      <div class="quiz-score" aria-live="polite" hidden></div>
+    </div>`;
+}
+
+function decisionHtml(decision: DecisionComponent): string {
+  const buttons = decision.options
+    .map((o, i) => `        <button type="button" class="decision-btn" data-choice="opt-${i}" aria-pressed="false">${esc(o.label)}</button>`)
+    .join('\n');
+  const reveals = decision.options
+    .map((o, i) => {
+      const evidence = o.evidenceNote ? `<div class="dr-evidence">${esc(o.evidenceNote)}</div>` : '';
+      return `        <div class="decision-reveal" data-choice="opt-${i}" hidden><div class="dr-title">${esc(o.revealTitle)}</div><div class="dr-text">${esc(o.revealText)}</div>${evidence}</div>`;
+    })
+    .join('\n');
+  return `    <div class="decision">
+      <div class="widget-title">${esc(decision.title)}</div>
+      <p class="decision-q" id="bb-decision-q">${esc(decision.question)}</p>
+      <div class="decision-actions" role="group" aria-labelledby="bb-decision-q">
+${buttons}
+      </div>
+      <div class="decision-reveals" aria-live="polite">
+${reveals}
+      </div>
+    </div>`;
+}
+
+function timelineHtml(timeline: TimelineComponent): string {
+  const events = timeline.events
+    .map((e) => {
+      const source = e.sourceNote ? `<div class="tl-source">${esc(e.sourceNote)}</div>` : '';
+      return `        <li><div class="tl-date">${esc(e.date)}</div><div class="tl-title">${esc(e.title)}</div><div class="tl-text">${esc(e.description)}</div>${source}</li>`;
+    })
+    .join('\n');
+  return `    <div class="timeline-wrap">
+      <div class="widget-title">${esc(timeline.title)}</div>
+      <ol class="timeline">
+${events}
+      </ol>
+    </div>`;
+}
+
+function shortVersionHtml(points: string[]): string {
+  return `    <aside class="short-version" aria-label="The short version">
+      <div class="sv-label">The short version</div>
+      <ul>
+${points.map((p) => `        <li>${esc(p)}</li>`).join('\n')}
+      </ul>
+    </aside>\n`;
+}
+
+function sourceLabelFromUrl(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '');
+  } catch {
+    return url;
+  }
+}
+
+function sourcesFooterHtml(input: BuildArticleHtmlInput): string {
+  const links: SourceLink[] =
+    input.sourceLinks && input.sourceLinks.length > 0
+      ? input.sourceLinks
+      : input.sources.map((s) => (/^https?:\/\//i.test(s.trim()) ? { label: sourceLabelFromUrl(s.trim()), url: s.trim() } : { label: s, url: null }));
+  if (links.length === 0) return '';
+  const items = links
+    .map((l) => {
+      const href = l.url ? safeHref(l.url) : null;
+      return href
+        ? `      <li><a href="${href}" rel="nofollow noopener noreferrer" target="_blank">${esc(l.label)}</a></li>`
+        : `      <li>${esc(l.label)}</li>`;
+    })
+    .join('\n');
+  return `\n    <div class="sources-title">Sources</div>\n    <ol class="sources-list">\n${items}\n    </ol>`;
 }
 
 export function buildArticleHtml(input: BuildArticleHtmlInput): BuiltArticle {
   const headingIds = uniqueHeadingIds(input.sections.map((s) => s.heading));
   const sectionCount = input.sections.length;
 
-  const widgetsAfter = new Map<number, string[]>();
-  const scheduleWidget = (afterSectionIndex: number, html: string): void => {
+  const widgetsAfter = new Map<number, { type: string; html: string }[]>();
+  const scheduleWidget = (type: string, afterSectionIndex: number, html: string): void => {
     const index = clampSectionIndex(afterSectionIndex, sectionCount);
     const existing = widgetsAfter.get(index) ?? [];
-    existing.push(html);
+    existing.push({ type, html });
     widgetsAfter.set(index, existing);
   };
-  if (input.comparisonStat) scheduleWidget(input.comparisonStat.afterSectionIndex, comparisonStatHtml(input.comparisonStat));
-  if (input.revealCards) scheduleWidget(input.revealCards.afterSectionIndex, revealCardsHtml(input.revealCards));
-  if (input.poll) scheduleWidget(input.poll.afterSectionIndex, pollHtml(input.poll));
-  if (input.pullQuote) scheduleWidget(input.pullQuote.afterSectionIndex, pullQuoteHtml(input.pullQuote));
+  if (input.table) scheduleWidget('table', input.table.afterSectionIndex, tableHtml(input.table));
+  if (input.comparisonStat) scheduleWidget('comparisonStat', input.comparisonStat.afterSectionIndex, comparisonStatHtml(input.comparisonStat));
+  if (input.timeline) scheduleWidget('timeline', input.timeline.afterSectionIndex, timelineHtml(input.timeline));
+  if (input.revealCards) scheduleWidget('revealCards', input.revealCards.afterSectionIndex, revealCardsHtml(input.revealCards));
+  if (input.decision) scheduleWidget('decision', input.decision.afterSectionIndex, decisionHtml(input.decision));
+  if (input.quiz) scheduleWidget('quiz', input.quiz.afterSectionIndex, quizHtml(input.quiz));
+  if (input.poll) scheduleWidget('poll', input.poll.afterSectionIndex, pollHtml(input.poll));
+  if (input.pullQuote) scheduleWidget('pullQuote', input.pullQuote.afterSectionIndex, pullQuoteHtml(input.pullQuote));
 
-  const needsScript = Boolean(input.revealCards ?? input.poll);
+  const needsScript = Boolean(input.revealCards ?? input.poll ?? input.quiz ?? input.decision);
+  const links = input.internalLinks ?? [];
+  const usedLinks = new Set<string>();
+  const components: string[] = [];
 
   const sectionsHtml = input.sections
     .map((section, i) => {
       const sourceNoteHtml = section.sourceNote
-        ? `\n      <p class="source-note"><em>${escapeHtml(section.sourceNote)}</em></p>`
+        ? `\n      <p class="source-note"><em>${esc(section.sourceNote)}</em></p>`
         : '';
-      const trailingWidgets = widgetsAfter.get(i);
-      const widgetsHtml = trailingWidgets && trailingWidgets.length > 0 ? `\n${trailingWidgets.join('\n')}` : '';
+      const trailingWidgets = widgetsAfter.get(i) ?? [];
+      components.push(...trailingWidgets.map((w) => w.type));
+      const widgetsHtml = trailingWidgets.length > 0 ? `\n${trailingWidgets.map((w) => w.html).join('\n')}` : '';
       return `    <section id="${headingIds[i]}">
-      <h2 class="section-head">${escapeHtml(section.heading)}</h2>
-${paragraphsHtml(section.body)}${sourceNoteHtml}
+      <h2 class="section-head">${esc(section.heading)}</h2>
+${paragraphsHtml(section.body, links, usedLinks)}${sourceNoteHtml}
     </section>${widgetsHtml}`;
     })
     .join('\n');
 
+  const shortVersion = input.shortVersion && input.shortVersion.length > 0 ? shortVersionHtml(input.shortVersion) : '';
+
   const practicalHtml = input.practicalTakeaway
     ? `    <section id="what-to-do">
       <h2 class="section-head">What this means for you</h2>
-${paragraphsHtml(input.practicalTakeaway)}
+${paragraphsHtml(input.practicalTakeaway, links, usedLinks)}
     </section>\n`
     : '';
 
   const disclaimerHtml = input.disclaimer
-    ? `\n    <p class="disclaimer"><em>${escapeHtml(input.disclaimer)}</em></p>`
+    ? `\n    <p class="disclaimer"><em>${esc(input.disclaimer)}</em></p>`
     : '';
-
-  const sourcesHtml =
-    input.sources.length > 0
-      ? `\n    <p>${input.sources.map((s) => escapeHtml(s)).join(' &middot; ')}</p>`
-      : '';
 
   const scriptHtml = needsScript ? `\n<script>\n${INTERACTIVE_SCRIPT}\n</script>` : '';
 
@@ -289,125 +558,17 @@ ${ARTICLE_CSS}
     <p class="dek">${escapeHtml(input.deck)}</p>
   </header>
   <main class="essay">
-${sectionsHtml}
+${shortVersion}${sectionsHtml}
 ${practicalHtml}    <section id="conclusion">
       <h2 class="section-head">Bottom line</h2>
-${paragraphsHtml(input.conclusion)}
+${paragraphsHtml(input.conclusion, links, usedLinks)}
     </section>${disclaimerHtml}
   </main>
-  <footer class="footer">${sourcesHtml}
+  <footer class="footer">${sourcesFooterHtml(input)}
   </footer>
 </div>${scriptHtml}
 </body>
 </html>`;
 
-  return { html, headingIds };
+  return { html, headingIds, components };
 }
-
-// Adapted from the Bull or Bear reference article template. Scoped to `.page` /
-// `.essay` / the widget classes below so this file can be dropped into the site
-// without leaking styles onto surrounding markup (spec 12.5).
-//
-// Colors are var(--color-x, #fallback) — never bare hex and never a `:root{...}`
-// override — for two reasons that both matter here:
-//  1. The site (~/Downloads/BLOG, src/styles/global.css) already defines
-//     --color-ink/--color-body/--color-mute/--color-surface-card/--color-surface-dark/
-//     --color-on-dark/--color-hairline/--color-primary/--color-canvas as dark-mode-aware
-//     tokens (light values under :root, dark values under :root.dark). When the
-//     published <style> block lands in the site's MDX (via
-//     supabase/functions/_shared/blogPost.ts#blogPostFragmentFromHtml), those
-//     var()s resolve against the *site's* tokens, so post text/cards repaint
-//     correctly in dark mode instead of staying stuck at a fixed light-mode hex.
-//  2. A `:root{...}` block here doesn't get stripped by blogPostFragmentFromHtml
-//     (it only strips bare `*`/`html`/`body`/`h1`/`h2` rules) — a `:root{--ink:#181818}`
-//     shipped as post content would clobber the site's own global `--ink` variable
-//     for the entire page, permanently pinning it to light-mode's value regardless
-//     of the dark-mode toggle. That was the actual mechanism behind the flip-card/
-//     text dark-mode bug this file used to have.
-// The literal fallback after each comma keeps this same document readable when
-// rendered standalone (no site CSS present) — e.g. the dashboard's "Preview HTML"
-// button (apps/dashboard/src/components/DraftCanvas.tsx) opens this exact HTML in
-// a bare tab — falling back to the original light-mode palette in that case.
-// Flip-card and poll/callout token choices mirror
-// ~/Downloads/BLOG/src/components/FlipRevealGrid.astro exactly.
-const ARTICLE_CSS = `  *{box-sizing:border-box;}
-  html{background:var(--color-canvas, #FFFFFF);}
-  body{
-    margin:0; background:var(--color-canvas, #FFFFFF); color:var(--color-body, #181818);
-    font-family:'Figtree', system-ui, sans-serif;
-    line-height:1.72; font-size:18px;
-    -webkit-font-smoothing:antialiased;
-  }
-  .page{max-width:700px; margin:0 auto; padding:56px 24px 90px;}
-
-  h1,h2{font-family:'Outfit', system-ui, sans-serif; font-weight:700; color:var(--color-ink, #0D0D0D); margin:0;}
-
-  .kicker{
-    font-family:'Fragment Mono', monospace; font-size:.72rem; font-weight:400;
-    letter-spacing:.14em; text-transform:uppercase; color:var(--color-mute, #787878);
-    margin-bottom:18px;
-  }
-  h1{font-size:clamp(1.85rem, 5vw, 2.5rem); line-height:1.18; letter-spacing:-.01em; margin-bottom:16px;}
-  .dek{font-size:1.15rem; line-height:1.55; color:var(--color-ink-soft, #454545); margin:0 0 30px; max-width:56ch;}
-
-  .essay p{margin:0 0 24px; color:var(--color-body, #454545); font-size:1.03rem;}
-  .essay p:last-child{margin-bottom:0;}
-  .essay strong{color:var(--color-ink, #0D0D0D); font-weight:700;}
-  .essay em{color:var(--color-ink, #0D0D0D); font-style:italic;}
-  .essay .source-note{font-size:.85rem; color:var(--color-mute, #787878);}
-  .essay .disclaimer{font-size:.85rem; color:var(--color-mute, #787878);}
-
-  h2.section-head{font-size:1.4rem; line-height:1.3; margin:46px 0 18px;}
-
-  .gap-widget{background:var(--color-surface-dark, #181818); border-radius:16px; padding:30px 26px; margin:30px 0; color:var(--color-on-dark, #F2F0EC);}
-  .gap-label{font-family:'Fragment Mono', monospace; font-size:.68rem; letter-spacing:.1em; text-transform:uppercase; color:color-mix(in srgb, var(--color-on-dark, #F2F0EC) 65%, transparent); text-align:center; margin-bottom:20px;}
-  .gap-row{display:flex; align-items:center; justify-content:center; gap:18px; flex-wrap:wrap;}
-  .gap-col{text-align:center;}
-  .gap-num{font-family:'Outfit', sans-serif; font-weight:800; font-size:2.1rem; line-height:1;}
-  .gap-col.guess .gap-num{color:color-mix(in srgb, var(--color-on-dark, #F2F0EC) 80%, transparent);}
-  .gap-col.real .gap-num{color:var(--color-on-dark, #fff);}
-  .gap-sub{font-family:'Fragment Mono', monospace; font-size:.68rem; color:color-mix(in srgb, var(--color-on-dark, #F2F0EC) 55%, transparent); margin-top:8px;}
-  .gap-arrow{font-size:1.4rem; color:var(--color-primary, #D6952E); margin-top:-14px;}
-  .gap-foot{text-align:center; font-size:.86rem; color:color-mix(in srgb, var(--color-on-dark, #F2F0EC) 78%, transparent); margin-top:18px; max-width:42ch; margin-left:auto; margin-right:auto;}
-
-  blockquote{margin:36px 0; padding:2px 0 2px 24px; border-left:2.5px solid var(--color-primary, #5D3FD3);}
-  blockquote p{font-style:italic; font-size:1.15rem; line-height:1.5; color:var(--color-ink, #151515); margin:0;}
-
-  .reveal-wrap{margin:34px 0;}
-  .reveal-title{font-family:'Outfit', sans-serif; font-weight:700; font-size:1.02rem; text-align:center; margin-bottom:4px; color:var(--color-ink, #0D0D0D);}
-  .reveal-sub{font-family:'Fragment Mono', monospace; font-size:.7rem; color:var(--color-stone, #ABABA7); text-align:center; margin-bottom:22px;}
-  .flip-grid{display:grid; grid-template-columns:1fr 1fr; gap:14px;}
-  .flip-card{perspective:1200px; height:168px; cursor:pointer;}
-  .flip-inner{position:relative; width:100%; height:100%; transition:transform .55s cubic-bezier(.4,.2,.2,1); transform-style:preserve-3d;}
-  .flip-card.flipped .flip-inner{transform:rotateY(180deg);}
-  .flip-face{position:absolute; inset:0; backface-visibility:hidden; border-radius:12px; padding:16px 16px; display:flex; flex-direction:column;}
-  .flip-front{background:var(--color-surface-card, #FAF9F7); border:1px solid var(--color-hairline, #E9E8E5); align-items:center; justify-content:center; text-align:center;}
-  .flip-front .num{font-family:'Fragment Mono', monospace; font-size:.68rem; color:var(--color-primary, #5D3FD3); letter-spacing:.06em; text-transform:uppercase; margin-bottom:8px;}
-  .flip-front .icon{font-size:1.7rem; margin-bottom:8px;}
-  .flip-front .teaser{font-size:.84rem; color:var(--color-ink, #454545); font-weight:600;}
-  .flip-front .tap-hint{font-family:'Fragment Mono', monospace; font-size:.6rem; color:var(--color-mute, #ABABA7); margin-top:10px;}
-  .flip-back{background:var(--color-surface-dark, #5D3FD3); color:var(--color-on-dark, #fff); transform:rotateY(180deg); justify-content:center; overflow-y:auto;}
-  .flip-back .b-title{font-family:'Outfit', sans-serif; font-weight:700; font-size:.92rem; margin-bottom:6px; color:var(--color-on-dark, #fff);}
-  .flip-back .b-text{font-size:.76rem; line-height:1.5; color:color-mix(in srgb, var(--color-on-dark, #E6E1FA) 78%, transparent);}
-
-  .poll{background:var(--color-surface-card, #FAF9F7); border:1px solid var(--color-hairline, #E9E8E5); border-radius:14px; padding:26px 26px 24px; margin:34px 0; text-align:center;}
-  .poll-q{font-family:'Outfit', sans-serif; font-weight:700; font-size:1.05rem; color:var(--color-ink, #0D0D0D); margin-bottom:20px;}
-  .poll-actions{display:flex; gap:12px; justify-content:center; flex-wrap:wrap; margin-bottom:6px;}
-  .poll-btn{
-    font-family:'Outfit', sans-serif; font-weight:700; font-size:.86rem; color:var(--color-ink, #181818);
-    background:var(--color-canvas, #fff); border:1.5px solid var(--color-ink, #181818); border-radius:30px; padding:11px 20px; cursor:pointer;
-  }
-  .poll-btn:hover{background:var(--color-ink, #181818); color:var(--color-canvas, #fff);}
-  .poll-reveal{display:none; margin-top:18px; text-align:left; padding:16px 18px; background:var(--color-surface-card, #fff); border:1px solid var(--color-hairline, #E9E8E5); border-radius:10px; font-size:.92rem; color:var(--color-body, #454545); line-height:1.6;}
-  .poll-reveal.show{display:block;}
-
-  .footer{margin-top:54px; padding-top:22px; border-top:1px solid var(--color-hairline, #E9E8E5);}
-  .footer p{font-family:'Figtree', sans-serif; font-size:.8rem; line-height:1.7; color:var(--color-mute, #787878); margin:0 0 8px;}
-
-  @media (max-width:560px){
-    body{font-size:16.5px;}
-    .page{padding:38px 18px 70px;}
-    .flip-grid{grid-template-columns:1fr;}
-    .flip-card{height:150px;}
-    .gap-num{font-size:1.7rem;}
-  }`;

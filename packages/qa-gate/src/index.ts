@@ -61,6 +61,11 @@ export interface RunQaGateInput {
     siblingDrafts: readonly SiblingDraft[];
     opening?: string;
   };
+  // Platform-specific gates computed by the calling agent (e.g. the Blog agent's
+  // editorial critic, AI-slop filter and component-evidence checks). Folded into
+  // overallStatus/requiredUserActions exactly like the core dimensions — a FAIL here
+  // blocks the same way — and stored on the result as `platformChecks`.
+  platformChecks?: Record<string, QaDimensionResult>;
 }
 
 function worstStatus(results: QaDimensionResult[]): 'PASS' | 'PASS_WITH_WARNINGS' | 'BLOCKED' {
@@ -156,7 +161,9 @@ export async function runQaGate(input: RunQaGateInput): Promise<QaResult> {
 
   // A failed factual gate always wins: good writing (rubric PASSes) can't lift a
   // BLOCKED editorial dimension (spec 63).
-  const allDimensions = { ...dimensions, ...editorialDimensions };
+  const platformChecks = input.platformChecks ?? {};
+  const platformDimensions = Object.fromEntries(Object.entries(platformChecks).map(([name, result]) => [`platform.${name}`, result]));
+  const allDimensions = { ...dimensions, ...editorialDimensions, ...platformDimensions };
   const overallStatus = worstStatus(Object.values(allDimensions));
   const requiredUserActions = Object.entries(allDimensions).flatMap(([name, result]) => requiredActionsFrom(name, result));
 
@@ -178,6 +185,7 @@ export async function runQaGate(input: RunQaGateInput): Promise<QaResult> {
     requiredUserActions,
     publishAllowed: false,
     ...(editorial ? { editorial } : {}),
+    ...(Object.keys(platformChecks).length > 0 ? { platformChecks } : {}),
   };
 }
 

@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
+import { analyzeArticleHtml, classifyOpening, learnFromApprovedBlog, recordEditorialFeedback } from '@bb/agent-blog';
 import { loadCurrentDna } from '@bb/content-dna';
 import { getQaResultForVersion, listPublishEventsForContent, listRevisionsForContent } from '@bb/db';
 import { briefSourceTexts, editorialBriefFromPackage, htmlToPlainText, loadSiblingDrafts } from '@bb/editorial-intelligence';
@@ -76,13 +77,40 @@ export function createContentRouter(deps: AppDeps): Router {
   router.post('/:id/approve', async (req, res) => {
     const body = parseWith(ApproveSchema, req.body);
     const item = await recordApproval(deps.pool, req.params.id ?? '', body.version, body.approvedBy);
+    // Blog Editorial Memory (spec 45): learn the editorial pattern of what the human
+    // changed between the AI draft and this approved version. Best-effort — learning
+    // must never block or undo an approval.
+    if (item.platform === 'blog') {
+      await learnFromApprovedBlog(deps.pool, item, deps.logger).catch((error: unknown) => {
+        deps.logger.warn({ contentId: item.id, err: error instanceof Error ? error.message : String(error) }, 'Editorial learning from approval failed');
+      });
+    }
     res.status(200).json({ item });
   });
+
+  // Review feedback on a blog article ("Too generic.", "Quiz felt forced.") is an
+  // explicit editorial signal. Only reusable patterns are kept (deterministic rules);
+  // article-specific remarks are not stored as memory.
+  async function learnFromReviewFeedback(contentId: string, feedback: string, source: 'explicit_feedback' | 'rejection'): Promise<void> {
+    const item = await getContentItem(deps.pool, contentId);
+    if (item?.platform !== 'blog') return;
+    await recordEditorialFeedback({
+      db: deps.pool,
+      feedback,
+      source,
+      strength: 'explicit',
+      contentId,
+      articleOpeningStyle: classifyOpening(analyzeArticleHtml(item.currentText).shape.opening),
+    }).catch((error: unknown) => {
+      deps.logger.warn({ contentId, err: error instanceof Error ? error.message : String(error) }, 'Editorial learning from review feedback failed');
+    });
+  }
 
   const FeedbackSchema = z.object({ feedback: z.string().min(1) });
   router.post('/:id/request-changes', async (req, res) => {
     const body = parseWith(FeedbackSchema, req.body);
     const item = await requestChanges(deps.pool, req.params.id ?? '', body.feedback);
+    await learnFromReviewFeedback(item.id, body.feedback, 'explicit_feedback');
     res.status(200).json({ item });
   });
 
@@ -90,6 +118,7 @@ export function createContentRouter(deps: AppDeps): Router {
   router.post('/:id/reject', async (req, res) => {
     const body = parseWith(RejectSchema, req.body);
     const item = await reject(deps.pool, req.params.id ?? '', body.reason);
+    await learnFromReviewFeedback(item.id, body.reason, 'rejection');
     res.status(200).json({ item });
   });
 

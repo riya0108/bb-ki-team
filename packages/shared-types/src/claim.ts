@@ -144,6 +144,9 @@ export const ClaimSchema = z.object({
   allowedParaphrase: z.array(z.string()).default([]),
   conflictingClaimIds: z.array(z.string()).default([]),
   notes: z.string().nullable().default(null),
+  // Where the claim holds ("India", "Maharashtra", "US"), when the source says so.
+  // Optional so every claim ledger stored before it existed still parses.
+  geography: z.string().nullable().optional(),
 });
 export type Claim = z.infer<typeof ClaimSchema>;
 

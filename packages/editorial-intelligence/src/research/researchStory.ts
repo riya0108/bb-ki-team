@@ -5,7 +5,7 @@ import type { EvidenceSource, EvidenceSourceKind, EvidenceTier } from '@bb/share
 
 import type { FeedItem } from './feeds.js';
 import { NEWS_SEARCH_FEEDS, parseRssItems, PRIMARY_FEEDS, splitPublisherSuffix } from './feeds.js';
-import { publisherForUrl, TIER_RANK, tierForPublisher, tierForUrl } from './sourceTiers.js';
+import { isDiscoveryOnlyUrl, publisherForUrl, TIER_RANK, tierForPublisher, tierForUrl } from './sourceTiers.js';
 
 // Spec 9/59: "Find what happened" — gather evidence, never write. Every fetch goes
 // through the agent's scoped fetch MCP tool and is logged; an inaccessible URL is
@@ -142,7 +142,7 @@ export async function researchStory(input: ResearchStoryInput): Promise<Research
         url: registry.url,
         title: fetched.title,
         publisher: registry.name,
-        tier: registry.tier,
+        tier: isDiscoveryOnlyUrl(registry.url) ? 'discovery' : registry.tier,
         publishedAt: null,
         fetchedAt: fetched.fetchedAt,
       },

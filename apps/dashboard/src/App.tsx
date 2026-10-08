@@ -8,6 +8,7 @@ import { ContentQueue } from './components/ContentQueue';
 import { DraftCanvas } from './components/DraftCanvas';
 import { LoginGate } from './components/LoginGate';
 import { PlatformTabs } from './components/PlatformTabs';
+import { EditorialMemoryPanel } from './components/EditorialMemoryPanel';
 import { ReferenceLibrary } from './components/ReferenceLibrary';
 import { ResizeHandle } from './components/ResizeHandle';
 import { ScheduledTracker } from './components/ScheduledTracker';
@@ -102,6 +103,7 @@ export function App() {
           </div>
           <ContentQueue platform={platform} selectedId={openContentId} onSelect={selectContent} refreshToken={refreshToken} />
           {platform === 'blog' && <ReferenceLibrary platform={platform} />}
+          {platform === 'blog' && <EditorialMemoryPanel />}
         </div>
         {mobileNavOpen && <div className="mobile-nav-backdrop" onClick={() => setMobileNavOpen(false)} />}
         <div className="center-panel">

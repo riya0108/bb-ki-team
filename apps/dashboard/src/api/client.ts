@@ -1,5 +1,8 @@
 import type {
+  BlogStyleProfile,
   ChatMessage,
+  EditorialMemory,
+  StyleSample,
   ContentDnaRecord,
   ContentItem,
   ContentStatus,
@@ -171,6 +174,36 @@ export function confirmLearningEvent(id: string, confirmedBy: string): Promise<{
 
 export function rejectLearningEvent(id: string): Promise<{ ok: true }> {
   return post(`/content-dna/learning-events/${id}/reject`);
+}
+
+// --- Blog Editorial Memory + Style Profile ---
+
+export function listEditorialMemories(): Promise<{ memories: EditorialMemory[] }> {
+  return request('/blog/memory');
+}
+
+export function sendEditorialFeedback(feedback: string, contentId: string | null): Promise<{ memories: EditorialMemory[] }> {
+  return post('/blog/memory/feedback', { feedback, contentId });
+}
+
+export function setEditorialMemory(id: string, decision: 'confirm' | 'reject'): Promise<{ memory: EditorialMemory }> {
+  return post(`/blog/memory/${id}/${decision}`);
+}
+
+export function getBlogStyleProfile(): Promise<{ profile: BlogStyleProfile; samples: StyleSample[] }> {
+  return request('/blog/style/profile');
+}
+
+export function addStyleReference(input: {
+  kind: 'own_published' | 'approved_reference' | 'user_supplied';
+  label: string;
+  source: { kind: 'url'; url: string } | { kind: 'text'; text: string };
+}): Promise<{ sample: StyleSample }> {
+  return post('/blog/style/references', input);
+}
+
+export function removeStyleSample(id: string): Promise<unknown> {
+  return request(`/blog/style/samples/${id}`, { method: 'DELETE' });
 }
 
 // --- Per-agent chat (spec 17.2) ---

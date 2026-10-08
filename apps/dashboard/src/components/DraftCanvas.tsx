@@ -16,6 +16,7 @@ import {
 } from '../api/client';
 import { useOperatorName } from '../hooks/useOperatorName';
 import { ActivityLog } from './ActivityLog';
+import { BlogEditorialPanel } from './BlogEditorialPanel';
 import { EditorialPanel } from './EditorialPanel';
 import { VisualPanel } from './VisualPanel';
 
@@ -190,6 +191,7 @@ export function DraftCanvas({ contentId, onChanged }: DraftCanvasProps) {
         <textarea className="draft-textarea" value={text} onChange={(e) => setText(e.target.value)} />
       )}
 
+      <BlogEditorialPanel item={item} />
       <EditorialPanel item={item} />
 
       <VisualPanel

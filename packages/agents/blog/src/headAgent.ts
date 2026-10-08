@@ -5,22 +5,30 @@ import type { ProvidedDocument } from '@bb/editorial-intelligence';
 import {
   briefSourceReferences,
   briefSourceTexts,
+  buildClaimLedger,
   buildEditorialSummary,
-  draftWithMeaningGuard,
+  buildSourceDisplay,
   loadSiblingDrafts,
   prepareEditorialBrief,
   tierForUrl,
 } from '@bb/editorial-intelligence';
 import type { FetchTool } from '@bb/mcp-client';
 import { buildQaGateUnavailableResult, runQaGate } from '@bb/qa-gate';
-import type { BlogPackage } from '@bb/shared-types';
+import type { BlogPackage, EditorialBrief, EditorialWarning } from '@bb/shared-types';
 import { createContentItem, recordQaResult, submitForReview } from '@bb/workflows';
 
-import type { DraftBlogArticleOutput } from './draftArticle.js';
+import type { DraftBlogArticleOutput, DraftBlogArticleWriterOutput } from './draftArticle.js';
 import { draftBlogArticle } from './draftArticle.js';
+import { planArticle } from './editorial/architect.js';
+import { articlePlainText } from './editorial/articleText.js';
+import { loadCoverageContext, renderCoverageForPlanner, resolveInternalLinks } from './editorial/coverage.js';
+import { buildBlogPlatformChecks } from './editorial/platformChecks.js';
+import { loadBlogStyleProfile, renderStyleProfileForWriter } from './editorial/styleProfile.js';
+import { writeArticleWithEditorialLoop } from './editorial/writeArticle.js';
 import { InvalidArticleHtmlError } from './errors.js';
 import { buildArticleHtml, slugify } from './htmlBuilder.js';
 import { validateBlogHtml } from './htmlValidation.js';
+import { loadEditorialMemories, markMemoriesUsed, renderMemoriesForWriter } from './memory/editorialMemory.js';
 import { buildBlogPackage } from './packaging.js';
 
 const CREATED_BY_AGENT = 'agent-05-blog';
@@ -46,12 +54,17 @@ export interface RunBlogArticleInput {
   sourceReferences?: string[];
   sampleArticleTexts?: string[];
   runId: string;
+  // How many final-editor revisions the editorial loop may run (default 1).
+  maxRevisions?: number;
 }
 
-// Spec 12.3's Blog workflow: draft in structured form, assemble HTML deterministically
-// (see htmlBuilder.ts), validate it, run the QA gate against the plain-text content,
-// persist, and submit for review. Never publishes or schedules — Phase 3's connectors
-// are separate and explicitly gated on a recorded approval.
+// Spec 12.3's Blog workflow, upgraded to the editorial pipeline:
+//   topic -> deep research -> verified claims -> story essence/angle (EditorialBrief)
+//   -> prior coverage + style profile + editorial memory -> article architecture
+//   -> first draft -> deterministic checks + editorial critic -> final editor
+//   -> deterministic HTML -> validation -> QA gate -> human review.
+// Never publishes or schedules — Phase 3's connectors are separate and explicitly
+// gated on a recorded approval.
 export async function runBlogArticle(input: RunBlogArticleInput): Promise<BlogPackage> {
   const dna = await loadCurrentDna(input.pool);
   const suppliedTexts = input.sourceTexts ?? [];
@@ -69,7 +82,8 @@ export async function runBlogArticle(input: RunBlogArticleInput): Promise<BlogPa
     };
   });
 
-  // Topic (+ any supplied source) -> research -> verified EditorialBrief, before drafting.
+  // Topic (+ any supplied source) -> deep research (incl. counter-evidence) -> verified
+  // EditorialBrief, before anything is planned or written.
   const brief = await prepareEditorialBrief(
     { pool: input.pool, llm: input.llm, fetchTool: input.fetchTool, logger: input.logger },
     {
@@ -78,19 +92,45 @@ export async function runBlogArticle(input: RunBlogArticleInput): Promise<BlogPa
       contentDna: dna,
       runId: input.runId,
       providedDocuments,
+      researchProfile: 'deep',
     },
   );
   const sourceReferences = [...new Set([...suppliedReferences, ...briefSourceReferences(brief)])];
   const sourceTexts = [...suppliedTexts, ...briefSourceTexts(brief)];
 
-  const flatten = (d: DraftBlogArticleOutput): string =>
-    [d.titleOptions[0] ?? '', d.deck, d.thesis, ...d.sections.map((sec) => `${sec.heading}\n${sec.body}`), d.practicalTakeaway ?? '', d.conclusion]
-      .filter((t) => t.length > 0)
-      .join('\n\n');
+  // What Bull or Bear has already written, how it writes, and what its editor has taught it.
+  const [memories, styleProfile, coverageContext] = await Promise.all([
+    loadEditorialMemories(input.pool),
+    loadBlogStyleProfile(input.pool),
+    loadCoverageContext(input.pool, input.topic, brief.topicKey),
+  ]);
+  const styleGuidance = [renderStyleProfileForWriter(styleProfile), renderMemoriesForWriter(memories)].filter((b) => b.length > 0).join('\n\n');
 
-  const { draft } = await draftWithMeaningGuard({
+  const architecture = await planArticle({
+    topic: input.topic,
+    articleType: input.articleType,
+    constraints: input.constraints ?? null,
     brief,
-    draft: (revisionNotes) =>
+    styleGuidance,
+    coverageNote: renderCoverageForPlanner(coverageContext.coverage),
+    memories,
+    llm: input.llm,
+    logger: input.logger,
+    runId: input.runId,
+  });
+  input.logger.info(
+    {
+      runId: input.runId,
+      stepId: 'blog-architect',
+      depth: architecture.articleDepth,
+      source: architecture.source,
+      components: architecture.componentDecisions.filter((d) => d.decision === 'USE').map((d) => d.type),
+    },
+    'Article architecture ready',
+  );
+
+  const written = await writeArticleWithEditorialLoop({
+    write: (revisionNotes, previousDraft) =>
       draftBlogArticle({
         topic: input.topic,
         articleType: input.articleType,
@@ -100,55 +140,63 @@ export async function runBlogArticle(input: RunBlogArticleInput): Promise<BlogPa
         contentDna: dna,
         llm: input.llm,
         runId: input.runId,
-        stepId: 'draft-blog-article',
+        stepId: previousDraft ? 'blog-final-editor' : 'draft-blog-article',
         editorialBrief: brief,
         revisionNotes,
+        architecture,
+        styleGuidance,
+        internalLinkCandidates: coverageContext.linkCandidates,
+        previousDraft,
       }),
-    textOf: flatten,
+    brief,
+    architecture,
+    llm: input.llm,
     logger: input.logger,
     runId: input.runId,
-    stepId: 'draft-blog-article',
+    ...(input.maxRevisions !== undefined ? { maxRevisions: input.maxRevisions } : {}),
+  });
+  await markMemoriesUsed(input.pool, memories).catch(() => undefined);
+
+  const coverageWarnings: EditorialWarning[] =
+    coverageContext.coverage.status === 'previously_covered'
+      ? [
+          {
+            code: 'prior_coverage',
+            severity: 'warn',
+            message: `Bull or Bear has covered this before ("${coverageContext.coverage.matches[0]?.title ?? ''}"); planner decision: ${architecture.priorCoverageDecision.replace(/_/g, ' ')}.`,
+          },
+        ]
+      : [];
+
+  const assembled = assembleBlogArticle({
+    draft: written.draft,
+    brief,
+    linkCandidates: coverageContext.linkCandidates,
   });
 
-  const title = draft.titleOptions[0];
-  if (!title) throw new Error('runBlogArticle: draft returned no title options');
-  const slug = slugify(title);
-
-  const { html } = buildArticleHtml({
-    title,
-    deck: draft.deck,
-    category: draft.category,
-    metaDescription: draft.metaDescription,
-    sections: draft.sections,
-    practicalTakeaway: draft.practicalTakeaway,
-    conclusion: draft.conclusion,
-    disclaimer: draft.disclaimer,
-    sources: draft.sources,
-    comparisonStat: draft.comparisonStat,
-    revealCards: draft.revealCards,
-    poll: draft.poll,
-    pullQuote: draft.pullQuote,
-  });
-
-  const validation = validateBlogHtml(html);
-  if (!validation.valid) throw new InvalidArticleHtmlError(validation.issues);
+  const stored: DraftBlogArticleOutput = {
+    ...assembled.draft,
+    editorialArchitecture: architecture,
+    editorialQuality: written.quality,
+    styleMemorySignals: [],
+    editorialWarnings: [...written.warnings, ...coverageWarnings],
+  };
 
   const item = await createContentItem(input.pool, {
     platform: 'blog',
     createdByAgent: CREATED_BY_AGENT,
     mode: 'single_topic',
     topic: input.topic,
-    contentPillar: draft.category,
+    contentPillar: stored.category,
     sourceUrls: sourceReferences,
     contentDnaVersion: dna.version,
-    text: html,
+    text: assembled.html,
     riskLevel: brief.riskLevel,
-    package: { ...draft, slug, editorialBrief: brief },
+    package: { ...stored, slug: assembled.slug, editorialBrief: brief, coverage: coverageContext.coverage },
   });
 
-  // QA judges the article's actual prose, not markup noise — flatten the structured
-  // draft back to plain text rather than feeding it the assembled HTML.
-  const plainText = flatten(draft);
+  // QA judges the article's actual words — prose AND every widget's text — not markup.
+  const plainText = articlePlainText(stored);
 
   // A QA gate failure (e.g. every LLM provider down at once — observed live,
   // 2026-09-15) must not strand this item in "draft" forever: createContentItem
@@ -168,11 +216,89 @@ export async function runBlogArticle(input: RunBlogArticleInput): Promise<BlogPa
     editorial: {
       brief,
       siblingDrafts: await loadSiblingDrafts(input.pool, brief.id, item.id),
-      opening: [title, draft.deck].join('. '),
+      opening: [assembled.title, stored.deck].join('. '),
     },
+    platformChecks: buildBlogPlatformChecks({
+      draft: stored,
+      architecture,
+      quality: written.quality,
+      warnings: stored.editorialWarnings,
+      htmlIssues: [],
+      internalLinks: stored.internalLinks,
+      requestedLinkCount: written.draft.internalLinks.length,
+      renderedComponents: assembled.components,
+    }),
   }).catch((error: unknown) => buildQaGateUnavailableResult(error instanceof Error ? error.message : String(error)));
   await recordQaResult(input.pool, item.id, item.currentVersion, qa);
 
   const reviewedItem = await submitForReview(input.pool, item.id);
-  return buildBlogPackage(reviewedItem, draft, slug, qa, buildEditorialSummary(brief));
+  return buildBlogPackage(reviewedItem, stored, assembled.slug, qa, buildEditorialSummary(brief), {
+    claimLedger: brief.kind === 'opinion' ? [] : buildClaimLedger(brief),
+    coverage: coverageContext.coverage,
+    interactiveComponents: assembled.components,
+  });
+}
+
+export interface AssembleBlogArticleInput {
+  draft: DraftBlogArticleWriterOutput;
+  brief: EditorialBrief | null;
+  linkCandidates: readonly { contentId: string; title: string; url: string; thesis: string | null }[];
+}
+
+export interface AssembledBlogArticle {
+  // The writer draft with its internal links resolved and its sources replaced by
+  // the verified source display (writer-supplied source labels are never trusted when
+  // a researched brief exists — spec 27: no invented citations).
+  draft: Omit<DraftBlogArticleOutput, 'editorialArchitecture' | 'editorialQuality' | 'styleMemorySignals' | 'editorialWarnings'>;
+  title: string;
+  slug: string;
+  html: string;
+  components: string[];
+}
+
+// Draft -> deterministic HTML -> validation. Shared by new drafts and edits so an edit
+// can never produce markup the validator hasn't checked.
+export function assembleBlogArticle(input: AssembleBlogArticleInput): AssembledBlogArticle {
+  const { draft, brief } = input;
+  const title = draft.titleOptions[0];
+  if (!title) throw new Error('assembleBlogArticle: draft returned no title options');
+  const slug = slugify(title);
+
+  const bodyText = [...draft.sections.map((s) => s.body), draft.practicalTakeaway ?? '', draft.conclusion].join('\n\n');
+  const internalLinks = resolveInternalLinks(draft.internalLinks, input.linkCandidates, bodyText).map((l) => ({
+    ...l,
+    targetSlug: l.targetSlug || (l.targetUrl.split('/').filter((p) => p.length > 0).pop() ?? ''),
+  }));
+
+  const sourceDisplay = brief && brief.kind !== 'opinion' ? buildSourceDisplay(brief) : [];
+  const sourceLinks = sourceDisplay.map((s) => ({ label: s.label, url: s.url }));
+  const sources = sourceLinks.length > 0 ? sourceLinks.map((s) => s.label) : brief && brief.kind !== 'opinion' ? [] : draft.sources;
+
+  const { html, components } = buildArticleHtml({
+    title,
+    deck: draft.deck,
+    category: draft.category,
+    metaDescription: draft.metaDescription,
+    sections: draft.sections,
+    practicalTakeaway: draft.practicalTakeaway,
+    conclusion: draft.conclusion,
+    disclaimer: draft.disclaimer,
+    sources,
+    sourceLinks,
+    shortVersion: draft.shortVersion,
+    comparisonStat: draft.comparisonStat,
+    revealCards: draft.revealCards,
+    poll: draft.poll,
+    pullQuote: draft.pullQuote,
+    table: draft.table,
+    quiz: draft.quiz,
+    decision: draft.decision,
+    timeline: draft.timeline,
+    internalLinks: internalLinks.map((l) => ({ anchorText: l.anchorText, url: l.targetUrl })),
+  });
+
+  const validation = validateBlogHtml(html);
+  if (!validation.valid) throw new InvalidArticleHtmlError(validation.issues);
+
+  return { draft: { ...draft, sources, internalLinks }, title, slug, html, components };
 }

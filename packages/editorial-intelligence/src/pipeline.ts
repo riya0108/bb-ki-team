@@ -19,6 +19,7 @@ import { generateHooks } from './generateHooks.js';
 import type { ProvidedDocument, ResearchDossier } from './research/researchStory.js';
 import { researchStory } from './research/researchStory.js';
 import { tierForRegistrySource } from './research/sourceTiers.js';
+import { detectSyndicatedGroups } from './research/syndication.js';
 import { selectAngle } from './selectAngles.js';
 import { deriveThingsNotToSay } from './thingsNotToSay.js';
 import { normalizeTopicKey } from './topicKey.js';
@@ -53,17 +54,30 @@ export interface PrepareEditorialBriefInput {
   runId: string;
   // Defaults to true; source-led flows with their own documents never reuse.
   reuseExisting?: boolean;
+  // 'deep' (Blog): also runs the counter-evidence queries and fetches more full
+  // articles. Only a brief researched at 'deep' is reused for a 'deep' request.
+  researchProfile?: ResearchProfile;
 }
+
+export type ResearchProfile = 'standard' | 'deep';
+
+const RESEARCH_LIMITS: Record<ResearchProfile, { maxSearchQueries: number; maxArticleFetches: number; maxSnippetDocuments: number }> = {
+  standard: { maxSearchQueries: 2, maxArticleFetches: 4, maxSnippetDocuments: 8 },
+  deep: { maxSearchQueries: 7, maxArticleFetches: 7, maxSnippetDocuments: 12 },
+};
 
 function logStep(deps: EditorialDeps, runId: string, stepId: string, msg: string, extra: Record<string, unknown> = {}): void {
   deps.logger.info({ runId, stepId, ...extra }, msg);
 }
 
-async function findReusableBrief(deps: EditorialDeps, topicKey: string): Promise<EditorialBrief | null> {
+async function findReusableBrief(deps: EditorialDeps, topicKey: string, profile: ResearchProfile): Promise<EditorialBrief | null> {
   const raw = await findRecentEditorialBrief(deps.pool, topicKey, new Date(Date.now() - BRIEF_REUSE_WINDOW_MS));
   if (raw === null) return null;
   const parsed = EditorialBriefSchema.safeParse(raw);
-  return parsed.success ? parsed.data : null;
+  if (!parsed.success) return null;
+  // A shallower brief would silently skip the contradiction research a deep request needs.
+  if (profile === 'deep' && parsed.data.research.profile !== 'deep') return null;
+  return parsed.data;
 }
 
 async function relevantRegistrySources(
@@ -147,9 +161,10 @@ export async function prepareEditorialBrief(deps: EditorialDeps, input: PrepareE
   const { runId } = input;
   const providedDocuments = input.providedDocuments ?? [];
   const topicKey = normalizeTopicKey(input.topic);
+  const profile: ResearchProfile = input.researchProfile ?? 'standard';
 
   if ((input.reuseExisting ?? true) && providedDocuments.length === 0) {
-    const reusable = await findReusableBrief(deps, topicKey);
+    const reusable = await findReusableBrief(deps, topicKey, profile);
     if (reusable) {
       logStep(deps, runId, 'editorial-reuse', 'Reusing a recent editorial brief for this topic', { briefId: reusable.id });
       return reusable;
@@ -187,7 +202,7 @@ export async function prepareEditorialBrief(deps: EditorialDeps, input: PrepareE
     return buildEditorialBrief({
       ...base,
       kind: 'opinion',
-      research: { queries: [], documentsConsidered: 0, documentsUsed: 0, failures: [] },
+      research: { queries: [], documentsConsidered: 0, documentsUsed: 0, failures: [], profile, counterEvidenceQueries: [], syndicatedGroups: [] },
       sources: [],
       claims: [],
       storyEssence: null,
@@ -200,9 +215,15 @@ export async function prepareEditorialBrief(deps: EditorialDeps, input: PrepareE
     });
   }
 
+  const counterEvidenceQueries = profile === 'deep' ? analysis.counterEvidenceQueries : [];
+  const explanatoryQueries = profile === 'deep' ? analysis.explanatoryQueries : [];
   const dossier: ResearchDossier = await researchStory({
     topic: analysis.normalizedTopic,
-    queries: analysis.searchQueries,
+    queries:
+      profile === 'deep'
+        ? [...analysis.searchQueries.slice(0, 2), ...explanatoryQueries.slice(0, 3), ...counterEvidenceQueries.slice(0, 2)]
+        : analysis.searchQueries,
+    ...RESEARCH_LIMITS[profile],
     userUrls: extractUrls(input.userMessage ?? ''),
     providedDocuments,
     registrySources: await relevantRegistrySources(deps, `${input.topic} ${analysis.normalizedTopic}`),
@@ -215,6 +236,9 @@ export async function prepareEditorialBrief(deps: EditorialDeps, input: PrepareE
     documentsConsidered: dossier.documentsConsidered,
     documentsUsed: dossier.documents.length,
     failures: dossier.failures,
+    profile,
+    counterEvidenceQueries,
+    syndicatedGroups: detectSyndicatedGroups(dossier.documents),
   };
   const sources = dossier.documents.map((d) => d.source);
 
@@ -248,6 +272,7 @@ export async function prepareEditorialBrief(deps: EditorialDeps, input: PrepareE
       candidateFacts: analysis.userRequest.candidateFacts,
       llm: deps.llm,
       runId,
+      deep: profile === 'deep',
     });
   } catch (error) {
     deps.logger.warn({ runId, stepId: 'editorial-extract-claims', err: error instanceof Error ? error.message : String(error) }, 'Claim extraction failed');

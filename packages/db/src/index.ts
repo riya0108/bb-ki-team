@@ -12,3 +12,5 @@ export * from './repositories/chatMessages.js';
 export * from './repositories/chatSessions.js';
 export * from './repositories/visualAssets.js';
 export * from './repositories/visualReferenceAssets.js';
+export * from './repositories/editorialMemories.js';
+export * from './repositories/blogStyleSamples.js';

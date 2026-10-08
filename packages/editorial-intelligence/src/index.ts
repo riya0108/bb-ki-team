@@ -14,3 +14,5 @@ export * from './topicKey.js';
 export * from './writerBrief.js';
 export * from './pipeline.js';
 export * from './writerGuard.js';
+export * from './research/syndication.js';
+export * from './claimLedger.js';

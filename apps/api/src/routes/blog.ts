@@ -1,7 +1,23 @@
 import { randomUUID } from 'node:crypto';
 
-import { handleBlogChatMessage, runBlogArticle, runBlogArticleFromSource } from '@bb/agent-blog';
-import { createChatSession, getOrCreateLatestChatSession, listChatMessages } from '@bb/db';
+import {
+  aggregateStyleProfile,
+  handleBlogChatMessage,
+  ingestStyleReference,
+  MEMORY_SCOPE,
+  recordEditorialFeedback,
+  runBlogArticle,
+  runBlogArticleFromSource,
+  setEditorialMemoryStatus,
+} from '@bb/agent-blog';
+import {
+  createChatSession,
+  deactivateStyleSample,
+  getOrCreateLatestChatSession,
+  listActiveStyleSamples,
+  listChatMessages,
+  listLiveEditorialMemories,
+} from '@bb/db';
 import { Router } from 'express';
 import { z } from 'zod';
 
@@ -97,6 +113,86 @@ export function createBlogRouter(deps: AppDeps): Router {
       runId,
     );
     res.status(200).json({ runId, ...chatResult });
+  });
+
+  // --- Blog Editorial Memory (spec 8/9/45) ---------------------------------------
+  router.get('/memory', async (_req, res) => {
+    const memories = await listLiveEditorialMemories(deps.pool, MEMORY_SCOPE);
+    res.status(200).json({ memories });
+  });
+
+  const MemoryFeedbackSchema = z.object({
+    feedback: z.string().min(1).max(2000),
+    contentId: z.string().uuid().nullable().optional(),
+  });
+  // Explicit editorial feedback ("Quiz felt forced", "Needs more historical context")
+  // → reusable patterns; unclassifiable feedback is kept in the editor's own words.
+  router.post('/memory/feedback', async (req, res) => {
+    const body = parseWith(MemoryFeedbackSchema, req.body);
+    const runId = randomUUID();
+    const outcomes = await recordEditorialFeedback({
+      db: deps.pool,
+      feedback: body.feedback,
+      source: 'explicit_feedback',
+      strength: 'explicit',
+      contentId: body.contentId ?? null,
+      llm: deps.llm,
+      logger: deps.logger,
+      runId,
+      keepUnclassified: true,
+    });
+    res.status(201).json({ runId, memories: outcomes.map((o) => ({ ...o.memory, action: o.action })) });
+  });
+
+  const IdParamsSchema = z.object({ id: z.string().uuid() });
+  router.post('/memory/:id/confirm', async (req, res) => {
+    const { id } = parseWith(IdParamsSchema, req.params);
+    const memory = await setEditorialMemoryStatus(deps.pool, id, 'confirm');
+    res.status(200).json({ memory });
+  });
+
+  router.post('/memory/:id/reject', async (req, res) => {
+    const { id } = parseWith(IdParamsSchema, req.params);
+    const memory = await setEditorialMemoryStatus(deps.pool, id, 'reject');
+    res.status(200).json({ memory });
+  });
+
+  // --- Blog Style Profile (spec 10/11) ---------------------------------------------
+  router.get('/style/profile', async (_req, res) => {
+    const samples = await listActiveStyleSamples(deps.pool);
+    res.status(200).json({ profile: aggregateStyleProfile(samples), samples });
+  });
+
+  const StyleReferenceSchema = z.object({
+    kind: z.enum(['own_published', 'approved_reference', 'user_supplied']),
+    label: z.string().min(1).max(200),
+    source: z.union([
+      z.object({ kind: z.literal('url'), url: z.string().url() }),
+      z.object({ kind: z.literal('text'), text: z.string().min(1).max(100_000) }),
+    ]),
+  });
+  // Ingests an approved reference article as an abstracted style sample — the text is
+  // measured and characterised, never stored.
+  router.post('/style/references', async (req, res) => {
+    const body = parseWith(StyleReferenceSchema, req.body);
+    const runId = randomUUID();
+    const sample = await ingestStyleReference({
+      db: deps.pool,
+      llm: deps.llm,
+      fetchTool: deps.fetchTool,
+      logger: deps.logger,
+      runId,
+      kind: body.kind,
+      label: body.label,
+      source: body.source,
+    });
+    res.status(201).json({ runId, sample });
+  });
+
+  router.delete('/style/samples/:id', async (req, res) => {
+    const { id } = parseWith(IdParamsSchema, req.params);
+    await deactivateStyleSample(deps.pool, id);
+    res.status(204).end();
   });
 
   return router;

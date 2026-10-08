@@ -31,6 +31,13 @@ export const ResearchSummarySchema = z.object({
   documentsConsidered: z.number().int().nonnegative(),
   documentsUsed: z.number().int().nonnegative(),
   failures: z.array(z.object({ url: z.string(), reason: z.string() })).default([]),
+  // 'deep' (blog) adds counter-evidence queries and fetches more full articles; a
+  // standard brief is never reused for a deep request (see prepareEditorialBrief).
+  profile: z.enum(['standard', 'deep']).default('standard'),
+  counterEvidenceQueries: z.array(z.string()).default([]),
+  // Groups of document IDs that are copies/syndications of the same report, so five
+  // outlets running one wire story never count as five confirmations (spec 28).
+  syndicatedGroups: z.array(z.array(z.string())).default([]),
 });
 export type ResearchSummary = z.infer<typeof ResearchSummarySchema>;
 

@@ -67,5 +67,14 @@ export const StoryEssenceSchema = z.object({
   editorialAngles: z.array(EditorialAngleSchema).default([]),
   recommendedAngleId: z.string().nullable(),
   confidence: z.number().min(0).max(1),
+  // Contradiction engine: usable claims that cut AGAINST the obvious reading / the
+  // recommended angle, the strongest counterargument they support, and what the
+  // evidence cannot tell us. Defaults keep older stored essences parsing.
+  counterEvidenceClaimIds: z.array(z.string()).default([]),
+  strongestCounterargument: z.string().nullable().default(null),
+  commonExplanation: z.string().nullable().default(null),
+  whatDataDoesNotShow: z.array(z.string()).default([]),
+  openQuestions: z.array(z.string()).default([]),
+  whatToWatch: z.array(z.string()).default([]),
 });
 export type StoryEssence = z.infer<typeof StoryEssenceSchema>;

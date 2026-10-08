@@ -19,6 +19,12 @@ export const TopicAnalysisSchema = z.object({
   // A short, search-friendly statement of the story (no hooks, no style).
   normalizedTopic: z.string().min(1),
   searchQueries: z.array(z.string().min(2)).min(1).max(4),
+  // Spec (contradiction engine): queries aimed at evidence that could disprove the
+  // obvious reading of the story — only run for deep (blog) research.
+  counterEvidenceQueries: z.array(z.string().min(2)).max(3).default([]),
+  // Deep research only: queries that find the WHY — the mechanism, the system, the
+  // programme, the history — rather than the latest headline.
+  explanatoryQueries: z.array(z.string().min(2)).max(3).default([]),
   entities: z.array(z.string()).default([]),
   userRequest: UserRequestAnalysisSchema,
 });
@@ -87,6 +93,11 @@ brand) and decide what the story is and whether it needs research. You never wri
 - riskLevel: high for finance/investment claims, politics, health, legal/tax, accusations, breaking
   news, statistics or geopolitics; medium for business/product/market news; low for evergreen.
 - searchQueries: 1-4 short news-search queries that would find primary and reputable coverage.
+- counterEvidenceQueries: 0-3 short queries that would find evidence AGAINST the obvious reading of
+  the story (the opposite trend, the official rebuttal, the longer-term data, the skeptic's case).
+  Ask yourself: what evidence would make the likely conclusion wrong?
+- explanatoryQueries: 0-3 short queries that would find the MECHANISM behind the story (how the system
+  works, the programme/policy/funding involved, the historical context, the data series), not the news.
 - userRequest: split the user's message.
   candidateFacts = factual statements the user asserted (e.g. "RBI hiked rates for the first time since
   2023") — copy them faithfully, keep every qualifier ("first", "since 2023", "proposed", "could").
@@ -152,6 +163,8 @@ export async function analyzeTopic(input: AnalyzeTopicInput): Promise<TopicAnaly
       riskFlags: deterministicRisk.riskFlags,
       normalizedTopic: input.topic,
       searchQueries: [input.topic.slice(0, 120)],
+      counterEvidenceQueries: [],
+      explanatoryQueries: [],
       entities: [],
       userRequest: input.angle ? { ...userRequest, angleRequests: [input.angle] } : userRequest,
       usedFallback: true,

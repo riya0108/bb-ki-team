@@ -20,3 +20,4 @@ export * from './claim.js';
 export * from './storyEssence.js';
 export * from './hook.js';
 export * from './editorialBrief.js';
+export * from './blogEditorial.js';

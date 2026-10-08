@@ -54,6 +54,14 @@ Rules:
   emerge from the story itself; never manufacture fear, outrage or urgency for engagement.
   Score relevance, novelty, readerImpact, curiosity, brandFit 0-10. matchesUserIntent = true only
   for an angle that delivers what the user explicitly asked for.
+- Investigate, don't summarise: what happened, why, what changed, who is affected, what the data
+  shows AND does not show, the commonly accepted explanation (commonExplanation) and whether it is
+  complete, the hidden mechanism, the counterarguments, the limitations, what happens next.
+- Contradiction check: list in counterEvidenceClaimIds any usable claims that cut against the obvious
+  reading or the recommended angle, and state strongestCounterargument (the best case against the
+  recommended angle, from the claims only; null if the claims give none). Never cherry-pick.
+- whatDataDoesNotShow: limits of the evidence. openQuestions: what is genuinely unknown.
+  whatToWatch: concrete things that would confirm or overturn the story (no invented dates).
 - thingsNotToSay: short phrases a writer might be tempted to use that would distort a protected
   fact (e.g. "rate hike again" for a first-since fact, "has imposed" for a proposal).
 - uncertaintyNotes: what is not established. temporalNotes: how time-sensitive facts must be phrased.`;
@@ -125,6 +133,7 @@ export function reconcileSignificance(
     ...response.essence,
     mostImportantFactClaimId: pick(response.essence.mostImportantFactClaimId),
     mostInterestingFactClaimId: pick(response.essence.mostInterestingFactClaimId),
+    counterEvidenceClaimIds: response.essence.counterEvidenceClaimIds.filter((id) => usableIds.has(id)),
     rankedFacts,
     editorialAngles: angles,
     recommendedAngleId: recommended?.id ?? null,

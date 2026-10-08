@@ -37,4 +37,16 @@ describe('BlogPackageSchema', () => {
     expect(result.success).toBe(true);
     if (result.success) expect(result.data.visualAssetId).toBeNull();
   });
+
+  it('keeps parsing packages produced before the editorial upgrade, defaulting every new field', () => {
+    const result = BlogPackageSchema.parse(base);
+    expect(result.editorialArchitecture).toBeNull();
+    expect(result.editorialQuality).toBeNull();
+    expect(result.interactiveComponents).toEqual([]);
+    expect(result.claimLedger).toEqual([]);
+    expect(result.internalLinks).toEqual([]);
+    expect(result.seo).toBeNull();
+    expect(result.coverage).toBeNull();
+    expect(result.editorialWarnings).toEqual([]);
+  });
 });

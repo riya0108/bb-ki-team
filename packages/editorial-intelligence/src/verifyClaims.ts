@@ -5,6 +5,7 @@ import { z } from 'zod';
 
 import type { ResearchDocument } from './research/researchStory.js';
 import { TIER_RANK } from './research/sourceTiers.js';
+import { independenceKeys } from './research/syndication.js';
 
 // Spec 12/13: verification compares each claim against the evidence actually gathered.
 // Two independent layers:
@@ -54,7 +55,13 @@ export function quoteOccursIn(quote: string, documentText: string): boolean {
 }
 
 // The best status the gathered evidence can justify, before any model judgement.
-export function evidenceCeiling(claim: Claim, documentsById: ReadonlyMap<string, ResearchDocument>): VerificationStatus {
+// `independenceKey` maps a document to the independent report it belongs to (see
+// research/syndication.ts): two syndicated copies of one wire story count once.
+export function evidenceCeiling(
+  claim: Claim,
+  documentsById: ReadonlyMap<string, ResearchDocument>,
+  independenceKey?: ReadonlyMap<string, string>,
+): VerificationStatus {
   const supporting = claim.evidence
     .filter((e) => e.quoteFound)
     .map((e) => documentsById.get(e.sourceId))
@@ -72,7 +79,7 @@ export function evidenceCeiling(claim: Claim, documentsById: ReadonlyMap<string,
     new Set(
       supporting
         .filter((d) => TIER_RANK[d.source.tier] >= TIER_RANK[tier] && (!kinds || kinds.includes(d.source.kind)))
-        .map((d) => d.source.publisher ?? d.source.url ?? d.source.id),
+        .map((d) => independenceKey?.get(d.source.id) ?? d.source.publisher ?? d.source.url ?? d.source.id),
     ).size;
 
   const full = ['fetched_article', 'primary_feed_item', 'trusted_source'] as const;
@@ -203,7 +210,8 @@ export async function verifyClaims(input: VerifyClaimsInput): Promise<Claim[]> {
       return { ...e, quoteFound: doc !== undefined && quoteOccursIn(e.quote, doc.text) };
     }),
   }));
-  const ceilings = new Map(checked.map((c) => [c.id, evidenceCeiling(c, documentsById)]));
+  const keys = independenceKeys(input.documents);
+  const ceilings = new Map(checked.map((c) => [c.id, evidenceCeiling(c, documentsById, keys)]));
 
   // Layer 2: LLM verdicts.
   let verdicts: Map<string, ClaimVerdict> | null = null;

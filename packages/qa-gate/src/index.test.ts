@@ -24,6 +24,32 @@ const dna: ContentDnaRecord = {
 const passingRubricResponse = JSON.stringify({ status: 'PASS', notes: 'looks good' });
 
 describe('runQaGate', () => {
+  it('folds platform-specific checks into the overall status and stores them', async () => {
+    const llm = createFakeLlmClient(() => passingRubricResponse);
+    const input = {
+      finalPost: 'A clean, plain sentence about markets. No tricks here.',
+      sourceReferences: [],
+      sourceTexts: [],
+      contentDna: dna,
+      status: 'in_review' as const,
+      llm,
+      runId: 'run-1',
+      stepId: 'step-1',
+      platform: 'Blog article',
+    };
+    const warned = await runQaGate({ ...input, platformChecks: { seo: { status: 'WARN', notes: 'no keyword' } } });
+    expect(warned.overallStatus).toBe('PASS_WITH_WARNINGS');
+    expect(warned.platformChecks?.seo?.status).toBe('WARN');
+    expect(warned.requiredUserActions).toContain('platform.seo: no keyword');
+
+    const blocked = await runQaGate({ ...input, platformChecks: { editorial_critic: { status: 'FAIL', notes: 'below the bar' } } });
+    expect(blocked.overallStatus).toBe('BLOCKED');
+    expect(blocked.publishAllowed).toBe(false);
+
+    const none = await runQaGate(input);
+    expect(none.platformChecks).toBeUndefined();
+  });
+
   it('returns PASS with publishAllowed=false when everything passes', async () => {
     const llm = createFakeLlmClient(() => passingRubricResponse);
     const result = await runQaGate({

@@ -30,6 +30,9 @@ const ERROR_STATUS: Record<string, number> = {
   VisualBlockedMissingTruthLayerError: 409,
   VisualBriefNotPendingError: 409,
   VisualNotReviewableError: 409,
+  EditorialMemoryNotFoundError: 404,
+  ReferenceArticleTooShortError: 422,
+  FetchToolError: 502,
 };
 
 function statusForError(error: unknown): number {

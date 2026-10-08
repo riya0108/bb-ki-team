@@ -1,5 +1,14 @@
 import { z } from 'zod';
 
+import {
+  ClaimLedgerEntrySchema,
+  CoverageCheckSchema,
+  EditorialArchitectureSchema,
+  EditorialQualitySchema,
+  EditorialWarningSchema,
+  InternalLinkSchema,
+  SeoPlanSchema,
+} from './blogEditorial.js';
 import { ContentStatusSchema } from './contentItem.js';
 import { EditorialSummarySchema } from './editorialBrief.js';
 import { PublishActionSchema } from './publishAction.js';
@@ -33,5 +42,17 @@ export const BlogPackageSchema = z.object({
   // uncertain claims, chosen hook) — surfaced for human review. null for drafts not
   // produced through the editorial-intelligence pipeline (repurpose/quote/edit flows).
   editorialSummary: EditorialSummarySchema.nullable().default(null),
+  // Editorial upgrade (all additive, all defaulting so older callers keep parsing):
+  // why the article is built the way it is, how the critic scored it, which
+  // interactive components were used (and why others weren't), the verified claim
+  // ledger it rests on, and anything the reviewer should look at first.
+  editorialArchitecture: EditorialArchitectureSchema.nullable().default(null),
+  editorialQuality: EditorialQualitySchema.nullable().default(null),
+  interactiveComponents: z.array(z.string()).default([]),
+  claimLedger: z.array(ClaimLedgerEntrySchema).default([]),
+  internalLinks: z.array(InternalLinkSchema).default([]),
+  seo: SeoPlanSchema.nullable().default(null),
+  coverage: CoverageCheckSchema.nullable().default(null),
+  editorialWarnings: z.array(EditorialWarningSchema).default([]),
 });
 export type BlogPackage = z.infer<typeof BlogPackageSchema>;

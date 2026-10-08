@@ -118,6 +118,7 @@ async function dispatch(
         contentId,
         instruction: action.instruction,
         runId,
+        logger: deps.logger,
       });
       const learningNote = learningEvent ? ' I also noticed a possible voice preference — check the DNA panel to confirm it.' : '';
       return { reply: `Updated the article.${learningNote}`, result: { package: pkg, learningEvent } };
