@@ -27,3 +27,7 @@ data/
 
 # Local Netlify folder
 .netlify
+
+# macOS AppleDouble metadata (external drive) and installed agent skills (see skills-lock.json)
+._*
+.agents/
