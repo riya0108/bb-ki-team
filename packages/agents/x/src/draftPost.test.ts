@@ -132,6 +132,31 @@ describe('draftXPost', () => {
 
     expect(result.mode).toBe('single');
     expect(result.threadPosts).toBeNull();
+    // Replies that fit in one post are folded back in, never dropped.
+    expect(result.finalCopy).toBe('first post\n\nsecond post');
+  });
+
+  it('keeps reply posts in single mode when the post genuinely cannot fit 280 characters', async () => {
+    const main = `Main post. ${'a'.repeat(200)}`;
+    const reply = `Reply post. ${'b'.repeat(200)}`;
+    const llm = createFakeLlmClient(() =>
+      JSON.stringify({ mode: 'thread', hookOptions: ['hook'], finalCopy: main, threadPosts: [main, reply], factCheckStatus: 'ok' }),
+    );
+
+    const result = await draftXPost({
+      topic: 'UPI adoption',
+      angle: 'An angle',
+      sourceTexts: [],
+      contentDna: dna,
+      llm,
+      runId: 'test-run',
+      stepId: 'draft-test',
+      forceMode: 'single',
+    });
+
+    expect(result.mode).toBe('thread');
+    expect(result.finalCopy).toBe(main);
+    expect(result.threadPosts).toEqual([main, reply]);
   });
 
   it('forces mode to thread and backfills threadPosts when forceMode=thread is disobeyed', async () => {

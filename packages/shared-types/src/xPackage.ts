@@ -19,7 +19,8 @@ export const XPackageSchema = z.object({
   angle: z.string().nullable(),
   hookOptions: z.array(z.string()).default([]),
   finalCopy: z.string(),
-  // Non-null only when mode === 'thread'; finalCopy still carries the first post so
+  // Non-null in 'thread' mode, and in 'single'/'quote' mode when the post ran past 280
+  // characters and continues as replies; finalCopy still carries the first post so
   // every mode has one consistent "the primary text" field.
   threadPosts: z.array(z.string()).nullable(),
   sourceReferences: z.array(z.string()).default([]),

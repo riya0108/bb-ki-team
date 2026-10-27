@@ -1,6 +1,7 @@
 import type { Logger, XCredentials } from '@bb/core';
 import { createXApiClient, createXMcpServer } from '@bb/mcp-x';
 import type { ContentItem } from '@bb/shared-types';
+import { X_MAX_POST_LENGTH, xPostLength } from '@bb/shared-types';
 import type { PublishConnector, ScheduleConnector } from '@bb/workflows';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
@@ -14,11 +15,10 @@ export class XPublishError extends Error {
   }
 }
 
-const X_MAX_POST_LENGTH = 280;
 
-// A thread (spec 6.1) is posted as its threadPosts array, in order; every other X
-// mode (single/quote) is one post carrying item.currentText (packaging.ts: finalCopy
-// always mirrors currentText, threadPosts is null outside thread mode).
+// Any item with threadPosts (a thread, or a single/quote post that ran past 280
+// characters and continues as replies) is posted as that array, reply-chained in
+// order; otherwise it is one post carrying item.currentText.
 export function tweetsForItem(item: ContentItem): string[] {
   const threadPosts = (item.package as { threadPosts?: unknown } | null)?.threadPosts;
   if (Array.isArray(threadPosts) && threadPosts.length > 0) {
@@ -67,10 +67,10 @@ export function createXPublishConnector(
     async publish(item: ContentItem): Promise<{ platformPostId: string; platformUrl: string }> {
       await ensureConnected();
       const posts = tweetsForItem(item);
-      const tooLong = posts.find((post) => post.length > X_MAX_POST_LENGTH);
+      const tooLong = posts.find((post) => xPostLength(post) > X_MAX_POST_LENGTH);
       if (tooLong) {
         throw new XPublishError(
-          `Post exceeds X's ${X_MAX_POST_LENGTH}-character limit (${tooLong.length} characters): "${tooLong.slice(0, 60)}..."`,
+          `Post exceeds X's ${X_MAX_POST_LENGTH}-character limit (${xPostLength(tooLong)} characters as X counts them): "${tooLong.slice(0, 60)}..."`,
         );
       }
       const response = await client.callTool({ name: 'post_tweet_thread', arguments: { posts } });

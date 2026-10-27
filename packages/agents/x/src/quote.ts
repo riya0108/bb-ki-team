@@ -9,7 +9,7 @@ import { createContentItem, recordQaResult, submitForReview } from '@bb/workflow
 
 import { draftXPost } from './draftPost.js';
 import { RepurposeSourceInaccessibleError } from './errors.js';
-import { appendHashtags, buildXPackage } from './packaging.js';
+import { appendHashtags, buildXPackage, enforceXLengthLimit } from './packaging.js';
 
 const CREATED_BY_AGENT = 'agent-02-x';
 
@@ -44,8 +44,11 @@ export async function runQuote(input: RunQuoteInput): Promise<XPackage> {
   const dna = await loadCurrentDna(input.pool);
   const { text: sourceText, reference } = await resolveSourceText(input.source, input.fetchTool);
 
+  // Over 280 characters continues as replies under the quote post (enforceXLengthLimit);
+  // the package stays labelled 'quote'.
   const draft = appendHashtags(
-    await draftXPost({
+    enforceXLengthLimit(
+      await draftXPost({
       topic: `Commentary on: ${reference}`,
       angle: input.commentaryAngle,
       coreClaim: null,
@@ -55,7 +58,8 @@ export async function runQuote(input: RunQuoteInput): Promise<XPackage> {
       runId: input.runId,
       stepId: 'draft-quote',
       forceMode: 'single',
-    }),
+      }),
+    ),
   );
 
   const item = await createContentItem(input.pool, {
@@ -68,11 +72,11 @@ export async function runQuote(input: RunQuoteInput): Promise<XPackage> {
     contentDnaVersion: dna.version,
     text: draft.finalCopy,
     riskLevel: 'low',
-    package: { mode: 'quote', hookOptions: draft.hookOptions, threadPosts: null, hashtags: draft.hashtags },
+    package: { mode: 'quote', hookOptions: draft.hookOptions, threadPosts: draft.threadPosts, hashtags: draft.hashtags },
   });
 
   const qa = await runQaGate({
-    finalPost: draft.finalCopy,
+    finalPost: draft.threadPosts ? draft.threadPosts.join('\n\n') : draft.finalCopy,
     sourceReferences: [reference],
     sourceTexts: [sourceText],
     contentDna: dna,

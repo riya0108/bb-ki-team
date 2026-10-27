@@ -44,7 +44,13 @@ Rules:
   consequence, scale, affected audience, contrast, unexpected implication.
 - No fake curiosity (hiding the subject), no clickbait the facts don't support, no invented numbers,
   no "Here's why this matters", "In a recent development", "You might be wondering".
-- User-suggested hooks are suggestions: adapt them only if every part is supported by the claims.`;
+- User-suggested hooks are suggestions: adapt them only if every part is supported by the claims.
+- Write like the sharpest business writers on X: ideally under 12 words, never over 20. Put the most
+  specific thing (a name, a ₹ figure, a date) in the hook. Concrete nouns, strong verbs, no adverbs.
+- Collision beats explanation: two short clauses that contradict or escalate make the reader finish
+  the thought. Do not explain the tension inside the hook.
+- No throat-clearing ("So,", "Interestingly,", "Did you know"), no hype words (insane, huge, mind-blowing),
+  no engagement bait, no emoji, no hashtags.`;
 }
 
 export interface GenerateHooksInput {

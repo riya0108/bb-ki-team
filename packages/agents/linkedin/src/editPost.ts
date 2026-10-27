@@ -1,5 +1,5 @@
 import type { LlmClient } from '@bb/core';
-import { BRAND_BRAIN } from '@bb/core';
+import { BRAND_BRAIN, renderCraftPlaybook } from '@bb/core';
 import { classifyEditInstruction, classifyLearningSignal, loadCurrentDna, recordLearningEvent } from '@bb/content-dna';
 import type { Pool } from '@bb/db';
 import {
@@ -38,6 +38,8 @@ ${LINKEDIN_POST_STRUCTURE}
 
 Hard rules (spec 5.8):
 ${LINKEDIN_HARD_RULES}
+
+${renderCraftPlaybook('linkedin')}
 
 Revise the post per the instruction below. Do not change the underlying topic, claims or facts —
 only revise wording, structure, tone and hooks. Preserve anything the instruction doesn't ask you to

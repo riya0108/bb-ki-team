@@ -1,9 +1,9 @@
 import type { ContentItem, EditorialSummary, XMode, XPackage } from '@bb/shared-types';
-import { XPackageSchema } from '@bb/shared-types';
+import { fitsXPost, XPackageSchema } from '@bb/shared-types';
 
 import type { DraftXOutput } from './draftPost.js';
 import { MAX_X_HASHTAGS } from './draftPost.js';
-import { splitPostIntoThread, X_MAX_POST_LENGTH } from './threadSplit.js';
+import { splitPostIntoThread } from './threadSplit.js';
 
 // Spec 6.2's 280-char limit, enforced at draft time rather than only at publish time
 // (xClient.ts's mirror of this same check) — a drafted or revised post that comes
@@ -12,13 +12,14 @@ import { splitPostIntoThread, X_MAX_POST_LENGTH } from './threadSplit.js';
 // actually publish it. Every flow that persists draft.finalCopy/mode/threadPosts
 // directly (topicMode.ts, repurpose.ts, sourceDiscovery.ts, editPost.ts) wraps
 // draftXPost's/the revise call's result in this before using it. quote.ts is
-// deliberately excluded — a quote-commentary post is always single-shaped by design
-// (see buildXPackage below), never threaded.
+// included too: a quote post stays labelled 'quote', but anything past 280 continues
+// as reply posts under it rather than being cut. Lengths are X's weighted count
+// (@bb/shared-types' xPostLength), not JS string length.
 export function enforceXLengthLimit(output: DraftXOutput): DraftXOutput {
   const posts = output.mode === 'thread' ? (output.threadPosts ?? [output.finalCopy]) : [output.finalCopy];
-  if (posts.every((post) => post.length <= X_MAX_POST_LENGTH)) return output;
+  if (posts.every(fitsXPost)) return output;
 
-  const rebuilt = posts.flatMap((post) => (post.length > X_MAX_POST_LENGTH ? splitPostIntoThread(post) : [post]));
+  const rebuilt = posts.flatMap((post) => (fitsXPost(post) ? [post] : splitPostIntoThread(post)));
   return { ...output, mode: 'thread', finalCopy: rebuilt[0] ?? output.finalCopy, threadPosts: rebuilt };
 }
 
@@ -48,7 +49,7 @@ export function appendHashtags(output: DraftXOutput): DraftXOutput {
     for (let count = hashtags.length; count > 0; count--) {
       const candidateTags = hashtags.slice(0, count);
       const candidate = `${post}\n\n${candidateTags.join(' ')}`;
-      if (candidate.length <= X_MAX_POST_LENGTH) {
+      if (fitsXPost(candidate)) {
         applied = candidateTags;
         return candidate;
       }

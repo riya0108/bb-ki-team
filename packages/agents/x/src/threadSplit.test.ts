@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { xPostLength } from '@bb/shared-types';
+
 import { splitPostIntoThread, X_MAX_POST_LENGTH } from './threadSplit.js';
 
 describe('splitPostIntoThread', () => {
@@ -36,5 +38,12 @@ describe('splitPostIntoThread', () => {
     expect(posts.length).toBe(3);
     for (const post of posts) expect(post.length).toBeLessThanOrEqual(X_MAX_POST_LENGTH);
     expect(posts.join('')).toBe('x'.repeat(600));
+  });
+
+  it('counts the way X does, so double-weighted characters still fit', () => {
+    // 200 rupee signs are 200 JS characters but 400 X characters.
+    const posts = splitPostIntoThread(`Fees: ${'₹'.repeat(200)}`);
+    expect(posts.length).toBeGreaterThan(1);
+    for (const post of posts) expect(xPostLength(post)).toBeLessThanOrEqual(X_MAX_POST_LENGTH);
   });
 });

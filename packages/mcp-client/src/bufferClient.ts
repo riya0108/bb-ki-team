@@ -2,6 +2,7 @@ import type { BufferCredentials, Logger } from '@bb/core';
 import type { Queryable } from '@bb/db';
 import { createBufferApiClient, createBufferMcpServer } from '@bb/mcp-buffer';
 import type { ContentItem } from '@bb/shared-types';
+import { X_MAX_POST_LENGTH, xPostLength } from '@bb/shared-types';
 import { PermanentPublishError } from '@bb/workflows';
 import type { PublishConnector } from '@bb/workflows';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -30,7 +31,6 @@ export function bufferToolError(message: string): Error {
     ? new PermanentPublishError(message)
     : new BufferPublishError(message);
 }
-const X_MAX_POST_LENGTH = 280;
 
 interface CreateBufferPostResult {
   id: string;
@@ -86,10 +86,10 @@ export function createBufferPublishConnector(
       // Fail fast with an actionable message rather than letting Buffer's own
       // schema validation reject it (which the SDK surfaces as a raw protocol-error
       // string, not a normal tool error — see mcpToolResponse.ts's toolErrorMessage).
-      const tooLong = posts.find((post) => post.length > X_MAX_POST_LENGTH);
+      const tooLong = posts.find((post) => xPostLength(post) > X_MAX_POST_LENGTH);
       if (tooLong) {
         throw new BufferPublishError(
-          `Post exceeds X's ${X_MAX_POST_LENGTH}-character limit (${tooLong.length} characters): "${tooLong.slice(0, 60)}..."`,
+          `Post exceeds X's ${X_MAX_POST_LENGTH}-character limit (${xPostLength(tooLong)} characters as X counts them): "${tooLong.slice(0, 60)}..."`,
         );
       }
       // Gate lives in resolveApprovedVisual (approvedVisual.ts). Buffer fetches the URL

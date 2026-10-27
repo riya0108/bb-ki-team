@@ -1,8 +1,8 @@
-// Mirrors X_MAX_POST_LENGTH in packages/mcp-client/src/xClient.ts (that copy is the
-// publish-time backstop; this one is the draft-time source of truth). Kept as a
-// separate constant rather than a shared import — packages/mcp-client sits below
-// packages/agents/x in the dependency graph, so this package can't import from it.
-export const X_MAX_POST_LENGTH = 280;
+import { X_MAX_POST_LENGTH, xPostLength } from '@bb/shared-types';
+
+// The limit and X's weighted character count live in @bb/shared-types so this
+// draft-time split and packages/mcp-client's publish-time backstop count identically.
+export { X_MAX_POST_LENGTH };
 
 // Greedily packs `units` into runs joined by `joiner`, each run capped at maxLen. A
 // unit that alone exceeds maxLen is handed to `splitOversized` for its own finer-grained
@@ -12,12 +12,12 @@ function pack(units: string[], joiner: string, maxLen: number, splitOversized: (
   let current = '';
   for (const unit of units) {
     const candidate = current ? `${current}${joiner}${unit}` : unit;
-    if (candidate.length <= maxLen) {
+    if (xPostLength(candidate) <= maxLen) {
       current = candidate;
       continue;
     }
     if (current) out.push(current);
-    if (unit.length <= maxLen) {
+    if (xPostLength(unit) <= maxLen) {
       current = unit;
     } else {
       out.push(...splitOversized(unit));
@@ -30,8 +30,18 @@ function pack(units: string[], joiner: string, maxLen: number, splitOversized: (
 
 function splitWords(text: string, maxLen: number): string[] {
   return pack(text.split(/\s+/), ' ', maxLen, (word) => {
+    // Last resort for a single over-long "word": a hard slice, packed code point by code
+    // point by X's weighted length so double-weighted characters still fit.
     const chunks: string[] = [];
-    for (let i = 0; i < word.length; i += maxLen) chunks.push(word.slice(i, i + maxLen));
+    let chunk = '';
+    for (const char of word) {
+      if (chunk && xPostLength(chunk + char) > maxLen) {
+        chunks.push(chunk);
+        chunk = '';
+      }
+      chunk += char;
+    }
+    if (chunk) chunks.push(chunk);
     return chunks;
   });
 }

@@ -1,6 +1,7 @@
 import type { LlmClient } from '@bb/core';
-import { BRAND_BRAIN } from '@bb/core';
+import { BRAND_BRAIN, renderCraftPlaybook } from '@bb/core';
 import { renderBriefForWriter, STORY_FIRST_WRITING_RULES } from '@bb/editorial-intelligence';
+import { lintSocialCraft, socialCraftRevisionNotes } from '@bb/qa-gate';
 import type { ContentDnaRecord, EditorialBrief } from '@bb/shared-types';
 import { z } from 'zod';
 
@@ -92,6 +93,8 @@ ${LINKEDIN_EDITORIAL_RULES.map((r) => `- ${r}`).join('\n')}
 Priority order, never reversed: factual truth > verified editorial meaning > brand voice > platform
 optimisation > engagement.
 
+${renderCraftPlaybook('linkedin')}
+
 Classify every material claim per the taxonomy (FACT / ATTRIBUTED_CLAIM / INTERPRETATION / OPINION /
 PREDICTION / UNKNOWN) in your own reasoning before writing. The final post must read naturally, but
 must never state an UNKNOWN or PREDICTION as if it were a FACT.`;
@@ -100,7 +103,7 @@ must never state an UNKNOWN or PREDICTION as if it were a FACT.`;
 function buildUserPrompt(input: DraftLinkedinPostInput): string {
   const revision =
     input.revisionNotes && input.revisionNotes.length > 0
-      ? `\n\nYour previous draft changed the meaning of verified facts. Fix ALL of these:\n${input.revisionNotes.map((n) => `- ${n}`).join('\n')}`
+      ? `\n\nYour previous draft had these problems. Fix ALL of them, keeping every verified fact and qualifier exactly:\n${input.revisionNotes.map((n) => `- ${n}`).join('\n')}`
       : '';
   if (input.editorialBrief) {
     return `Angle: ${input.angle}
@@ -134,14 +137,24 @@ or null), firstCommentOptional (a short first comment that extends the post, or 
 sentence: how this post's angle/wording differs from the source material).${revision}`;
 }
 
-export async function draftLinkedinPost(input: DraftLinkedinPostInput): Promise<DraftLinkedinPostOutput> {
+async function completeDraft(input: DraftLinkedinPostInput, revisionNotes: readonly string[]): Promise<DraftLinkedinPostOutput> {
   return input.llm.completeStructured(
     {
       system: buildSystemPrompt(input.contentDna),
-      messages: [{ role: 'user', content: buildUserPrompt(input) }],
+      messages: [{ role: 'user', content: buildUserPrompt({ ...input, revisionNotes }) }],
       runId: input.runId,
       stepId: input.stepId,
     },
     DraftLinkedinPostOutputSchema,
   );
+}
+
+export async function draftLinkedinPost(input: DraftLinkedinPostInput): Promise<DraftLinkedinPostOutput> {
+  const notes = input.revisionNotes ?? [];
+  const first = await completeDraft(input, notes);
+  // One craft rewrite when the draft carries a mechanical tell (announcement cringe,
+  // bait ending, filler opener). Bounded to a single extra call; anything left goes
+  // on to QA and human review as-is.
+  const craftNotes = socialCraftRevisionNotes(lintSocialCraft(first.finalPost, 'linkedin'));
+  return craftNotes.length > 0 ? completeDraft(input, [...notes, ...craftNotes]) : first;
 }

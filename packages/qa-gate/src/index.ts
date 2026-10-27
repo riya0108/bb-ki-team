@@ -31,6 +31,7 @@ export * from './deterministic/forbiddenPhrases.js';
 export * from './deterministic/highRiskTopic.js';
 export * from './deterministic/personalExperience.js';
 export * from './deterministic/privacy.js';
+export * from './deterministic/socialCraft.js';
 export * from './deterministic/sourceIntegrity.js';
 export * from './deterministic/trivialChecks.js';
 export * from './deterministic/unsupportedNumbers.js';

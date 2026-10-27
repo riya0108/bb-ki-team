@@ -1,5 +1,5 @@
 import type { LlmClient } from '@bb/core';
-import { BRAND_BRAIN } from '@bb/core';
+import { BRAND_BRAIN, renderCraftPlaybook } from '@bb/core';
 import { renderBriefForWriter, STORY_FIRST_WRITING_RULES } from '@bb/editorial-intelligence';
 import type { ComponentType, ContentDnaRecord, EditorialArchitecture, EditorialBrief } from '@bb/shared-types';
 import {
@@ -298,6 +298,8 @@ ${styleBlock}
 
 Editorial craft:
 ${BLOG_CRAFT_RULES.map((r) => `- ${r}`).join('\n')}
+
+${renderCraftPlaybook('blog')}
 Never use these phrases (they read as AI-generated): ${AI_SLOP_PHRASES.slice(0, 40).join('; ')}.
 
 Blog article anatomy (adapt to the topic — a 700-word explainer does not need seven sections):
@@ -355,7 +357,7 @@ ${input.revisionNotes.map((n) => `- ${n}`).join('\n')}
 
 Draft to revise (JSON):
 ${JSON.stringify(input.previousDraft)}`
-        : `\n\nYour previous draft changed the meaning of verified facts. Fix ALL of these:\n${input.revisionNotes.map((n) => `- ${n}`).join('\n')}`
+        : `\n\nYour previous draft had these problems. Fix ALL of them, keeping every verified fact and qualifier exactly:\n${input.revisionNotes.map((n) => `- ${n}`).join('\n')}`
       : '';
 
   return `Topic: ${input.topic}

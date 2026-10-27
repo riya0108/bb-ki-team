@@ -1,6 +1,8 @@
 import type { LlmClient } from '@bb/core';
-import { BRAND_BRAIN } from '@bb/core';
+import { BRAND_BRAIN, renderCraftPlaybook } from '@bb/core';
 import { renderBriefForWriter, STORY_FIRST_WRITING_RULES } from '@bb/editorial-intelligence';
+import { lintSocialCraft, socialCraftRevisionNotes } from '@bb/qa-gate';
+import { fitsXPost, X_MAX_POST_LENGTH } from '@bb/shared-types';
 import type { ContentDnaRecord, EditorialBrief } from '@bb/shared-types';
 import { z } from 'zod';
 
@@ -76,10 +78,11 @@ export interface DraftXPostInput {
 function buildSystemPrompt(dna: ContentDnaRecord, forceMode: XModeDecision | undefined): string {
   const modeInstruction =
     forceMode === 'single'
-      ? 'Write this as a SINGLE post. Do not produce a thread even if the idea could support one.'
+      ? `Write this as a SINGLE post of at most ${X_MAX_POST_LENGTH} characters (X counts ₹, →, emoji and non-Latin characters as 2, links as 23). Compress first: one strong post beats a padded one. Only if the post genuinely cannot fit without losing the argument, continue it as reply posts: set mode "thread" and threadPosts to [the main post, reply 1, reply 2, ...], each reply ${X_MAX_POST_LENGTH} characters or fewer. The main post must still work on its own.`
       : forceMode === 'thread'
         ? 'Write this as a THREAD. Even a short thread must justify itself: the first post must work standalone, and every later post must add something new.'
         : 'Decide whether this idea is stronger as one post or a thread (spec 6.3). Do not force a thread when one post is stronger.';
+  const lengthRule = `Every individual post is at most ${X_MAX_POST_LENGTH} characters. Anything longer continues as a reply post in threadPosts, never as one long post.`;
 
   return `You are Agent 02 — the Bull or Bear X (Twitter) Content Head Agent (spec section 6).
 Mission: create sharp, native X content that feels like a person with a point of view, not a
@@ -104,6 +107,8 @@ ${X_EDITORIAL_RULES.map((r) => `- ${r}`).join('\n')}
 Priority order, never reversed: factual truth > verified editorial meaning > brand voice > platform
 optimisation > engagement.
 
+${renderCraftPlaybook('x')}
+
 Creator's Content DNA — write in this voice, blended with the brand voice above:
 - Role: ${dna.identity.role}
 - Tone: ${dna.voice.tone}
@@ -111,6 +116,7 @@ Creator's Content DNA — write in this voice, blended with the brand voice abov
 - Forbidden phrases (never use): ${dna.voice.forbiddenPhrases.join(', ') || 'none noted'}
 
 ${modeInstruction}
+${lengthRule}
 
 Determine the content job first (explain, react, teach, challenge, observe or entertain — spec
 6.3), then write accordingly. Originality rule (spec 5.5, applies across platforms): never copy a
@@ -133,7 +139,7 @@ place. Never use a hashtag as a substitute for saying the thing plainly in the p
 function buildUserPrompt(input: DraftXPostInput): string {
   const revision =
     input.revisionNotes && input.revisionNotes.length > 0
-      ? `\n\nYour previous draft changed the meaning of verified facts. Fix ALL of these:\n${input.revisionNotes.map((n) => `- ${n}`).join('\n')}`
+      ? `\n\nYour previous draft had these problems. Fix ALL of them, keeping every verified fact and qualifier exactly:\n${input.revisionNotes.map((n) => `- ${n}`).join('\n')}`
       : '';
   if (input.editorialBrief) {
     return `Angle: ${input.angle}
@@ -169,22 +175,44 @@ sentence: what is sourced vs. opinion/interpretation), hashtags (0-${MAX_X_HASHT
 high-reach hashtags per the instructions above — do not include them inside finalCopy/threadPosts).${revision}`;
 }
 
-export async function draftXPost(input: DraftXPostInput): Promise<DraftXOutput> {
-  const result = await input.llm.completeStructured(
+export function xDraftText(draft: Pick<DraftXOutput, 'finalCopy' | 'threadPosts'>): string {
+  return draft.threadPosts && draft.threadPosts.length > 0 ? draft.threadPosts.join('\n\n') : draft.finalCopy;
+}
+
+async function completeDraft(input: DraftXPostInput, revisionNotes: readonly string[]): Promise<DraftXOutput> {
+  return input.llm.completeStructured(
     {
       system: buildSystemPrompt(input.contentDna, input.forceMode),
-      messages: [{ role: 'user', content: buildUserPrompt(input) }],
+      messages: [{ role: 'user', content: buildUserPrompt({ ...input, revisionNotes }) }],
       runId: input.runId,
       stepId: input.stepId,
     },
     DraftXOutputSchema,
   );
+}
+
+export async function draftXPost(input: DraftXPostInput): Promise<DraftXOutput> {
+  const notes = input.revisionNotes ?? [];
+  let result = await completeDraft(input, notes);
+  // One craft rewrite when the draft carries a mechanical tell (bait, filler opener,
+  // emoji/hashtag clutter). Bounded to a single extra call; a draft that still trips
+  // the lint goes on to QA and human review as-is.
+  const craftNotes = socialCraftRevisionNotes(lintSocialCraft(xDraftText(result), 'x'));
+  if (craftNotes.length > 0) result = await completeDraft(input, [...notes, ...craftNotes]);
 
   // Defense-in-depth: never trust the model to obey forceMode unprompted. If it
   // ignores an explicit forceMode, force the shape to stay internally consistent
   // rather than surface a mode/threadPosts mismatch to callers.
+  // Single mode may still come back as main post + replies when the idea can't fit 280
+  // characters (the overflow rule above); that is kept. Replies that would fit back into
+  // one post are folded into it, so a short idea is never needlessly threaded.
   if (input.forceMode === 'single' && result.mode !== 'single') {
-    return { ...result, mode: 'single', threadPosts: null };
+    const posts = result.threadPosts && result.threadPosts.length > 0 ? result.threadPosts : [result.finalCopy];
+    const joined = posts.join('\n\n');
+    if (posts.length > 1 && !fitsXPost(joined)) {
+      return { ...result, mode: 'thread', finalCopy: posts[0] ?? result.finalCopy, threadPosts: posts };
+    }
+    return { ...result, mode: 'single', finalCopy: joined, threadPosts: null };
   }
   if (input.forceMode === 'thread' && result.mode !== 'thread') {
     return { ...result, mode: 'thread', threadPosts: result.threadPosts ?? [result.finalCopy] };

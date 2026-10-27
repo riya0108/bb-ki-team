@@ -1,5 +1,5 @@
 import type { LlmClient } from '@bb/core';
-import { BRAND_BRAIN } from '@bb/core';
+import { BRAND_BRAIN, renderCraftPlaybook } from '@bb/core';
 import { classifyEditInstruction, classifyLearningSignal, loadCurrentDna, recordLearningEvent } from '@bb/content-dna';
 import type { Pool } from '@bb/db';
 import {
@@ -28,6 +28,8 @@ Permanent writing rules:
 ${BRAND_BRAIN.permanentWritingRules.map((r) => `- ${r}`).join('\n')}
 X-native principles (spec 6.2):
 ${X_NATIVE_PRINCIPLES.map((p) => `- ${p}`).join('\n')}
+
+${renderCraftPlaybook('x')}
 
 Creator's Content DNA:
 - Tone: ${dna.voice.tone}
