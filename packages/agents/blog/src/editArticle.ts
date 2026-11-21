@@ -15,7 +15,7 @@ import type { BlogPackage, ContentDnaRecord, CoverageCheck, EditorialBrief, Lear
 import { CoverageCheckSchema } from '@bb/shared-types';
 import { ContentItemNotFoundError, addRevision, getContentItem, recordQaResult } from '@bb/workflows';
 
-import { BLOG_CRAFT_RULES, DraftBlogArticleOutputSchema, DraftBlogArticleWriterSchema } from './draftArticle.js';
+import { BLOG_CRAFT_RULES, BODY_MARKUP_GUIDE, DraftBlogArticleOutputSchema, DraftBlogArticleWriterSchema } from './draftArticle.js';
 import type { DraftBlogArticleOutput, DraftBlogArticleWriterOutput } from './draftArticle.js';
 import { articlePlainText } from './editorial/articleText.js';
 import { critiqueArticle } from './editorial/critic.js';
@@ -50,11 +50,15 @@ section, the title, a component, formatting, tone, length, etc.) — preserve ev
 exactly as given unless the edit necessarily touches it. Do not invent new facts, sources, numbers
 or quotes while revising; do not change the underlying claims unless explicitly asked to.
 
-Optional components (comparisonStat, revealCards, poll, pullQuote, table, quiz, decision, timeline)
-work the same as at drafting time — keep, drop, or add one only if it genuinely fits, never to
+Optional components (comparisonStat, revealCards, poll, pullQuote, table, quiz, decision, timeline,
+barChart) work the same as at drafting time — keep, drop, or add one only if it genuinely fits, never to
 decorate, and every factual cell/answer must come from the verified claims. Each one's
-afterSectionIndex is a 0-based index into the (possibly now-different) "sections" array. All text is
-plain text, never HTML.${renderProtectedFactsForEditor(brief)}`;
+afterSectionIndex is a 0-based index into the (possibly now-different) "sections" array. Keep the
+faq, conclusionHeading, strapline and titleAccent fields unless the edit concerns them. Never HTML.
+
+${BODY_MARKUP_GUIDE}
+Preserve existing body markup (subheads, lists, pull quotes, emphasis, [anchor](claim_id) citations)
+unless the edit concerns it.${renderProtectedFactsForEditor(brief)}`;
 }
 
 function writerFields(draft: DraftBlogArticleOutput): DraftBlogArticleWriterOutput {

@@ -1,3 +1,4 @@
+import { bodyPlainText } from '../bodyMarkup.js';
 import type { DraftBlogArticleWriterOutput } from '../draftArticle.js';
 
 import type { ArticleShape } from './styleMetrics.js';
@@ -76,11 +77,32 @@ export function componentTexts(d: DraftBlogArticleWriterOutput): ComponentText[]
     });
   }
   if (d.pullQuote) out.push({ type: 'pullQuote', factual: [d.pullQuote.text], nonFactual: [], claimIds: [] });
+  if (d.barChart) {
+    out.push({
+      type: 'barChart',
+      factual: d.barChart.bars.map((b) => `${b.label}: ${b.displayValue}`),
+      nonFactual: [d.barChart.title, d.barChart.subtitle ?? '', d.barChart.sourceNote].filter((t) => t.length > 0),
+      claimIds: d.barChart.claimIds,
+    });
+  }
+  // The FAQ is standard article anatomy rather than an optional widget, but its
+  // answers are published claims and go through the same evidence checks.
+  if (d.faq && d.faq.length > 0) {
+    out.push({ type: 'faq', factual: d.faq.map((f) => f.answer), nonFactual: d.faq.map((f) => f.question), claimIds: [] });
+  }
   return out;
 }
 
+// Optional components only (the FAQ is anatomy, not a planned component).
 export function presentComponentTypes(d: DraftBlogArticleWriterOutput): string[] {
-  return componentTexts(d).map((c) => c.type);
+  return componentTexts(d)
+    .map((c) => c.type)
+    .filter((t) => t !== 'faq');
+}
+
+// A section/takeaway/conclusion body as readable prose (markup stripped).
+export function plainBody(body: string): string {
+  return bodyPlainText(body);
 }
 
 // The article's prose only (title through conclusion), in reading order.
@@ -89,9 +111,9 @@ export function articleProse(d: DraftBlogArticleWriterOutput): string {
     d.titleOptions[0] ?? '',
     d.deck,
     ...(d.shortVersion ?? []),
-    ...d.sections.map((sec) => `${sec.heading}\n${sec.body}`),
-    d.practicalTakeaway ?? '',
-    d.conclusion,
+    ...d.sections.map((sec) => `${sec.heading}\n${plainBody(sec.body)}`),
+    plainBody(d.practicalTakeaway ?? ''),
+    plainBody(d.conclusion),
   ]
     .filter((t) => t.length > 0)
     .join('\n\n');
@@ -107,7 +129,7 @@ export function articlePlainText(d: DraftBlogArticleWriterOutput): string {
 }
 
 export function openingOf(d: DraftBlogArticleWriterOutput): string {
-  const firstBody = d.sections[0]?.body ?? '';
+  const firstBody = plainBody(d.sections[0]?.body ?? '');
   return firstBody.split(/\n{2,}/).slice(0, 2).join('\n\n');
 }
 
@@ -119,17 +141,17 @@ export function slopInputOf(d: DraftBlogArticleWriterOutput): { opening: string;
   return {
     opening: openingOf(d),
     body: [
-      (d.sections[0]?.body ?? '').split(/\n{2,}/).slice(2).join('\n\n'),
-      ...d.sections.slice(1).map((s) => s.body),
-      d.practicalTakeaway ?? '',
+      plainBody(d.sections[0]?.body ?? '').split(/\n{2,}/).slice(2).join('\n\n'),
+      ...d.sections.slice(1).map((s) => plainBody(s.body)),
+      plainBody(d.practicalTakeaway ?? ''),
     ].join('\n\n'),
-    ending: d.conclusion,
+    ending: plainBody(d.conclusion),
     headings: d.sections.map((s) => s.heading),
   };
 }
 
 export function shapeOfDraft(d: DraftBlogArticleWriterOutput): ArticleShape {
-  const paragraphs = [...d.sections.map((s) => s.body), d.practicalTakeaway ?? '', d.conclusion]
+  const paragraphs = [...d.sections.map((s) => plainBody(s.body)), plainBody(d.practicalTakeaway ?? ''), plainBody(d.conclusion)]
     .flatMap((b) => b.split(/\n{2,}/))
     .map((p) => p.trim())
     .filter((p) => p.length > 0);
@@ -138,7 +160,7 @@ export function shapeOfDraft(d: DraftBlogArticleWriterOutput): ArticleShape {
     headings: d.sections.map((s) => s.heading),
     paragraphs,
     opening: openingOf(d),
-    ending: d.conclusion,
+    ending: plainBody(d.conclusion),
     tableCount: d.table ? 1 : 0,
     componentCount: components.length,
   };

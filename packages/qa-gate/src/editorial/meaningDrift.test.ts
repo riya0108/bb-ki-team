@@ -213,3 +213,30 @@ describe('detectMeaningDrift — quotes and claim filtering', () => {
     expect(detectMeaningDrift('Check your loan statement again next month.', [c])).toEqual([]);
   });
 });
+
+describe('detectMeaningDrift — fixed-deposit essay false positives', () => {
+  const ftShare = claim('claim_ft', 'Franklin Templeton\'s report says bank deposits accounted for 52% of gross financial savings during FY71-80, falling to 33% by FY25.', {
+    entities: ['Franklin Templeton'],
+  });
+  const ftAssets = claim('claim_ft2', 'As of May 2026, deposits still represented 54% of Indian household assets, according to Franklin Templeton.', {
+    entities: ['Franklin Templeton'],
+    attributedTo: 'Franklin Templeton India Mutual Fund report',
+  });
+  const mfShare = claim('claim_mf', 'The share of mutual funds in household gross financial savings increased from 0.9% in 2011-12 to 6% in 2022-23.');
+
+  it('reads "May 2026" as a month, not the modal "may"', () => {
+    expect(rules('Yet Franklin Templeton also found that, as of May 2026, deposits still represented 54% of Indian household assets.', [ftShare, ftAssets])).not.toContain('completed_to_possibility');
+  });
+
+  it('does not pin another statement\'s hedge on a settled figure the sentence never restates', () => {
+    expect(rules('It said a persistently low deposit rate might eventually increase mutual fund flows from household savings.', [mfShare])).not.toContain('completed_to_possibility');
+  });
+
+  it('still flags a settled figure re-framed as a possibility', () => {
+    expect(rules('Mutual funds may reach 6% of household gross financial savings.', [mfShare])).toContain('completed_to_possibility');
+  });
+
+  it('accepts "Franklin Templeton found" as naming "Franklin Templeton India Mutual Fund report"', () => {
+    expect(rules('Franklin Templeton also found that, as of May 2026, deposits still represented 54% of Indian household assets.', [ftAssets])).not.toContain('attribution_dropped');
+  });
+});

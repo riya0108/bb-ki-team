@@ -1,7 +1,7 @@
 import type { LlmClient, Logger } from '@bb/core';
 import { loadCurrentDna } from '@bb/content-dna';
 import type { Pool } from '@bb/db';
-import type { ProvidedDocument } from '@bb/editorial-intelligence';
+import type { ContextBudget, DiscoveryResearcher, ProvidedDocument } from '@bb/editorial-intelligence';
 import {
   briefSourceReferences,
   briefSourceTexts,
@@ -10,13 +10,16 @@ import {
   buildSourceDisplay,
   loadSiblingDrafts,
   prepareEditorialBrief,
+  TIER_RANK,
   tierForUrl,
 } from '@bb/editorial-intelligence';
 import type { FetchTool } from '@bb/mcp-client';
 import { buildQaGateUnavailableResult, runQaGate } from '@bb/qa-gate';
 import type { BlogPackage, EditorialBrief, EditorialWarning } from '@bb/shared-types';
+import { isUsableClaim } from '@bb/shared-types';
 import { createContentItem, recordQaResult, submitForReview } from '@bb/workflows';
 
+import { bodyCitedClaimIds, bodyPlainText } from './bodyMarkup.js';
 import type { DraftBlogArticleOutput, DraftBlogArticleWriterOutput } from './draftArticle.js';
 import { draftBlogArticle } from './draftArticle.js';
 import { planArticle } from './editorial/architect.js';
@@ -56,6 +59,11 @@ export interface RunBlogArticleInput {
   runId: string;
   // How many final-editor revisions the editorial loop may run (default 1).
   maxRevisions?: number;
+  // Agentic web research (Claude Code) feeding the brief's deep research; its leads
+  // are re-fetched through fetchTool and verified like any other source.
+  discoveryResearcher?: DiscoveryResearcher | undefined;
+  // 'large' when llm is a long-context model: research reads far more per source.
+  contextBudget?: ContextBudget | undefined;
 }
 
 // Spec 12.3's Blog workflow, upgraded to the editorial pipeline:
@@ -65,6 +73,13 @@ export interface RunBlogArticleInput {
 //   -> deterministic HTML -> validation -> QA gate -> human review.
 // Never publishes or schedules — Phase 3's connectors are separate and explicitly
 // gated on a recorded approval.
+// The Claude Code research options, bundled so callers (API routes, chat, repurpose)
+// pass them through unchanged.
+export interface BlogResearchOptions {
+  discoveryResearcher?: DiscoveryResearcher | undefined;
+  contextBudget?: ContextBudget | undefined;
+}
+
 export async function runBlogArticle(input: RunBlogArticleInput): Promise<BlogPackage> {
   const dna = await loadCurrentDna(input.pool);
   const suppliedTexts = input.sourceTexts ?? [];
@@ -85,7 +100,14 @@ export async function runBlogArticle(input: RunBlogArticleInput): Promise<BlogPa
   // Topic (+ any supplied source) -> deep research (incl. counter-evidence) -> verified
   // EditorialBrief, before anything is planned or written.
   const brief = await prepareEditorialBrief(
-    { pool: input.pool, llm: input.llm, fetchTool: input.fetchTool, logger: input.logger },
+    {
+      pool: input.pool,
+      llm: input.llm,
+      fetchTool: input.fetchTool,
+      logger: input.logger,
+      discoveryResearcher: input.discoveryResearcher,
+      contextBudget: input.contextBudget,
+    },
     {
       topic: input.topic,
       userMessage: input.userMessage ?? null,
@@ -243,6 +265,49 @@ export interface AssembleBlogArticleInput {
   draft: DraftBlogArticleWriterOutput;
   brief: EditorialBrief | null;
   linkCandidates: readonly { contentId: string; title: string; url: string; thesis: string | null }[];
+  now?: Date;
+}
+
+// Inline citations resolve a usable claim to the best fetched source that actually
+// contains its evidence (quote found, highest tier, never discovery-only). A claim
+// with no such source gets no link — the sentence still reads, it just isn't linked.
+export function citationTargets(brief: EditorialBrief | null): Record<string, string> {
+  if (!brief || brief.kind === 'opinion') return {};
+  const sourcesById = new Map(brief.sources.map((s) => [s.id, s]));
+  const out: Record<string, string> = {};
+  for (const claim of brief.claims.filter(isUsableClaim)) {
+    const best = claim.evidence
+      .filter((e) => e.quoteFound)
+      .map((e) => sourcesById.get(e.sourceId))
+      .filter((s): s is NonNullable<typeof s> => s !== undefined && s.url !== null && s.tier !== 'discovery')
+      .sort((a, b) => TIER_RANK[b.tier] - TIER_RANK[a.tier])[0];
+    if (best?.url) out[claim.id] = best.url;
+  }
+  return out;
+}
+
+const MAX_SECTION_SOURCES = 3;
+
+export function sectionSourceNote(
+  section: { body: string; claimIds: readonly string[] },
+  sourceDisplay: readonly { shortLabel: string; claimIds: readonly string[] }[],
+): string | null {
+  const cited = new Set([...section.claimIds, ...bodyCitedClaimIds(section.body)]);
+  if (cited.size === 0) return null;
+  const labels = [
+    ...new Set(sourceDisplay.filter((s) => s.claimIds.some((id) => cited.has(id))).map((s) => s.shortLabel)),
+  ].slice(0, MAX_SECTION_SOURCES);
+  return labels.length > 0 ? `Source: ${labels.join('; ')}` : null;
+}
+
+const WORDS_PER_MINUTE = 230;
+
+function readTimeOf(draft: DraftBlogArticleWriterOutput): string {
+  const words = [...draft.sections.map((s) => bodyPlainText(s.body)), bodyPlainText(draft.practicalTakeaway ?? ''), bodyPlainText(draft.conclusion)]
+    .join(' ')
+    .split(/\s+/)
+    .filter((w) => w.length > 0).length;
+  return `${Math.max(1, Math.round(words / WORDS_PER_MINUTE))} min`;
 }
 
 export interface AssembledBlogArticle {
@@ -264,7 +329,7 @@ export function assembleBlogArticle(input: AssembleBlogArticleInput): AssembledB
   if (!title) throw new Error('assembleBlogArticle: draft returned no title options');
   const slug = slugify(title);
 
-  const bodyText = [...draft.sections.map((s) => s.body), draft.practicalTakeaway ?? '', draft.conclusion].join('\n\n');
+  const bodyText = [...draft.sections.map((s) => bodyPlainText(s.body)), bodyPlainText(draft.practicalTakeaway ?? ''), bodyPlainText(draft.conclusion)].join('\n\n');
   const internalLinks = resolveInternalLinks(draft.internalLinks, input.linkCandidates, bodyText).map((l) => ({
     ...l,
     targetSlug: l.targetSlug || (l.targetUrl.split('/').filter((p) => p.length > 0).pop() ?? ''),
@@ -272,6 +337,13 @@ export function assembleBlogArticle(input: AssembleBlogArticleInput): AssembledB
 
   const sourceDisplay = brief && brief.kind !== 'opinion' ? buildSourceDisplay(brief) : [];
   const sourceLinks = sourceDisplay.map((s) => ({ label: s.label, url: s.url }));
+  // With a researched brief, a section's "Source:" line names the outlets whose fetched
+  // text backs the claims that section cites — never a writer-typed label, which can
+  // name a report we never read and that the sources list then doesn't contain.
+  const sections =
+    brief && brief.kind !== 'opinion'
+      ? draft.sections.map((section) => ({ ...section, sourceNote: sectionSourceNote(section, sourceDisplay) }))
+      : draft.sections;
   const sources = sourceLinks.length > 0 ? sourceLinks.map((s) => s.label) : brief && brief.kind !== 'opinion' ? [] : draft.sources;
 
   const { html, components } = buildArticleHtml({
@@ -279,7 +351,7 @@ export function assembleBlogArticle(input: AssembleBlogArticleInput): AssembledB
     deck: draft.deck,
     category: draft.category,
     metaDescription: draft.metaDescription,
-    sections: draft.sections,
+    sections,
     practicalTakeaway: draft.practicalTakeaway,
     conclusion: draft.conclusion,
     disclaimer: draft.disclaimer,
@@ -294,11 +366,19 @@ export function assembleBlogArticle(input: AssembleBlogArticleInput): AssembledB
     quiz: draft.quiz,
     decision: draft.decision,
     timeline: draft.timeline,
+    barChart: draft.barChart,
+    faq: draft.faq,
+    conclusionHeading: draft.conclusionHeading,
+    strapline: draft.strapline,
+    titleAccent: draft.titleAccent,
+    readTime: readTimeOf(draft),
+    dateLabel: (input.now ?? new Date()).toLocaleDateString('en-IN', { month: 'long', year: 'numeric', timeZone: 'Asia/Kolkata' }),
+    citations: citationTargets(brief),
     internalLinks: internalLinks.map((l) => ({ anchorText: l.anchorText, url: l.targetUrl })),
   });
 
   const validation = validateBlogHtml(html);
   if (!validation.valid) throw new InvalidArticleHtmlError(validation.issues);
 
-  return { draft: { ...draft, sources, internalLinks }, title, slug, html, components };
+  return { draft: { ...draft, sections, sources, internalLinks }, title, slug, html, components };
 }

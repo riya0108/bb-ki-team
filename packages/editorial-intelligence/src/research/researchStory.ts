@@ -3,6 +3,8 @@ import type { FetchTool } from '@bb/mcp-client';
 import { contentStems, sharedStemCount } from '@bb/qa-gate';
 import type { EvidenceSource, EvidenceSourceKind, EvidenceTier } from '@bb/shared-types';
 
+import type { DiscoveredLead } from './claudeDiscovery.js';
+import { quotesFoundIn } from './claudeDiscovery.js';
 import type { FeedItem } from './feeds.js';
 import { NEWS_SEARCH_FEEDS, parseRssItems, PRIMARY_FEEDS, splitPublisherSuffix } from './feeds.js';
 import { isDiscoveryOnlyUrl, publisherForUrl, TIER_RANK, tierForPublisher, tierForUrl } from './sourceTiers.js';
@@ -41,6 +43,11 @@ export interface ResearchStoryInput {
   providedDocuments: ProvidedDocument[];
   // Trusted-sources registry rows already judged relevant to this topic.
   registrySources?: { url: string; name: string; tier: EvidenceTier }[];
+  // Leads from agentic discovery (claudeDiscovery.ts). Each is re-fetched here
+  // through the scoped fetch tool; the lead itself is never evidence.
+  discoveredLeads?: readonly DiscoveredLead[];
+  // Characters kept per discovered document (large-context writers read more).
+  maxDiscoveredDocumentChars?: number;
   fetchTool: FetchTool;
   logger: Logger;
   runId: string;
@@ -70,10 +77,10 @@ export async function researchStory(input: ResearchStoryInput): Promise<Research
   let considered = 0;
   const topicStems = contentStems([input.topic, ...input.queries].join(' '));
 
-  const addDocument = (doc: Omit<EvidenceSource, 'id'>, text: string): void => {
+  const addDocument = (doc: Omit<EvidenceSource, 'id'>, text: string, maxChars = MAX_DOCUMENT_CHARS): void => {
     documents.push({
       source: { id: `source_${documents.length + 1}`, ...doc },
-      text: text.slice(0, MAX_DOCUMENT_CHARS),
+      text: text.slice(0, maxChars),
     });
   };
 
@@ -126,6 +133,51 @@ export async function researchStory(input: ResearchStoryInput): Promise<Research
         fetchedAt: fetched.fetchedAt,
       },
       fetched.text,
+    );
+  }
+
+  // 2a. Leads from agentic discovery: fetched like user links. The lead's own
+  // quoted passages lead the document only when found verbatim in the fetched page,
+  // so the long tail of a page (where survey methodology usually lives) is not lost
+  // to truncation. An unfetchable lead is kept as a discovery-tier note at most.
+  for (const lead of input.discoveredLeads ?? []) {
+    if (seenUrls.has(lead.url)) continue;
+    seenUrls.add(lead.url);
+    considered += 1;
+    const fetched = await fetchText(lead.url, `research lead: ${lead.title}`);
+    if (fetched && fetched.text.trim().length >= 200) {
+      const quotes = lead.keyFacts.map((f) => f.verbatimQuote).filter((q): q is string => q !== null);
+      const found = quotesFoundIn(quotes, fetched.text);
+      if (quotes.length > found.length) {
+        logger.info({ runId, stepId: STEP_ID, url: lead.url, quoted: quotes.length, found: found.length }, 'Dropped research-lead quotes not found in the fetched page');
+      }
+      const keyPassages = found.length > 0 ? `Key passages (verified present in this page):\n${found.map((q) => `- "${q}"`).join('\n')}\n\n` : '';
+      addDocument(
+        {
+          kind: 'fetched_article',
+          url: lead.url,
+          title: fetched.title ?? lead.title,
+          publisher: lead.publisher ?? publisherForUrl(lead.url),
+          tier: tierForUrl(lead.url),
+          publishedAt: lead.publishedDate,
+          fetchedAt: fetched.fetchedAt,
+        },
+        `${keyPassages}${fetched.text}`,
+        input.maxDiscoveredDocumentChars ?? MAX_DOCUMENT_CHARS,
+      );
+      continue;
+    }
+    addDocument(
+      {
+        kind: 'news_search_result',
+        url: lead.url,
+        title: lead.title,
+        publisher: lead.publisher ?? publisherForUrl(lead.url),
+        tier: 'discovery',
+        publishedAt: lead.publishedDate,
+        fetchedAt: null,
+      },
+      `${lead.title}\n(Research lead; the page could not be fetched, so nothing here is verified.)\n${lead.keyFacts.map((f) => `- ${f.fact}`).join('\n')}`,
     );
   }
 

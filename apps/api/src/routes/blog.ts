@@ -29,8 +29,11 @@ const BlogSourceSchema = z.union([
   z.object({ kind: z.literal('text'), label: z.string().min(1), text: z.string().min(1) }),
 ]);
 
-export function createBlogRouter(deps: AppDeps): Router {
+export function createBlogRouter(appDeps: AppDeps): Router {
   const router = Router();
+  // Every blog route uses the Blog agent's client (Claude Code when configured).
+  const research = { discoveryResearcher: appDeps.blog?.discoveryResearcher, contextBudget: appDeps.blog?.contextBudget };
+  const deps = { ...appDeps, llm: appDeps.blog?.llm ?? appDeps.llm, research };
 
   const DraftSchema = z.object({
     topic: z.string().min(1),
@@ -55,6 +58,7 @@ export function createBlogRouter(deps: AppDeps): Router {
       ...(body.sourceReferences !== undefined ? { sourceReferences: body.sourceReferences } : {}),
       ...(body.sourceTexts !== undefined ? { sourceTexts: body.sourceTexts } : {}),
       ...(body.sampleArticleTexts !== undefined ? { sampleArticleTexts: body.sampleArticleTexts } : {}),
+      ...research,
       runId,
     });
     res.status(201).json({ runId, package: pkg });
@@ -76,6 +80,7 @@ export function createBlogRouter(deps: AppDeps): Router {
       source: body.source,
       topic: body.topic,
       ...(body.sampleArticleTexts !== undefined ? { sampleArticleTexts: body.sampleArticleTexts } : {}),
+      research,
       runId,
     });
     res.status(201).json({ runId, package: pkg });

@@ -21,6 +21,7 @@ export const COMPONENT_TYPES = [
   'comparisonStat',
   'pullQuote',
   'timeline',
+  'barChart',
 ] as const;
 export const ComponentTypeSchema = z.enum(COMPONENT_TYPES);
 export type ComponentType = z.infer<typeof ComponentTypeSchema>;
@@ -36,6 +37,7 @@ export const COMPONENT_LIMITS: Record<ComponentType, number> = {
   comparisonStat: 1,
   pullQuote: 1,
   timeline: 1,
+  barChart: 1,
 };
 
 // The most interactive (click-to-answer) widgets one article may carry in total, so
@@ -143,6 +145,36 @@ export const TimelineComponentSchema = z.object({
 });
 export type TimelineComponent = z.infer<typeof TimelineComponentSchema>;
 
+// A horizontal bar chart (CSS-only, no script): survey splits, shares, rankings.
+// value drives bar length; displayValue is what the reader sees ("26%", "₹7.2 lakh").
+// Up to two groups get two colours (e.g. Gen Z vs Gen X).
+export const BarChartBarSchema = z.object({
+  label: plain.min(1).max(80),
+  value: z.number().finite().nonnegative(),
+  displayValue: plain.min(1).max(24),
+  group: plain.max(40).nullable().default(null),
+});
+
+export const BarChartComponentSchema = z.object({
+  title: plain.min(1).max(140),
+  subtitle: plain.max(200).nullable().default(null),
+  bars: z.array(BarChartBarSchema).min(2).max(10),
+  sourceNote: plain.min(1).max(300),
+  claimIds: z.array(z.string()).default([]),
+  afterSectionIndex: z.number().int().min(0),
+});
+export type BarChartComponent = z.infer<typeof BarChartComponentSchema>;
+
+// Reader questions answered at the end of an article (rendered as native <details>
+// accordions plus FAQPage structured data). Answers are published claims and are
+// evidence-checked like any component.
+export const FaqItemSchema = z.object({
+  question: plain.min(1).max(200),
+  answer: plain.min(1).max(900),
+});
+export const FaqSchema = z.array(FaqItemSchema).min(2).max(7);
+export type FaqItem = z.infer<typeof FaqItemSchema>;
+
 // ---------------------------------------------------------------------------
 // Editorial architecture: the outline produced before drafting (spec 24/36).
 // ---------------------------------------------------------------------------
@@ -154,8 +186,8 @@ export type ArticleDepth = z.infer<typeof ArticleDepthSchema>;
 export const DEPTH_WORD_RANGES: Record<ArticleDepth, [number, number]> = {
   short_explainer: [700, 1000],
   standard: [1200, 1800],
-  deep_analysis: [1800, 3000],
-  investigation: [2500, 4000],
+  deep_analysis: [2200, 3500],
+  investigation: [3000, 4800],
 };
 
 export const SECTION_ROLES = [

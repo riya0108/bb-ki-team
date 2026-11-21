@@ -16,6 +16,7 @@ import { buildEditorialBrief } from './buildEditorialBrief.js';
 import { critiqueHooks, fallbackHook, rankAccepted } from './critiqueHooks.js';
 import { extractClaims, userFactsAsUnverifiedClaims } from './extractClaims.js';
 import { generateHooks } from './generateHooks.js';
+import type { DiscoveryResearcher } from './research/claudeDiscovery.js';
 import type { ProvidedDocument, ResearchDossier } from './research/researchStory.js';
 import { researchStory } from './research/researchStory.js';
 import { tierForRegistrySource } from './research/sourceTiers.js';
@@ -41,7 +42,19 @@ export interface EditorialDeps {
   llm: LlmClient;
   fetchTool: FetchTool;
   logger: Logger;
+  // Optional agentic discovery (claudeDiscovery.ts), used for 'deep' research only.
+  // Its leads are re-fetched through fetchTool; they are never evidence themselves.
+  discoveryResearcher?: DiscoveryResearcher | undefined;
+  // 'large' when `llm` is a long-context model (Claude Code): claim extraction and
+  // verification read far more of each document. Default 'standard' stays inside the
+  // free-tier request budgets documented in extractClaims.ts.
+  contextBudget?: ContextBudget | undefined;
 }
+
+export type ContextBudget = 'standard' | 'large';
+
+// Characters kept per discovered document under each budget.
+const DISCOVERED_DOC_CHARS: Record<ContextBudget, number> = { standard: 6000, large: 16_000 };
 
 export interface PrepareEditorialBriefInput {
   topic: string;
@@ -163,7 +176,11 @@ export async function prepareEditorialBrief(deps: EditorialDeps, input: PrepareE
   const topicKey = normalizeTopicKey(input.topic);
   const profile: ResearchProfile = input.researchProfile ?? 'standard';
 
-  if ((input.reuseExisting ?? true) && providedDocuments.length === 0) {
+  const discovery = profile === 'deep' ? deps.discoveryResearcher : undefined;
+  const budget: ContextBudget = deps.contextBudget ?? 'standard';
+
+  // A cached brief predates this run's discovery research; re-research instead.
+  if ((input.reuseExisting ?? true) && providedDocuments.length === 0 && !discovery) {
     const reusable = await findReusableBrief(deps, topicKey, profile);
     if (reusable) {
       logStep(deps, runId, 'editorial-reuse', 'Reusing a recent editorial brief for this topic', { briefId: reusable.id });
@@ -198,7 +215,9 @@ export async function prepareEditorialBrief(deps: EditorialDeps, input: PrepareE
   };
 
   // Spec 45: evergreen/opinion requests don't pay for research.
-  if (!analysis.needsResearch && providedDocuments.length === 0) {
+  // With agentic discovery available, even an "evergreen" essay is researched: the
+  // standard the Blog agent writes to cites real studies, products and data.
+  if (!analysis.needsResearch && providedDocuments.length === 0 && !discovery) {
     return buildEditorialBrief({
       ...base,
       kind: 'opinion',
@@ -217,6 +236,21 @@ export async function prepareEditorialBrief(deps: EditorialDeps, input: PrepareE
 
   const counterEvidenceQueries = profile === 'deep' ? analysis.counterEvidenceQueries : [];
   const explanatoryQueries = profile === 'deep' ? analysis.explanatoryQueries : [];
+  const discoveredLeads = discovery
+    ? await discovery({
+        topic: analysis.normalizedTopic,
+        userMessage: input.userMessage ?? null,
+        queries: [...analysis.searchQueries, ...explanatoryQueries, ...counterEvidenceQueries],
+        runId,
+      }).catch((error: unknown) => {
+        deps.logger.warn(
+          { runId, stepId: 'editorial-research-discovery', err: error instanceof Error ? error.message : String(error) },
+          'Agentic research discovery failed; continuing with feed research only',
+        );
+        return [];
+      })
+    : [];
+
   const dossier: ResearchDossier = await researchStory({
     topic: analysis.normalizedTopic,
     queries:
@@ -227,6 +261,8 @@ export async function prepareEditorialBrief(deps: EditorialDeps, input: PrepareE
     userUrls: extractUrls(input.userMessage ?? ''),
     providedDocuments,
     registrySources: await relevantRegistrySources(deps, `${input.topic} ${analysis.normalizedTopic}`),
+    discoveredLeads,
+    maxDiscoveredDocumentChars: DISCOVERED_DOC_CHARS[budget],
     fetchTool: deps.fetchTool,
     logger: deps.logger,
     runId,
@@ -273,6 +309,7 @@ export async function prepareEditorialBrief(deps: EditorialDeps, input: PrepareE
       llm: deps.llm,
       runId,
       deep: profile === 'deep',
+      budget,
     });
   } catch (error) {
     deps.logger.warn({ runId, stepId: 'editorial-extract-claims', err: error instanceof Error ? error.message : String(error) }, 'Claim extraction failed');
@@ -280,7 +317,7 @@ export async function prepareEditorialBrief(deps: EditorialDeps, input: PrepareE
   }
   logStep(deps, runId, 'editorial-extract-claims', 'Claims extracted', { claims: extracted.length });
 
-  const verified = await verifyClaims({ claims: extracted, documents: dossier.documents, llm: deps.llm, logger: deps.logger, runId });
+  const verified = await verifyClaims({ claims: extracted, documents: dossier.documents, llm: deps.llm, logger: deps.logger, runId, budget });
   if (!verified.some(isUsableClaim)) {
     return insufficient(verified, 'Sources were found, but no claim could be verified against them.');
   }

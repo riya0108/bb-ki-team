@@ -1,6 +1,7 @@
 import { contentStems, sharedStemCount } from '@bb/qa-gate';
 import type { EditorialArchitecture, EditorialWarning } from '@bb/shared-types';
 
+import { bodyCitedClaimIds } from '../bodyMarkup.js';
 import type { DraftBlogArticleWriterOutput } from '../draftArticle.js';
 
 import { articleProse, presentComponentTypes, wordCount } from './articleText.js';
@@ -18,8 +19,27 @@ const SECTION_LIMITS: Record<EditorialArchitecture['articleDepth'], [number, num
   investigation: [5, 12],
 };
 
-const COUNTER_HEADING = /\b(counter|the case against|but what if|what could go wrong|the other side|bear case|bull case|skeptic|sceptic|limits?|caveat|not so fast|the catch|devil)/i;
-const COUNTER_LANGUAGE = /\b(critics|sceptics|skeptics|the counterargument|on the other hand|the case against|that said|to be fair|the other reading|bear case|bull case|doesn't prove|does not prove|cuts the other way)\b/i;
+const COUNTER_HEADING = /\b(counter|objection|opposing|strongest case|steelman|rebuttal|pushback|the case against|but what if|what could go wrong|the other side|bear case|bull case|skeptic|sceptic|limits?|caveat|not so fast|the catch|devil)/i;
+const COUNTER_LANGUAGE = /\b(critics|sceptics|skeptics|the counterargument|on the other hand|the case against|that said|to be fair|the other reading|bear case|bull case|doesn't prove|does not prove|cuts the other way|the objection|strongest objection|opposing case|opposing view|steelman)\b/i;
+
+// A section that restates most of the planned counterargument engages it, whatever its
+// heading is called.
+function engagesCounterArgument(draft: DraftBlogArticleWriterOutput, counterArgument: string): boolean {
+  const counterStems = contentStems(counterArgument);
+  if (counterStems.length < 6) return false;
+  return draft.sections.some((s) => sharedStemCount(contentStems(`${s.heading} ${s.body}`), counterStems) / counterStems.length >= 0.5);
+}
+
+// Inline citations must point at claims the reader may be told as fact: citing an
+// unknown or unverified claim means the sentence leans on evidence we don't have.
+export function checkCitations(draft: DraftBlogArticleWriterOutput, usableClaimIds: ReadonlySet<string> | null): EditorialWarning[] {
+  if (usableClaimIds === null) return [];
+  const bodies = [...draft.sections.map((s) => s.body), draft.practicalTakeaway ?? '', draft.conclusion];
+  const bad = [...new Set(bodies.flatMap(bodyCitedClaimIds))].filter((id) => !usableClaimIds.has(id));
+  return bad.length > 0
+    ? [{ code: 'unverified_citation', severity: 'block', message: `Inline citations point at claims that are unknown or not verified (${bad.join(', ')}): restate those sentences as attributed or uncertain, or cut them.` }]
+    : [];
+}
 
 export function checkStructure(draft: DraftBlogArticleWriterOutput, architecture: EditorialArchitecture | null): EditorialWarning[] {
   const warnings: EditorialWarning[] = [];
@@ -42,7 +62,10 @@ export function checkStructure(draft: DraftBlogArticleWriterOutput, architecture
       warnings.push({ code: 'too_few_sections', severity: 'warn', message: `${draft.sections.length} sections may be too few for a ${architecture.articleDepth}.` });
     }
     const needsCounter = architecture.counterArgument !== null && architecture.articleDepth !== 'short_explainer';
-    const hasCounter = draft.sections.some((s) => COUNTER_HEADING.test(s.heading)) || COUNTER_LANGUAGE.test(prose);
+    const hasCounter =
+      draft.sections.some((s) => COUNTER_HEADING.test(s.heading)) ||
+      COUNTER_LANGUAGE.test(prose) ||
+      (architecture.counterArgument !== null && engagesCounterArgument(draft, architecture.counterArgument));
     if (needsCounter && !hasCounter) {
       warnings.push({
         code: 'missing_counterargument',

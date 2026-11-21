@@ -23,7 +23,11 @@ const COMPONENT_MARKERS: Record<ComponentType, RegExp> = {
   comparisonStat: /<div class="gap-widget">/g,
   pullQuote: /<blockquote>/g,
   timeline: /<div class="timeline-wrap">/g,
+  barChart: /<figure class="bar-chart"/g,
 };
+
+// Inline pull quotes inside section bodies (bodyMarkup.ts's "> " blocks).
+const MAX_INLINE_PULL_QUOTES = 3;
 
 export function countComponents(html: string): Record<ComponentType, number> {
   return Object.fromEntries(
@@ -46,7 +50,22 @@ export function validateBlogHtml(html: string): BlogHtmlValidationResult {
   // htmlBuilder.ts emits at most one <script> tag, and its source is always exactly
   // INTERACTIVE_SCRIPT (never interpolated with model output) — anything else,
   // including an external `src=`, a tracking snippet, or injected content, fails.
-  const scriptMatches = [...html.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/gi)];
+  // Structured data (FAQPage/Article) is the one other script the builder emits: a
+  // single inert application/ld+json block in <head> that must parse as JSON.
+  const allScripts = [...html.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/gi)];
+  const isJsonLd = (attrs: string): boolean => /^\s*type="application\/ld\+json"\s*$/.test(attrs);
+  const jsonLd = allScripts.filter((m) => isJsonLd(m[1] ?? ''));
+  if (jsonLd.length > 1) issues.push(`Contains ${jsonLd.length} structured-data blocks — the builder emits at most one.`);
+  const head = /<head>([\s\S]*?)<\/head>/i.exec(html)?.[1] ?? '';
+  for (const match of jsonLd) {
+    if (!head.includes(match[0])) issues.push('Structured data must sit in <head>.');
+    try {
+      JSON.parse(match[2] ?? '');
+    } catch {
+      issues.push('Structured data block is not valid JSON.');
+    }
+  }
+  const scriptMatches = allScripts.filter((m) => !isJsonLd(m[1] ?? ''));
   if (scriptMatches.length > 1) {
     issues.push(`Contains ${scriptMatches.length} <script> tags — the builder emits at most one.`);
   }
@@ -87,6 +106,8 @@ export function validateBlogHtml(html: string): BlogHtmlValidationResult {
   for (const [type, count] of Object.entries(counts) as [ComponentType, number][]) {
     if (count > COMPONENT_LIMITS[type]) issues.push(`Too many ${type} components: ${count} (max ${COMPONENT_LIMITS[type]}).`);
   }
+  const pulls = (bodyOf(html).match(/<p class="pull">/g) ?? []).length;
+  if (pulls > MAX_INLINE_PULL_QUOTES) issues.push(`Too many inline pull quotes: ${pulls} (max ${MAX_INLINE_PULL_QUOTES}).`);
   const interactive = INTERACTIVE_COMPONENT_TYPES.reduce((sum, t) => sum + counts[t], 0);
   if (interactive > MAX_INTERACTIVE_WIDGETS) {
     issues.push(`Too many interactive widgets: ${interactive} (max ${MAX_INTERACTIVE_WIDGETS}) — the article must not become a game.`);

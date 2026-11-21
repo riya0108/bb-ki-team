@@ -5,6 +5,7 @@ import { FetchToolError } from '@bb/mcp-client';
 import type { BlogPackage } from '@bb/shared-types';
 
 import { RepurposeSourceInaccessibleError } from './errors.js';
+import type { BlogResearchOptions } from './headAgent.js';
 import { runBlogArticle } from './headAgent.js';
 
 export type BlogSource = { kind: 'url'; url: string } | { kind: 'text'; label: string; text: string };
@@ -30,6 +31,7 @@ export interface RunBlogArticleFromSourceInput {
   topic: string;
   sampleArticleTexts?: string[];
   runId: string;
+  research?: BlogResearchOptions;
 }
 
 // Spec 12.2's "Source-led article from PDF/video/article" mode.
@@ -47,6 +49,7 @@ export async function runBlogArticleFromSource(input: RunBlogArticleFromSourceIn
     sourceTexts: [text],
     sourceReferences: [reference],
     ...(input.sampleArticleTexts !== undefined ? { sampleArticleTexts: input.sampleArticleTexts } : {}),
+    ...input.research,
     runId: input.runId,
   });
 }

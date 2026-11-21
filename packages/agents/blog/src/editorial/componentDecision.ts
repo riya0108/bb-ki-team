@@ -15,7 +15,7 @@ export interface ComponentProposal {
 }
 
 // Components whose content is factual and therefore need verified claims behind them.
-const FACT_BEARING: ReadonlySet<ComponentType> = new Set(['table', 'quiz', 'timeline', 'comparisonStat', 'revealCards']);
+const FACT_BEARING: ReadonlySet<ComponentType> = new Set(['table', 'quiz', 'timeline', 'comparisonStat', 'revealCards', 'barChart']);
 
 const MAX_COMPONENTS_BY_DEPTH: Record<ArticleDepth, number> = {
   short_explainer: 2,

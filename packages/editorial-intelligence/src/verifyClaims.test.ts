@@ -131,6 +131,23 @@ describe('verifyClaims', () => {
     expect(claims[0]?.conflictingClaimIds).toEqual(['c2']);
   });
 
+  it('detectNumericConflicts ignores different metrics that share topic words, and time series', () => {
+    expect(
+      detectNumericConflicts([
+        buildClaimFixture('a', 'Bank deposits made up 35% of household financial savings in FY24.'),
+        buildClaimFixture('b', 'Mutual funds rose to 12% of household financial savings, driven by SIP inflows.'),
+        buildClaimFixture('c', 'Bank deposits made up 45% of household financial savings in FY20.'),
+      ]),
+    ).toEqual([]);
+    // Same metric, same period, different values: still a conflict.
+    expect(
+      detectNumericConflicts([
+        buildClaimFixture('d', 'Bank deposits made up 35% of household financial savings in FY24.'),
+        buildClaimFixture('e', 'Bank deposits made up 41% of household financial savings in FY24.'),
+      ]),
+    ).toEqual([['d', 'e']]);
+  });
+
   it('detectNumericConflicts ignores claims about different things', () => {
     expect(
       detectNumericConflicts([
@@ -138,5 +155,42 @@ describe('verifyClaims', () => {
         buildClaimFixture('b', 'Inflation eased 40 basis points in September.'),
       ]),
     ).toEqual([]);
+  });
+});
+
+describe('cross-document corroboration', () => {
+  const claimText = 'The SEBI survey found 63% of households are aware of securities market products but only 9.5% participate.';
+
+  it('VERIFIES a figure the extractor cited from one outlet when a second independent outlet reports it', async () => {
+    const docs = [
+      doc('s1', 'SEBI survey: 63% of households are aware of securities market products, but only 9.5% participate.', 'secondary', 'fetched_article', 'Business Today'),
+      doc('s2', 'The regulator found 63% of Indian households aware of at least one securities market product. Participation in securities markets was only 9.5% of households.', 'secondary', 'fetched_article', 'Business Standard'),
+    ];
+    const [claim] = await verifyClaims({
+      claims: [unverified('c1', claimText, '63% of households are aware of securities market products, but only 9.5% participate', 's1')],
+      documents: docs,
+      llm: allYes,
+      logger: noopLogger,
+      runId: 'r',
+    });
+    expect(claim?.evidence.map((e) => e.sourceId)).toEqual(['s1', 's2']);
+    expect(claim?.evidence.every((e) => e.quoteFound)).toBe(true);
+    expect(claim?.verificationStatus).toBe('VERIFIED');
+  });
+
+  it('does not corroborate from a document that carries only some of the figures', async () => {
+    const docs = [
+      doc('s1', 'SEBI survey: 63% of households are aware of securities market products, but only 9.5% participate.', 'secondary', 'fetched_article', 'Business Today'),
+      doc('s2', 'About 63% of households are aware of securities market products, the survey said.', 'secondary', 'fetched_article', 'Business Standard'),
+    ];
+    const [claim] = await verifyClaims({
+      claims: [unverified('c1', claimText, '63% of households are aware of securities market products, but only 9.5% participate', 's1')],
+      documents: docs,
+      llm: allYes,
+      logger: noopLogger,
+      runId: 'r',
+    });
+    expect(claim?.evidence.map((e) => e.sourceId)).toEqual(['s1']);
+    expect(claim?.verificationStatus).toBe('HIGH_CONFIDENCE');
   });
 });

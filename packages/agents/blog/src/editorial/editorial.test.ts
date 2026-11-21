@@ -5,10 +5,10 @@ import type { ComponentProposal } from './componentDecision.js';
 import { decideComponents } from './componentDecision.js';
 import { checkComponentEvidence, dropUnsupportedComponents } from './componentEvidence.js';
 import { applyDeterministicBounds, evidenceCeilingScore, hardThresholdFailures } from './critic.js';
-import { fallbackArchitecture, maxDepthFor, reconcileArchitecture } from './architect.js';
+import { depthFloorFor, fallbackArchitecture, maxDepthFor, reconcileArchitecture } from './architect.js';
 import { assessCoverage, resolveInternalLinks } from './coverage.js';
 import { checkAiSlop } from './slopFilter.js';
-import { checkStructure } from './structureChecks.js';
+import { checkCitations, checkStructure } from './structureChecks.js';
 import { classifyEnding, classifyOpening, computeStyleMetrics, shapeFromPlainText } from './styleMetrics.js';
 import { aggregateStyleProfile, renderStyleProfileForWriter } from './styleProfile.js';
 import { brief, claim, MEDAL_CLAIMS, writerDraft } from './testFixtures.js';
@@ -292,7 +292,39 @@ describe('article architecture', () => {
   });
 });
 
+describe('article depth floor', () => {
+  const sixClaims = brief(Array.from({ length: 6 }, (_, i) => claim(`claim_0${i + 1}`, `Fact number ${i + 1} about deposits.`)));
+
+  it('plans long-form essays at deep_analysis when 6+ claims are usable', () => {
+    expect(depthFloorFor('New article', sixClaims)).toBe('deep_analysis');
+  });
+
+  it('leaves news updates and thinly evidenced topics free to be short', () => {
+    expect(depthFloorFor('News update', sixClaims)).toBe('short_explainer');
+    expect(depthFloorFor('New article', medalBrief)).toBe('short_explainer');
+  });
+});
+
 describe('structure checks', () => {
+  it('recognises a counterargument section by its heading or by restating the planned objection', () => {
+    const architecture = {
+      ...fallbackArchitecture('t', medalBrief),
+      counterArgument: 'Households are already shifting savings from bank deposits towards mutual funds and equities on new flows.',
+      articleDepth: 'standard' as const,
+    };
+    const sections = (heading: string, body: string) => [
+      { heading: 'Facts', body: 'Deposits dominate.', sourceNote: null, claimIds: [] },
+      { heading, body, sourceNote: null, claimIds: [] },
+      { heading: 'Next', body: 'Watch flows.', sourceNote: null, claimIds: [] },
+    ];
+    const byHeading = writerDraft({ sections: sections('The strongest objection: the money is already moving', 'Flows changed.') });
+    expect(checkStructure(byHeading, architecture).some((w) => w.code === 'missing_counterargument')).toBe(false);
+    const byContent = writerDraft({
+      sections: sections('Where the money goes', 'On new flows, households are shifting savings away from bank deposits towards mutual funds and equities.'),
+    });
+    expect(checkStructure(byContent, architecture).some((w) => w.code === 'missing_counterargument')).toBe(false);
+  });
+
   it('blocks a planned counterargument that the draft never engages', () => {
     const architecture = { ...fallbackArchitecture('t', medalBrief), counterArgument: 'India is catching up', articleDepth: 'standard' as const };
     const draft = writerDraft({
@@ -390,5 +422,23 @@ describe('coverage and internal links', () => {
     );
     expect(links).toHaveLength(1);
     expect(links[0]?.targetUrl).toBe('https://bullorbear.in/sport/china-medal-machine/');
+  });
+});
+
+describe('checkCitations', () => {
+  const cited = (body: string) =>
+    writerDraft({ sections: [{ heading: 'Facts', body, sourceNote: null, claimIds: [] }, { heading: 'More', body: 'Plain.', sourceNote: null, claimIds: [] }] });
+
+  it('blocks inline citations to unknown or unverified claims', () => {
+    const warnings = checkCitations(cited('China won [383 medals](claim_001) and [more](claim_404).'), new Set(['claim_001']));
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toMatchObject({ code: 'unverified_citation', severity: 'block' });
+    expect(warnings[0]?.message).toContain('claim_404');
+    expect(warnings[0]?.message).not.toContain('claim_001');
+  });
+
+  it('passes citations to usable claims, and skips the check when there is no brief', () => {
+    expect(checkCitations(cited('China won [383 medals](claim_001).'), new Set(['claim_001']))).toEqual([]);
+    expect(checkCitations(cited('[x](claim_404)'), null)).toEqual([]);
   });
 });

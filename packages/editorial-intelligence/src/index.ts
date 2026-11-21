@@ -2,6 +2,7 @@ export * from './analyzeTopic.js';
 export * from './research/feeds.js';
 export * from './research/sourceTiers.js';
 export * from './research/researchStory.js';
+export * from './research/claudeDiscovery.js';
 export * from './extractClaims.js';
 export * from './verifyClaims.js';
 export * from './analyzeSignificance.js';

@@ -71,6 +71,21 @@ function capDepth(depth: ArticleDepth, cap: ArticleDepth): ArticleDepth {
   return DEPTH_ORDER.indexOf(depth) <= DEPTH_ORDER.indexOf(cap) ? depth : cap;
 }
 
+// News updates and briefs may be short; every other article type is a long-form essay,
+// which is planned at least deep_analysis whenever the evidence allows it (the cap still
+// wins: never deeper than the verified material).
+const SHORT_FORM_TYPES = /\b(news|update|brief|short|quick|explainer lite)\b/i;
+
+export function depthFloorFor(articleType: string, brief: EditorialBrief | null): ArticleDepth {
+  if (SHORT_FORM_TYPES.test(articleType)) return 'short_explainer';
+  const usable = (brief?.claims ?? []).filter(isUsableClaim).length;
+  return brief?.kind === 'researched' && usable >= 6 ? 'deep_analysis' : 'short_explainer';
+}
+
+function raiseDepth(depth: ArticleDepth, floor: ArticleDepth): ArticleDepth {
+  return DEPTH_ORDER.indexOf(depth) >= DEPTH_ORDER.indexOf(floor) ? depth : floor;
+}
+
 function buildSystemPrompt(): string {
   return `ROLE: blog-article-architect
 You are the editor-in-chief of Bull or Bear planning ONE article before anyone writes it. You do not
@@ -89,17 +104,23 @@ Produce:
 - keyFactClaimIds / keyNumberClaimIds: IDs of VERIFIED or HIGH_CONFIDENCE claims only.
 - articleDepth: short_explainer (700-1,000 words), standard (1,200-1,800), deep_analysis (1,800-3,000)
   or investigation (2,500-4,000+), decided by complexity, number of verified claims, controversy,
-  reader knowledge and significance. Completeness, never word count.
+  reader knowledge and significance. Completeness, never word count. Bull or Bear's long-form essays
+  are deep_analysis by default whenever the brief carries 6+ usable claims and a real "why" question;
+  standard and short_explainer are for narrow news or a single fact.
 - sectionPlan: ordered sections, each {role, purpose, headingIdea, claimIds}. Roles: basic_facts,
   missing_question, what_data_shows, mechanism, counterargument, what_it_means, what_to_watch,
   context, history, comparison, practical, other. Adapt to the topic: do not force all of them.
 - mustNotClaim: statements the writer will be tempted to make that the evidence does not support.
 - componentProposals: interactive/visual components that would GENUINELY improve understanding
-  (table, revealCards, quiz, poll, decision, comparisonStat, pullQuote, timeline). For each give purpose,
+  (table, revealCards, quiz, poll, decision, comparisonStat, pullQuote, timeline, barChart). For each give purpose,
   the claimIds it would rest on, afterSectionIndex and 0-10 scores: informationGain, readerValue,
   topicFit, evidenceSupport, engagementValue, redundancy (10 = repeats the prose), editorialNecessity.
-  Score honestly: most articles need zero to two components. A table only for real comparisons; a quiz
-  only to reinforce what the article teaches; a decision only for a genuine trade-off; a timeline only
+  Score honestly. A deep_analysis essay with 3+ verified numbers normally carries two to four: at least
+  one that SHOWS the evidence (barChart for 3+ numbers on one scale, table for a real side-by-side) and,
+  when the reader faces a genuine choice or misconception, one they interact with (decision, revealCards,
+  quiz). Each must rest on usable claim IDs. A table only for real comparisons; a quiz
+  only to reinforce what the article teaches; a barChart when 3+ verified numbers on one scale (survey
+  splits, shares, rankings) are the evidence the reader should see; a decision only for a genuine trade-off; a timeline only
   when chronology matters. Never propose a component just because it exists.
 - priorCoverageDecision (see PRIOR COVERAGE), editorialConfidence 0-1.
 Respect the editorial memory and style profile below; never copy any reference writer.`;
@@ -120,11 +141,11 @@ export interface PlanArticleInput {
 
 export function reconcileArchitecture(
   response: ArchitectResponse,
-  input: Pick<PlanArticleInput, 'brief' | 'memories'>,
+  input: Pick<PlanArticleInput, 'brief' | 'memories'> & { articleType?: string },
 ): EditorialArchitecture {
   const usable = new Set((input.brief?.claims ?? []).filter(isUsableClaim).map((c) => c.id));
   const keep = (ids: readonly string[]): string[] => [...new Set(ids.filter((id) => usable.has(id)))];
-  const depth = capDepth(response.articleDepth, maxDepthFor(input.brief));
+  const depth = capDepth(raiseDepth(response.articleDepth, depthFloorFor(input.articleType ?? '', input.brief)), maxDepthFor(input.brief));
   const sectionCount = response.sectionPlan.length;
   const proposals: ComponentProposal[] = response.componentProposals.map((p) => ({
     ...p,
@@ -206,7 +227,20 @@ ${input.styleGuidance}`,
       },
       ArchitectResponseSchema,
     );
-    return reconcileArchitecture(response, input);
+    const architecture = reconcileArchitecture(response, input);
+    input.logger.info(
+      {
+        runId: input.runId,
+        stepId: 'blog-architect',
+        requestedDepth: response.articleDepth,
+        depthCap: maxDepthFor(input.brief),
+        usableClaims: (input.brief?.claims ?? []).filter(isUsableClaim).length,
+        briefKind: input.brief?.kind ?? null,
+        finalDepth: architecture.articleDepth,
+      },
+      'Article architecture planned',
+    );
+    return architecture;
   } catch (error) {
     input.logger.warn(
       { runId: input.runId, stepId: 'blog-architect', err: error instanceof Error ? error.message : String(error) },

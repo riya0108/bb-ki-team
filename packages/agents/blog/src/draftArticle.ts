@@ -3,10 +3,12 @@ import { BRAND_BRAIN, renderCraftPlaybook } from '@bb/core';
 import { renderBriefForWriter, STORY_FIRST_WRITING_RULES } from '@bb/editorial-intelligence';
 import type { ComponentType, ContentDnaRecord, EditorialArchitecture, EditorialBrief } from '@bb/shared-types';
 import {
+  BarChartComponentSchema,
   DecisionComponentSchema,
   EditorialArchitectureSchema,
   EditorialQualitySchema,
   EditorialWarningSchema,
+  FaqSchema,
   InternalLinkSchema,
   QuizComponentSchema,
   SeoPlanSchema,
@@ -63,7 +65,40 @@ export const BLOG_CRAFT_RULES: readonly string[] = [
   'Never paste a claim\'s wording in as a sentence, and never state the same fact twice: claims are evidence to explain, not copy to repeat. Each number appears once, where it does the most work.',
   'Interim or time-bound figures (live tallies, running totals, forecasts) always carry their date ("as of 21 September") and are never presented as final.',
   'SEO sits underneath editorial quality (truth > editorial quality > reader value > brand > SEO): no keyword stuffing, no filler FAQ sections, no headings written for search engines.',
+  'Quotation marks are only for words someone actually said or wrote, copied verbatim from the evidence. Imagined thoughts, a reader\'s inner voice or your own catchphrases never go in quotation marks: write them as plain prose or reported speech (the worry is that someone might cheat them).',
+  'The title, deck and every heading are held to the same numbers as the body: any figure or proportion in them ("nine in ten", "80%", "half") must match a verified claim exactly. Never round 63% to "nine in ten" or 79% to "almost all".',
+  'Keep what a number measures. A survey of stated preference reports what people SAY ("80% say they prefer..."), never what they DO ("80% choose..."); a share of new savings is not a share of total wealth; a generation is not an age band unless the source says so.',
+  'Use the newest data in the brief. If a later period (the latest fiscal year, quarter or month) exists, it leads, and older figures are framed as history. When newer data cuts against the thesis or is disputed between sources, say so in the text and explain what it would mean if it holds; never silently present an older year as the current state.',
 ];
+
+// The long-form essay standard (set by the editor, 2026-11, from two reference
+// essays: an AI-restraint essay and a Gen Z vs Gen X savings piece). Describes what
+// those pieces DO — structure, rigour, rhythm — never their wording or topics.
+export const ESSAY_STANDARD_RULES: readonly string[] = [
+  `Depth: when the research supports it, a Bull or Bear essay runs 3,000-4,500 words (a 12-16 minute read) in 6-9 H2 sections, most split by one or two H3 subheads. Depth comes from more evidence, mechanism, context and honest caveats, never from repetition or padding.`,
+  `Cold open: 2-4 short paragraphs of a concrete, sensory scene or small human moment that contains the whole problem in miniature. A clearly hypothetical or composite scene ("Picture a dinner party...", "Ask a 24-year-old and a 55-year-old what they are saving for") is fine; never invent a named real person, a quote, or an event.`,
+  `Then the turn: one paragraph that names the tension and states the thesis plainly, then one short paragraph that tells the reader what the piece will cover.`,
+  `The first body section pins the facts down precisely, including methodology: who ran the survey or study, who paid for it, fieldwork dates, sample size and population, and what it measures (stated preferences vs actual behaviour). Name conflicts of interest calmly, without accusing anyone.`,
+  `Each H2 makes one move in the argument. Headings are short, concrete and specific to this piece (often a phrase from it), never generic ("Introduction", "Overview", "Key Takeaways").`,
+  `Give every number its meaning straight away: compare it, invert it ("if 26% want a home, 74% want something else"), set it against a benchmark, or translate it into the reader's life. Worked examples use round inputs, show the arithmetic step by step, and say they are illustrative.`,
+  `Steelman, then push back: present the popular explanation fairly, say what is right about it, then show where it breaks, with evidence.`,
+  `Near the end, a caveats section (e.g. "Before You Draw the Wrong Conclusion"): 3-5 paragraphs, each opening with a **bold one-line caveat** followed by 1-3 sentences: stated vs revealed behaviour, averages hiding variation, correlation vs cause, sample limits, evidence from another country.`,
+  `When there is something to do, a practical section for distinct reader groups: a **bold lead-in** line per group followed by a 3-4 item bullet list of concrete actions, each with its reason.`,
+  `Use the first person sparingly, for judgement ("I'd flag two things", "I'd push back on the neat version", "Here is what I find most striking"), and label observation vs data ("this part is observation rather than data").`,
+  `One or two pull quotes per article: a sentence of the article itself that compresses the argument, on its own as a "> " block. Never a quote attributed to a person.`,
+  `Close by returning to the opening scene with the new understanding, then give the reader one concrete thing to do, ask or notice. The closing heading is a phrase from the piece (conclusionHeading), never "Conclusion".`,
+  `FAQ: 4-5 questions a reader would actually search for, each answered in 2-4 self-contained sentences using only the article's verified facts. Answers are fact-checked like the body.`,
+  `Cite inline like a good magazine: link the specific phrase that carries an important fact to its claim ID, e.g. [Knight Frank's Affordability Index](claim_012). Aim for 4-12 such links on the facts that matter most. Only claim IDs listed as VERIFIED or HIGH_CONFIDENCE.`,
+];
+
+// The closed markup a section body may use (rendered by bodyMarkup.ts/htmlBuilder.ts).
+export const BODY_MARKUP_GUIDE = `BODY MARKUP (section bodies, practicalTakeaway and conclusion; no HTML, no other markdown):
+- Paragraphs are separated by a blank line. Keep most paragraphs 1-4 sentences; vary the rhythm.
+- "### Subheading" on its own line starts an H3 subsection inside the section.
+- A block where every line starts with "- " is a bulleted list. Use lists sparingly, for genuinely parallel items.
+- "> One sentence from the article" on its own is a pull quote (max 2 in the whole article).
+- **bold** for a lead-in phrase or the single most important idea in a paragraph; *italic* for titles and emphasis.
+- [anchor phrase](claim_012) links the phrase to the source behind that verified claim. Claim IDs only, never URLs.`;
 
 const BlogSectionOutputSchema = z.object({
   heading: z.string().min(1),
@@ -156,6 +191,12 @@ export const DraftBlogArticleWriterSchema = z.object({
   quiz: lenient(QuizComponentSchema),
   decision: lenient(DecisionComponentSchema),
   timeline: lenient(TimelineComponentSchema),
+  barChart: lenient(BarChartComponentSchema),
+  // Essay-standard fields (all lenient: a missing one never fails the draft).
+  faq: FaqSchema.nullable().default(null).catch(null),
+  conclusionHeading: z.string().max(90).nullable().default(null).catch(null),
+  strapline: z.string().max(110).nullable().default(null).catch(null),
+  titleAccent: z.string().max(60).nullable().default(null).catch(null),
   internalLinks: z.array(WriterInternalLinkSchema).max(5).default([]).catch([]),
   seo: SeoPlanSchema.nullable().default(null).catch(null),
   // The brief claim IDs the title/introduction rest on (empty for opinion/no-brief drafts).
@@ -225,6 +266,10 @@ const COMPONENT_GUIDANCE: Record<ComponentType, string> = {
   fabricated quote from a person.`,
   timeline: `timeline: { title, events: [{date, title, description, sourceNote|null}] (3-10), claimIds,
   afterSectionIndex }. Only when chronology is the point.`,
+  barChart: `barChart: { title, subtitle|null (what is measured · source, date), bars: [{label, value (number),
+  displayValue (e.g. "26%"), group|null}] (2-10), sourceNote, claimIds, afterSectionIndex }. For survey splits,
+  shares, rankings: the numbers a reader should SEE side by side. Every value comes from the listed claimIds.
+  Use group (max two distinct groups) to colour two populations, e.g. "Gen Z" / "Gen X".`,
 };
 
 function renderArchitecture(a: EditorialArchitecture): string {
@@ -299,6 +344,12 @@ ${styleBlock}
 Editorial craft:
 ${BLOG_CRAFT_RULES.map((r) => `- ${r}`).join('\n')}
 
+THE BULL OR BEAR ESSAY STANDARD (what a finished article reads like — scale it to the material: a short
+explainer keeps the rigour and the rhythm, not the length):
+${ESSAY_STANDARD_RULES.map((r) => `- ${r}`).join('\n')}
+
+${BODY_MARKUP_GUIDE}
+
 ${renderCraftPlaybook('blog')}
 Never use these phrases (they read as AI-generated): ${AI_SLOP_PHRASES.slice(0, 40).join('; ')}.
 
@@ -369,8 +420,11 @@ ${sourceBlock}${architecture}${links}
 Write one Bull or Bear article. Respond with the required JSON shape: titleOptions (1-3 honest,
 curiosity-led options), category, metaDescription (under 160 characters, no keyword stuffing), deck,
 shortVersion (or null), thesis (the article's one-sentence argument — internal, not rendered), sections
-(ordered array, each an H2 with heading/body/sourceNote/claimIds — body is plain text, paragraphs
-separated by a blank line), practicalTakeaway (or null), conclusion, disclaimer (or null — only for
+(ordered array, each an H2 with heading/body/sourceNote/claimIds — body uses the BODY MARKUP), practicalTakeaway
+(or null), conclusion (BODY MARKUP), conclusionHeading (a phrase, not "Conclusion"), strapline (one short line for
+the masthead, e.g. "Research, products and one uncomfortable experiment", or null), titleAccent (2-4 words of the
+chosen title to set in the accent colour, copied exactly, or null), faq (4-5 {question, answer}, or null for a
+short explainer), barChart (null unless approved), disclaimer (or null — only for
 regulated subject matter), sources (clean labels like "Reuters, October 8, 2026"; can be empty),
 articleSummary, estimatedReadTime (e.g. "6 min", or null), seoStatus (one sentence), styleMatchStatus (one
 sentence: how this matches the style baseline), the component fields (null unless approved and genuinely

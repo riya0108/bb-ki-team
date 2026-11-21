@@ -26,34 +26,49 @@
 // a bare tab — falling back to the original light-mode palette in that case.
 // Flip-card and poll/callout token choices mirror
 // ~/Downloads/BLOG/src/components/FlipRevealGrid.astro exactly.
+//
+// Typography and reading rhythm follow the long-form essay standard the editor set
+// (2026-11): a serif reading column (~680px, 19px/1.7) under a large grotesk
+// masthead, accent-coloured H3 subheads, a bold left-rule pull quote, CSS-only bar
+// charts and native <details> FAQ accordions. Font stacks fall back to Georgia /
+// system sans on the live site, where only this <style> block (not the <link>) ships.
 export const ARTICLE_CSS = `  *{box-sizing:border-box;}
   html{background:var(--color-canvas, #FFFFFF);}
   body{
     margin:0; background:var(--color-canvas, #FFFFFF); color:var(--color-body, #181818);
-    font-family:'Figtree', system-ui, sans-serif;
-    line-height:1.72; font-size:18px;
+    font-family:'Source Serif 4', Georgia, 'Times New Roman', serif;
+    line-height:1.7; font-size:19px;
     -webkit-font-smoothing:antialiased;
   }
-  .page{max-width:700px; margin:0 auto; padding:56px 24px 90px;}
+  .page{max-width:680px; margin:0 auto; padding:0 16px 90px;}
+  .masthead{max-width:980px; margin:0 auto; padding:clamp(40px,8vw,104px) 16px clamp(28px,5vw,52px);}
+  .masthead-rule{border:0; border-top:1px solid var(--color-hairline, #D9DCE3); max-width:980px; margin:0 auto 44px;}
 
-  h1,h2{font-family:'Outfit', system-ui, sans-serif; font-weight:700; color:var(--color-ink, #0D0D0D); margin:0;}
+  h1,h2{font-family:'Space Grotesk', 'Outfit', system-ui, sans-serif; font-weight:700; color:var(--color-ink, #0D0D0D); margin:0;}
 
   .kicker{
-    font-family:'Fragment Mono', monospace; font-size:.72rem; font-weight:400;
-    letter-spacing:.14em; text-transform:uppercase; color:var(--color-mute, #787878);
-    margin-bottom:18px;
+    font-family:'Space Grotesk', system-ui, sans-serif; font-size:13px; font-weight:500;
+    letter-spacing:.14em; text-transform:uppercase; color:var(--color-mute, #5B6270);
+    margin:0 0 26px;
   }
-  h1{font-size:clamp(1.85rem, 5vw, 2.5rem); line-height:1.18; letter-spacing:-.01em; margin-bottom:16px;}
-  .dek{font-size:1.15rem; line-height:1.55; color:var(--color-ink-soft, #454545); margin:0 0 30px; max-width:56ch;}
+  h1{font-size:clamp(38px, 7.4vw, 84px); line-height:1.02; letter-spacing:-.035em; margin:0; text-wrap:balance; max-width:18ch;}
+  h1 .accent{color:var(--color-primary, #2B44E8);}
+  .dek{font-family:'Source Serif 4', Georgia, serif; font-size:clamp(19px, 2.4vw, 23px); line-height:1.5; color:var(--color-ink-soft, #3A3F4A); margin:26px 0 0; max-width:46ch;}
+  .meta{margin:30px 0 0; font:500 14px/1.5 'Space Grotesk', system-ui, sans-serif; color:var(--color-mute, #5B6270); display:flex; gap:6px 22px; flex-wrap:wrap;}
 
-  .essay p{margin:0 0 24px; color:var(--color-body, #454545); font-size:1.03rem;}
+  .essay p{margin:0 0 1.15em; color:var(--color-body, #22252C);}
+  .essay > section:first-of-type > p:first-of-type{font-size:1.22em; line-height:1.55;}
+  .essay h3.sub-head{font-family:'Space Grotesk', system-ui, sans-serif; font-weight:700; font-size:21px; line-height:1.25; margin:1.8em 0 .5em; color:var(--color-primary, #2B44E8);}
+  .essay ul.body-list{padding-left:1.2em; margin:0 0 1.25em;}
+  .essay ul.body-list li{margin-bottom:.5em; color:var(--color-body, #22252C);}
+  .essay p.pull{font-family:'Space Grotesk', system-ui, sans-serif; font-weight:700; font-size:clamp(23px, 3.8vw, 32px); line-height:1.2; letter-spacing:-.02em; color:var(--color-ink, #14161C); margin:1.4em 0; padding:2px 0 2px 22px; border-left:4px solid var(--color-primary, #2B44E8); text-wrap:balance;}
   .essay p:last-child{margin-bottom:0;}
   .essay strong{color:var(--color-ink, #0D0D0D); font-weight:700;}
   .essay em{color:var(--color-ink, #0D0D0D); font-style:italic;}
   .essay .source-note{font-size:.85rem; color:var(--color-mute, #787878);}
   .essay .disclaimer{font-size:.85rem; color:var(--color-mute, #787878);}
 
-  h2.section-head{font-size:1.4rem; line-height:1.3; margin:46px 0 18px;}
+  h2.section-head{font-size:clamp(26px, 4.2vw, 36px); line-height:1.12; letter-spacing:-.02em; margin:2.1em 0 .6em; text-wrap:balance;}
 
   .gap-widget{background:var(--color-surface-dark, #181818); border-radius:16px; padding:30px 26px; margin:30px 0; color:var(--color-on-dark, #F2F0EC);}
   .gap-label{font-family:'Fragment Mono', monospace; font-size:.68rem; letter-spacing:.1em; text-transform:uppercase; color:color-mix(in srgb, var(--color-on-dark, #F2F0EC) 65%, transparent); text-align:center; margin-bottom:20px;}
@@ -165,9 +180,31 @@ export const ARTICLE_CSS = `  *{box-sizing:border-box;}
     outline:3px solid var(--color-primary, #5D3FD3); outline-offset:3px;
   }
 
+  .bar-chart{margin:2em 0; font-family:'Space Grotesk', system-ui, sans-serif;}
+  .bar-chart figcaption{display:flex; flex-direction:column; gap:2px; margin-bottom:14px; font-size:15px; color:var(--color-ink, #14161C);}
+  .bar-chart figcaption span{color:var(--color-mute, #5B6270); font-size:13px;}
+  .bar-row{display:grid; grid-template-columns:minmax(0,170px) 1fr 64px; gap:12px; align-items:center; padding:7px 0; font-size:14px; color:var(--color-body, #22252C);}
+  .bar-track{display:block; height:22px; background:var(--color-hairline, #E2E5EB); border-radius:2px; overflow:hidden;}
+  .bar-fill{display:block; height:100%; background:var(--color-primary, #2B44E8);}
+  .bar-row.g2 .bar-fill{background:var(--color-accent-2, #C98300);}
+  .bar-val{font-weight:700; font-variant-numeric:tabular-nums; text-align:right;}
+  .bar-source{font-size:13px; color:var(--color-mute, #5B6270); margin-top:10px;}
+
+  .faq{margin-top:3em;}
+  .faq details{border-top:1px solid var(--color-hairline, #D9DCE3); padding:18px 0;}
+  .faq details:last-of-type{border-bottom:1px solid var(--color-hairline, #D9DCE3);}
+  .faq summary{font:700 19px/1.35 'Space Grotesk', system-ui, sans-serif; color:var(--color-ink, #14161C); cursor:pointer; list-style:none; display:flex; justify-content:space-between; gap:16px;}
+  .faq summary::-webkit-details-marker{display:none;}
+  .faq summary::after{content:"+"; color:var(--color-primary, #2B44E8); font-size:24px; line-height:1;}
+  .faq details[open] summary::after{content:"\u2013";}
+  .faq summary:focus-visible{outline:2px solid var(--color-primary, #2B44E8); outline-offset:4px;}
+  .faq details p{margin:12px 0 0; color:var(--color-mute, #5B6270); font-size:17px; line-height:1.6;}
+
   @media (max-width:560px){
-    body{font-size:16.5px;}
-    .page{padding:38px 18px 70px;}
+    .bar-row{grid-template-columns:1fr 64px;}
+    .bar-row .bar-label{grid-column:1 / -1;}
+    body{font-size:18px;}
+    .page{padding:0 16px 70px;}
     .flip-grid{grid-template-columns:1fr;}
     .flip-card{height:150px;}
     .gap-num{font-size:1.7rem;}

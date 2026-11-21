@@ -3,6 +3,7 @@ import { revisionNotesFor } from '@bb/editorial-intelligence';
 import type { DriftIssue } from '@bb/qa-gate';
 import { detectMeaningDrift } from '@bb/qa-gate';
 import type { ComponentType, EditorialArchitecture, EditorialBrief, EditorialQuality, EditorialWarning } from '@bb/shared-types';
+import { isUsableClaim } from '@bb/shared-types';
 
 import type { DraftBlogArticleWriterOutput } from '../draftArticle.js';
 
@@ -13,7 +14,7 @@ import type { CritiqueResult } from './critic.js';
 import { critiqueArticle } from './critic.js';
 import type { SlopReport } from './slopFilter.js';
 import { checkAiSlop } from './slopFilter.js';
-import { checkStructure } from './structureChecks.js';
+import { checkCitations, checkStructure } from './structureChecks.js';
 
 // Spec 15/25/50: FIRST DRAFT -> deterministic checks + EDITORIAL CRITIC -> (if a hard
 // gate fails) FINAL EDITOR revision -> re-check. One revision by default: every LLM
@@ -30,6 +31,7 @@ const COMPONENT_FIELDS: Record<ComponentType, keyof DraftBlogArticleWriterOutput
   comparisonStat: 'comparisonStat',
   pullQuote: 'pullQuote',
   timeline: 'timeline',
+  barChart: 'barChart',
 };
 
 // The writer may only carry components the decision engine approved.
@@ -55,7 +57,10 @@ export function runDraftChecks(draft: DraftBlogArticleWriterOutput, brief: Edito
     slop: checkAiSlop(slopInputOf(draft)),
     drift: brief && brief.kind !== 'opinion' ? detectMeaningDrift(articlePlainText(draft), brief.claims) : [],
     componentIssues: checkComponentEvidence(draft, brief),
-    structure: checkStructure(draft, architecture),
+    structure: [
+      ...checkStructure(draft, architecture),
+      ...checkCitations(draft, brief ? new Set(brief.claims.filter(isUsableClaim).map((c) => c.id)) : null),
+    ],
   };
 }
 

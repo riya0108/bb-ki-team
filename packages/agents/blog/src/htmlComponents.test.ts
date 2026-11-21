@@ -3,6 +3,7 @@ import { blogPostFragmentFromHtml } from '@bb/mcp-client';
 import { describe, expect, it } from 'vitest';
 
 import { analyzeArticleHtml } from './editorial/styleMetrics.js';
+import { sectionSourceNote } from './headAgent.js';
 import { buildArticleHtml, INTERACTIVE_SCRIPT } from './htmlBuilder.js';
 import { countComponents, validateBlogHtml } from './htmlValidation.js';
 
@@ -200,7 +201,7 @@ describe('document structure', () => {
     const { html, components } = buildArticleHtml({ ...base, table: null, quiz: null, decision: null, timeline: null, poll: null, revealCards: null });
     expect(components).toEqual([]);
     expect(html).not.toContain('<script>');
-    expect(countComponents(html)).toEqual({ table: 0, revealCards: 0, quiz: 0, poll: 0, decision: 0, comparisonStat: 0, pullQuote: 0, timeline: 0 });
+    expect(countComponents(html)).toEqual({ table: 0, revealCards: 0, quiz: 0, poll: 0, decision: 0, comparisonStat: 0, pullQuote: 0, timeline: 0, barChart: 0 });
   });
 
   it('keeps every widget inside <main class="essay"> (what the publisher copies into MDX)', () => {
@@ -209,7 +210,9 @@ describe('document structure', () => {
     for (const marker of ['table-figure', 'class="quiz"', 'class="decision"', 'timeline-wrap', 'short-version']) {
       expect(main).toContain(marker);
     }
-    expect((html.match(/<script/g) ?? []).length).toBe(1);
+    // One interaction script plus one inert structured-data block in <head>.
+    expect((html.match(/<script>/g) ?? []).length).toBe(1);
+    expect((html.match(/<script type="application\/ld\+json">/g) ?? []).length).toBe(1);
   });
 
   it('renders clean source labels as links, never raw URLs in the text', () => {
@@ -315,5 +318,108 @@ describe('publishing compatibility', () => {
     // Outside the <style>/<script> template literals, no raw brace survives.
     const prose = fragment.bodyMdx.replace(/<(style|script)>[\s\S]*?<\/\1>/g, '');
     expect(prose).not.toMatch(/[{}]/);
+  });
+});
+
+describe('essay-standard rendering', () => {
+  const essay = {
+    ...base,
+    sections: [
+      {
+        heading: 'What the survey actually found',
+        body: [
+          'First, the facts. [YouGov fielded it](claim_001) between **13 and 16 October**, with *1,212* adults.',
+          '### Who paid for the question',
+          'The survey comes from a fintech.',
+          '- Stated goals are not behaviour.\n- Averages hide variation.',
+          '> One generation fears too little stuff.',
+          'A link to [an unknown claim](claim_999) stays plain, and <script>alert(1)</script> stays text.',
+        ].join('\n\n'),
+        sourceNote: null,
+      },
+      { heading: 'Two ends of one rope', body: 'More.', sourceNote: null },
+    ],
+    conclusion: 'Write both goals down.',
+    conclusionHeading: 'Same rope, two ends',
+    titleAccent: 'Still Dominates',
+    readTime: '14 min',
+    dateLabel: 'November 2026',
+    strapline: 'A survey, two generations',
+    citations: { claim_001: 'https://www.business-standard.com/example' },
+    faq: [
+      { question: 'What did the survey find?', answer: '26% of Gen Z named a home first.' },
+      { question: 'Who ran it?', answer: 'YouGov ran the fieldwork.' },
+    ],
+    barChart: {
+      title: 'Primary financial goal',
+      subtitle: 'Share naming it first',
+      bars: [
+        { label: 'Gen Z · home', value: 26, displayValue: '26%', group: 'Gen Z' },
+        { label: 'Gen X · retirement', value: 35.4, displayValue: '35.4%', group: 'Gen X' },
+      ],
+      sourceNote: 'Stable Money–YouGov, Oct 2026',
+      claimIds: ['claim_001'],
+      afterSectionIndex: 0,
+    },
+  };
+
+  it('renders subheads, lists, pull quotes, emphasis and claim-resolved citations', () => {
+    const { html } = buildArticleHtml(essay);
+    expect(html).toContain('<h3 class="sub-head">Who paid for the question</h3>');
+    expect(html).toContain('<ul class="body-list">\n<li>Stated goals are not behaviour.</li>');
+    expect(html).toContain('<p class="pull">One generation fears too little stuff.</p>');
+    expect(html).toContain('<strong>13 and 16 October</strong>');
+    expect(html).toContain('<em>1,212</em>');
+    expect(html).toContain('<a href="https://www.business-standard.com/example" rel="noopener" target="_blank">YouGov fielded it</a>');
+    expect(html).toContain('A link to an unknown claim stays plain');
+    expect(html).toContain('&lt;script&gt;alert(1)&lt;/script&gt;');
+    expect(validateBlogHtml(html)).toEqual({ valid: true, issues: [] });
+  });
+
+  it('renders the masthead meta, accent, closing heading, chart and FAQ', () => {
+    const { html, components } = buildArticleHtml(essay);
+    expect(html).toContain('Why China <span class="accent">Still Dominates</span> the Asian Games');
+    expect(html).toContain('<span>November 2026</span><span>14 min read</span><span>A survey, two generations</span>');
+    expect(html).toContain('<h2 class="section-head">Same rope, two ends</h2>');
+    expect(html).toMatch(/<div class="bar-row g2">.*Gen X · retirement.*35\.4%/);
+    expect(html).toContain('<details><summary>What did the survey find?</summary><p>26% of Gen Z named a home first.</p></details>');
+    expect(components).toEqual(['barChart', 'faq']);
+    const ld = /<script type="application\/ld\+json">([\s\S]*?)<\/script>/.exec(html)?.[1] ?? '';
+    expect((JSON.parse(ld) as { '@graph': { '@type': string }[] })['@graph'][1]?.['@type']).toBe('FAQPage');
+    const main = /<main class="essay">([\s\S]*?)<\/main>/.exec(html)?.[1] ?? '';
+    expect(main).toContain('class="faq"');
+    expect(main).toContain('class="bar-chart"');
+  });
+
+  it('stays publishable: the MDX fragment carries the FAQ and chart but not the structured data', () => {
+    const fragment = blogPostFragmentFromHtml(buildArticleHtml(essay).html);
+    expect(fragment.categoryRaw).toBe('Sport & Economics');
+    expect(fragment.bodyMdx).toContain('class="faq"');
+    expect(fragment.bodyMdx).toContain('class="bar-chart"');
+    expect(fragment.bodyMdx).not.toContain('ld+json');
+  });
+
+  it('escapes model text inside structured data so it cannot close the script', () => {
+    const { html } = buildArticleHtml({ ...essay, faq: [{ question: 'Q</script><script>x', answer: 'A' }, { question: 'Q2', answer: 'A2' }] });
+    expect(html).not.toContain('Q</script><script>x');
+    expect(validateBlogHtml(html).valid).toBe(true);
+  });
+});
+
+describe('sectionSourceNote', () => {
+  const display = [
+    { shortLabel: 'Business Today, October 1, 2025', claimIds: ['claim_001', 'claim_002'] },
+    { shortLabel: 'Mint, January 29, 2026', claimIds: ['claim_003'] },
+  ];
+
+  it('names the outlets behind the claims a section cites, never the writer\'s label', () => {
+    expect(sectionSourceNote({ body: 'See [the survey](claim_003).', claimIds: ['claim_001'] }, display)).toBe(
+      'Source: Business Today, October 1, 2025; Mint, January 29, 2026',
+    );
+  });
+
+  it('returns null when the section cites nothing backed by a fetched source', () => {
+    expect(sectionSourceNote({ body: 'No facts here.', claimIds: [] }, display)).toBeNull();
+    expect(sectionSourceNote({ body: 'x', claimIds: ['claim_999'] }, display)).toBeNull();
   });
 });

@@ -3,6 +3,7 @@ import { contentStems, extractQuantities, normalizeForMatch, quantitiesMatch, sh
 import type { Claim, EvidenceTier, VerificationStatus } from '@bb/shared-types';
 import { z } from 'zod';
 
+import { corroborateClaims } from './corroborate.js';
 import type { ResearchDocument } from './research/researchStory.js';
 import { TIER_RANK } from './research/sourceTiers.js';
 import { independenceKeys } from './research/syndication.js';
@@ -134,7 +135,7 @@ One source containing similar words is not verification: the specific claim, wit
 must be supported.`;
 }
 
-function buildUserPrompt(claims: readonly Claim[], documents: readonly ResearchDocument[]): string {
+function buildUserPrompt(claims: readonly Claim[], documents: readonly ResearchDocument[], budget: 'standard' | 'large' = 'standard'): string {
   const docsById = new Map(documents.map((d) => [d.source.id, d]));
   const claimBlock = claims
     .map((c) => {
@@ -146,7 +147,10 @@ function buildUserPrompt(claims: readonly Claim[], documents: readonly ResearchD
     .join('\n');
   // Kept small (see extractClaims.ts on the free-tier request budget): the verifier
   // mostly needs the cited evidence quotes above; excerpts are context.
-  const perDoc = Math.max(300, Math.min(1500, Math.floor(8000 / Math.max(documents.length, 1))));
+  const perDoc =
+    budget === 'large'
+      ? Math.max(1500, Math.min(6000, Math.floor(90_000 / Math.max(documents.length, 1))))
+      : Math.max(300, Math.min(1500, Math.floor(8000 / Math.max(documents.length, 1))));
   const docBlock = documents
     .map((d) => `--- ${d.source.id} | ${d.source.tier} | ${d.source.publisher ?? ''} | ${d.source.publishedAt ?? 'date unknown'} ---\n${d.text.slice(0, perDoc)}`)
     .join('\n\n');
@@ -170,8 +174,36 @@ function statusFromVerdict(claim: Claim, v: ClaimVerdict): VerificationStatus {
   return 'VERIFIED';
 }
 
-// Deterministic contradiction detection: two claims about the same thing (3+ shared
-// content stems) carrying different values in the same unit ("25 bps" vs "50 bps").
+// Deterministic contradiction detection: two claims about the same thing carrying
+// different values in the same unit ("25 bps" vs "50 bps").
+//
+// "The same thing" means most of the shorter claim's content words are shared — not
+// merely 3 topic words. A deep research set (40 claims on household savings) is full
+// of different metrics that share "household", "savings", "deposits": treating each
+// pair of different percentages as a contradiction marked 30 of 40 claims DISPUTED in
+// a live run (2026-11-17). Claims pinned to different years/periods are a time series,
+// not a contradiction.
+const SAME_SUBJECT_MIN_STEMS = 3;
+const SAME_SUBJECT_MIN_OVERLAP = 0.6;
+
+function sameSubject(a: string, b: string): boolean {
+  const sa = contentStems(a);
+  const sb = contentStems(b);
+  const shared = sharedStemCount(sa, sb);
+  const shorter = Math.max(1, Math.min(sa.length, sb.length));
+  return shared >= SAME_SUBJECT_MIN_STEMS && shared / shorter >= SAME_SUBJECT_MIN_OVERLAP;
+}
+
+function periodsOf(text: string): Set<string> {
+  return new Set(text.match(/\b(?:FY\s?'?\d{2,4}(?:-\d{2})?|(?:19|20)\d{2}(?:-\d{2})?|Q[1-4])\b/gi)?.map((p) => p.toLowerCase().replace(/\s|'/g, '')) ?? []);
+}
+
+function differentPeriods(a: string, b: string): boolean {
+  const pa = periodsOf(a);
+  const pb = periodsOf(b);
+  return pa.size > 0 && pb.size > 0 && ![...pa].some((p) => pb.has(p));
+}
+
 export function detectNumericConflicts(claims: readonly Claim[]): [string, string][] {
   const conflicts: [string, string][] = [];
   for (let i = 0; i < claims.length; i += 1) {
@@ -179,7 +211,7 @@ export function detectNumericConflicts(claims: readonly Claim[]): [string, strin
       const a = claims[i];
       const b = claims[j];
       if (!a || !b) continue;
-      if (sharedStemCount(contentStems(a.text), contentStems(b.text)) < 3) continue;
+      if (!sameSubject(a.text, b.text) || differentPeriods(a.text, b.text)) continue;
       const qa = extractQuantities(a.text).filter((q) => q.unit !== 'plain' && q.unit !== 'year');
       const qb = extractQuantities(b.text).filter((q) => q.unit !== 'plain' && q.unit !== 'year');
       const sameUnitDifferentValue = qa.some((x) => qb.some((y) => x.unit === y.unit && !quantitiesMatch(x, y)));
@@ -196,14 +228,17 @@ export interface VerifyClaimsInput {
   llm: LlmClient;
   logger: Logger;
   runId: string;
+  // 'large' (long-context model): the verifier reads much more of each document.
+  budget?: 'standard' | 'large';
 }
 
 export async function verifyClaims(input: VerifyClaimsInput): Promise<Claim[]> {
   const stepId = 'editorial-verify-claims';
   const documentsById = new Map(input.documents.map((d) => [d.source.id, d]));
 
-  // Layer 1: deterministic quote checks and evidence ceilings.
-  const checked = input.claims.map((c) => ({
+  // Layer 1: corroborate across every fetched document, then deterministic quote
+  // checks and evidence ceilings.
+  const checked = corroborateClaims(input.claims, input.documents).map((c) => ({
     ...c,
     evidence: c.evidence.map((e) => {
       const doc = documentsById.get(e.sourceId);
@@ -219,11 +254,11 @@ export async function verifyClaims(input: VerifyClaimsInput): Promise<Claim[]> {
     const response = await input.llm.completeStructured(
       {
         system: buildSystemPrompt(),
-        messages: [{ role: 'user', content: buildUserPrompt(checked, input.documents) }],
+        messages: [{ role: 'user', content: buildUserPrompt(checked, input.documents, input.budget) }],
         runId: input.runId,
         stepId,
         temperature: 0,
-        maxTokens: 3500,
+        maxTokens: input.budget === 'large' ? 12_000 : 3500,
       },
       VerifyResponseSchema,
     );

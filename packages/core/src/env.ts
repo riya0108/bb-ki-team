@@ -1,3 +1,4 @@
+import type { ClaudeCodeConfig } from './claudeCode.js';
 import { z } from 'zod';
 
 const RawEnvSchema = z.object({
@@ -39,6 +40,12 @@ const RawEnvSchema = z.object({
   // No API key: Ollama is a local install (brew services start ollama) with no
   // account, no auth, no billing surface — setting this alone enables it.
   OLLAMA_MODEL: z.string().optional(),
+  // Claude Code CLI (the operator's own Claude plan) for the Blog agent — see
+  // packages/core/src/claudeCode.ts. Setting CLAUDE_CODE_MODEL enables it.
+  CLAUDE_CODE_MODEL: z.string().optional(),
+  CLAUDE_CODE_BIN: z.string().optional(),
+  CLAUDE_CODE_TIMEOUT_MS: z.coerce.number().int().positive().optional(),
+  CLAUDE_CODE_EFFORT: z.enum(['low', 'medium', 'high', 'xhigh', 'max']).optional(),
   X_API_KEY: z.string().optional(),
   X_API_SECRET: z.string().optional(),
   X_ACCESS_TOKEN: z.string().optional(),
@@ -152,6 +159,7 @@ export interface Env {
   mistral?: LlmProviderConfig | undefined;
   nvidia?: LlmProviderConfig | undefined;
   ollama?: LlmProviderConfig | undefined;
+  claudeCode?: ClaudeCodeConfig | undefined;
   x?: XCredentials | undefined;
   buffer?: BufferCredentials | undefined;
   blogGit?: BlogGitConfig | undefined;
@@ -265,6 +273,14 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
     mistral,
     nvidia,
     ollama,
+    claudeCode: raw.CLAUDE_CODE_MODEL
+      ? {
+          model: raw.CLAUDE_CODE_MODEL,
+          ...(raw.CLAUDE_CODE_BIN ? { bin: raw.CLAUDE_CODE_BIN } : {}),
+          ...(raw.CLAUDE_CODE_TIMEOUT_MS ? { timeoutMs: raw.CLAUDE_CODE_TIMEOUT_MS } : {}),
+          ...(raw.CLAUDE_CODE_EFFORT ? { effort: raw.CLAUDE_CODE_EFFORT } : {}),
+        }
+      : undefined,
     x: xCredentialsConfig(raw),
     buffer: bufferCredentialsConfig(raw),
     blogGit: blogGitConfig(raw),

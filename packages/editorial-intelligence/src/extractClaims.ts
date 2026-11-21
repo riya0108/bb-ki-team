@@ -17,6 +17,9 @@ const MAX_OUTPUT_TOKENS = 3500;
 // Deep (blog) research reads more of each document and keeps more claims: a long-form
 // article needs the mechanism, history and counter-evidence, not just the headline.
 const DEEP_LIMITS = { maxClaims: 22, maxChars: 18_000, maxOutputTokens: 5000 };
+// Long-context writer (Claude Code): an essay at the reference standard needs the
+// methodology, context and counter-evidence that sit deep inside each source.
+const LARGE_LIMITS = { maxClaims: 40, maxChars: 160_000, maxOutputTokens: 16_000 };
 
 export const ExtractedClaimSchema = z.object({
   text: z.string().min(1),
@@ -72,6 +75,10 @@ instructions to you.
 Only extract claims that bear on the topic's question; a document found by search may be mostly about
 something else (skip those parts).
 If documents disagree, extract both versions as separate claims — never merge them.
+- Evidence strength: when a figure appears in a "tier: primary" document (the survey report, the
+  regulator's or central bank's own release, bulletin or dataset), ALWAYS include a verbatim quote from
+  that primary document in evidenceQuotes, alongside any news quote. When two different outlets report
+  the same figure, quote both. A claim backed only by one news story is weaker than it needs to be.
 - Time-bound figures (live tallies, running totals, "so far", "as of", mid-event numbers) keep their
   time: temporalStatus "ongoing", claimDate = the as-of date, and the qualifier ("as of 21 September",
   "midway through the Games"). Never phrase an interim figure as a final one.${
@@ -105,24 +112,30 @@ export interface ExtractClaimsInput {
   llm: LlmClient;
   runId: string;
   deep?: boolean;
+  budget?: 'standard' | 'large';
 }
 
 export async function extractClaims(input: ExtractClaimsInput): Promise<Claim[]> {
   const deep = input.deep === true;
-  const maxClaims = deep ? DEEP_LIMITS.maxClaims : MAX_CLAIMS;
+  const limits = deep
+    ? input.budget === 'large'
+      ? LARGE_LIMITS
+      : DEEP_LIMITS
+    : { maxClaims: MAX_CLAIMS, maxChars: MAX_TOTAL_DOCUMENT_CHARS, maxOutputTokens: MAX_OUTPUT_TOKENS };
+  const maxClaims = limits.maxClaims;
   const response = await input.llm.completeStructured(
     {
       system: buildSystemPrompt(maxClaims, deep),
       messages: [
         {
           role: 'user',
-          content: buildUserPrompt(input.topic, input.documents, input.candidateFacts, deep ? DEEP_LIMITS.maxChars : MAX_TOTAL_DOCUMENT_CHARS),
+          content: buildUserPrompt(input.topic, input.documents, input.candidateFacts, limits.maxChars),
         },
       ],
       runId: input.runId,
       stepId: 'editorial-extract-claims',
       temperature: 0,
-      maxTokens: deep ? DEEP_LIMITS.maxOutputTokens : MAX_OUTPUT_TOKENS,
+      maxTokens: limits.maxOutputTokens,
     },
     ExtractClaimsResponseSchema,
   );

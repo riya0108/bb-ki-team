@@ -98,6 +98,8 @@ function hostLabel(url: string): string {
 export interface SourceDisplayEntry {
   sourceId: string;
   label: string;
+  // "Business Today, October 1, 2025": publisher and date only, for per-section notes.
+  shortLabel: string;
   url: string | null;
   tier: EvidenceTier;
   claimIds: string[];
@@ -122,7 +124,14 @@ export function buildSourceDisplay(brief: EditorialBrief): SourceDisplayEntry[] 
       const who = s.publisher ?? (s.url ? hostLabel(s.url) : 'Source');
       const when = displayDate(s.publishedAt);
       const what = s.title && s.title.length <= 90 ? `: ${s.title}` : '';
-      return { sourceId: s.id, label: `${who}${what}${when ? `, ${when}` : ''}`, url: s.url, tier: s.tier, claimIds: claimIdsBySource.get(s.id) ?? [] };
+      return {
+        sourceId: s.id,
+        label: `${who}${what}${when ? `, ${when}` : ''}`,
+        shortLabel: `${who}${when ? `, ${when}` : ''}`,
+        url: s.url,
+        tier: s.tier,
+        claimIds: claimIdsBySource.get(s.id) ?? [],
+      };
     })
     .filter((entry) => (seenLabels.has(entry.label) ? false : (seenLabels.add(entry.label), true)));
 }

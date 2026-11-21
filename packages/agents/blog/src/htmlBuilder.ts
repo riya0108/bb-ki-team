@@ -13,9 +13,10 @@
 // what the publisher copies into the site's MDX (blogPostFragmentFromHtml), so every
 // widget is self-contained there and no text can be read as an MDX expression.
 
-import type { DecisionComponent, QuizComponent, TableComponent, TimelineComponent } from '@bb/shared-types';
+import type { BarChartComponent, DecisionComponent, FaqItem, QuizComponent, TableComponent, TimelineComponent } from '@bb/shared-types';
 
 import { ARTICLE_CSS } from './articleCss.js';
+import { inlinePlain, parseBody, renderInline } from './bodyMarkup.js';
 
 export function slugify(text: string): string {
   return text
@@ -54,29 +55,56 @@ export interface InlineLink {
   url: string;
 }
 
-// Splits on blank lines into paragraphs; each becomes its own <p>. Never trusts the
-// model to have already wrapped its own <p> tags (spec 12.5: escape special
-// characters correctly — the model's raw text is treated as plain text, not markup).
-// Internal links (spec 35) are applied to the first occurrence of their anchor text,
-// after escaping, so the link is the only markup that can ever enter a paragraph.
-function paragraphsHtml(body: string, links: InlineLink[] = [], used = new Set<string>()): string {
-  return body
-    .split(/\n{2,}/)
-    .map((para) => para.trim())
-    .filter((para) => para.length > 0)
-    .map((para) => {
-      let html = esc(para);
-      for (const link of links) {
-        if (used.has(link.url)) continue;
-        const href = safeHref(link.url);
-        const anchor = esc(link.anchorText.trim());
-        if (!href || anchor.length === 0) continue;
-        const at = html.indexOf(anchor);
-        if (at === -1) continue;
-        html = `${html.slice(0, at)}<a href="${href}">${anchor}</a>${html.slice(at + anchor.length)}`;
-        used.add(link.url);
+// Body text is the closed markup language in bodyMarkup.ts (blocks, H3 subheads,
+// lists, pull quotes, emphasis, claim-ID citations). Never trusts the model to have
+// written HTML (spec 12.5): every fragment is escaped first and only this module's
+// own tags are added. Internal links (spec 35) are applied to the first occurrence of
+// their anchor text, after escaping.
+interface BodyRenderContext {
+  links: InlineLink[];
+  used: Set<string>;
+  // claim ID -> source URL backing it (resolved by the caller from the brief).
+  citations: ReadonlyMap<string, string>;
+}
+
+function applyInternalLinks(html: string, ctx: BodyRenderContext): string {
+  let out = html;
+  for (const link of ctx.links) {
+    if (ctx.used.has(link.url)) continue;
+    const href = safeHref(link.url);
+    const anchor = esc(link.anchorText.trim());
+    if (!href || anchor.length === 0) continue;
+    const at = out.indexOf(anchor);
+    if (at === -1) continue;
+    out = `${out.slice(0, at)}<a href="${href}">${anchor}</a>${out.slice(at + anchor.length)}`;
+    ctx.used.add(link.url);
+  }
+  return out;
+}
+
+function inlineHtml(text: string, ctx: BodyRenderContext): string {
+  return renderInline(text, {
+    escape: (t) => applyInternalLinks(esc(t), ctx),
+    citationHref: (id) => {
+      const url = ctx.citations.get(id);
+      return url ? safeHref(url) : null;
+    },
+  });
+}
+
+function bodyHtml(body: string, ctx: BodyRenderContext): string {
+  return parseBody(body)
+    .map((block) => {
+      switch (block.kind) {
+        case 'h3':
+          return `<h3 class="sub-head">${esc(inlinePlain(block.text))}</h3>`;
+        case 'ul':
+          return `<ul class="body-list">\n${block.items.map((item) => `<li>${inlineHtml(item, ctx)}</li>`).join('\n')}\n</ul>`;
+        case 'pull':
+          return `<p class="pull">${esc(inlinePlain(block.text))}</p>`;
+        case 'p':
+          return `<p>${inlineHtml(block.text, ctx)}</p>`;
       }
-      return `<p>${html}</p>`;
     })
     .join('\n');
 }
@@ -157,6 +185,20 @@ export interface BuildArticleHtmlInput {
   decision?: DecisionComponent | null;
   timeline?: TimelineComponent | null;
   internalLinks?: InlineLink[] | null;
+  // Essay-standard additions (all optional; older drafts render as before).
+  barChart?: BarChartComponent | null;
+  faq?: FaqItem[] | null;
+  // Heading over the closing section; "Bottom line" when absent.
+  conclusionHeading?: string | null;
+  // One short line under the title in the masthead meta row.
+  strapline?: string | null;
+  // A word or phrase of the title to set in the accent colour (must occur in it).
+  titleAccent?: string | null;
+  readTime?: string | null;
+  // e.g. "November 2026".
+  dateLabel?: string | null;
+  // Inline citations: claim ID -> source URL that verifiably backs that claim.
+  citations?: Readonly<Record<string, string>> | null;
 }
 
 export interface BuiltArticle {
@@ -447,6 +489,60 @@ ${events}
     </div>`;
 }
 
+function barChartHtml(chart: BarChartComponent): string {
+  const max = Math.max(...chart.bars.map((b) => b.value), 0);
+  const groups = [...new Set(chart.bars.map((b) => b.group).filter((g): g is string => g !== null && g.length > 0))];
+  const rows = chart.bars
+    .map((bar) => {
+      // Scaled to the largest bar (with headroom), so the chart reads as a comparison.
+      const width = max > 0 ? Math.round((bar.value / (max * 1.08)) * 1000) / 10 : 0;
+      const groupClass = bar.group && groups.indexOf(bar.group) === 1 ? ' g2' : '';
+      return `        <div class="bar-row${groupClass}"><span class="bar-label">${esc(bar.label)}</span><span class="bar-track" aria-hidden="true"><span class="bar-fill" style="width:${width}%"></span></span><span class="bar-val">${esc(bar.displayValue)}</span></div>`;
+    })
+    .join('\n');
+  const subtitle = chart.subtitle ? `<span>${esc(chart.subtitle)}</span>` : '';
+  return `    <figure class="bar-chart" aria-label="${esc(chart.title)}">
+      <figcaption><b>${esc(chart.title)}</b>${subtitle}</figcaption>
+${rows}
+      <div class="bar-source">${esc(chart.sourceNote)}</div>
+    </figure>`;
+}
+
+function faqHtml(items: readonly FaqItem[]): string {
+  const details = items
+    .map((item) => `      <details><summary>${esc(item.question)}</summary><p>${esc(item.answer)}</p></details>`)
+    .join('\n');
+  return `    <section class="faq" id="faq">
+      <h2 class="section-head">Frequently asked questions</h2>
+${details}
+    </section>`;
+}
+
+// FAQPage + Article structured data for the standalone page's <head>. Built with
+// JSON.stringify (never string concatenation) and with "<" escaped, so model text can
+// never close the script element. Only the builder emits it; htmlValidation.ts checks
+// that every ld+json block parses as JSON.
+function structuredDataHtml(input: BuildArticleHtmlInput): string {
+  const graph: unknown[] = [
+    { '@type': 'Article', headline: input.title, description: input.metaDescription, inLanguage: 'en-IN' },
+  ];
+  if (input.faq && input.faq.length > 0) {
+    graph.push({
+      '@type': 'FAQPage',
+      mainEntity: input.faq.map((f) => ({ '@type': 'Question', name: f.question, acceptedAnswer: { '@type': 'Answer', text: f.answer } })),
+    });
+  }
+  const json = JSON.stringify({ '@context': 'https://schema.org', '@graph': graph }).replace(/</g, '\\u003c');
+  return `\n<script type="application/ld+json">${json}</script>`;
+}
+
+function titleHtml(title: string, accent: string | null | undefined): string {
+  const phrase = accent?.trim() ?? '';
+  const at = phrase.length > 0 ? title.indexOf(phrase) : -1;
+  if (at === -1) return escapeHtml(title);
+  return `${escapeHtml(title.slice(0, at))}<span class="accent">${escapeHtml(phrase)}</span>${escapeHtml(title.slice(at + phrase.length))}`;
+}
+
 function shortVersionHtml(points: string[]): string {
   return `    <aside class="short-version" aria-label="The short version">
       <div class="sv-label">The short version</div>
@@ -500,10 +596,14 @@ export function buildArticleHtml(input: BuildArticleHtmlInput): BuiltArticle {
   if (input.quiz) scheduleWidget('quiz', input.quiz.afterSectionIndex, quizHtml(input.quiz));
   if (input.poll) scheduleWidget('poll', input.poll.afterSectionIndex, pollHtml(input.poll));
   if (input.pullQuote) scheduleWidget('pullQuote', input.pullQuote.afterSectionIndex, pullQuoteHtml(input.pullQuote));
+  if (input.barChart) scheduleWidget('barChart', input.barChart.afterSectionIndex, barChartHtml(input.barChart));
 
   const needsScript = Boolean(input.revealCards ?? input.poll ?? input.quiz ?? input.decision);
-  const links = input.internalLinks ?? [];
-  const usedLinks = new Set<string>();
+  const ctx: BodyRenderContext = {
+    links: input.internalLinks ?? [],
+    used: new Set<string>(),
+    citations: new Map(Object.entries(input.citations ?? {})),
+  };
   const components: string[] = [];
 
   const sectionsHtml = input.sections
@@ -516,7 +616,7 @@ export function buildArticleHtml(input: BuildArticleHtmlInput): BuiltArticle {
       const widgetsHtml = trailingWidgets.length > 0 ? `\n${trailingWidgets.map((w) => w.html).join('\n')}` : '';
       return `    <section id="${headingIds[i]}">
       <h2 class="section-head">${esc(section.heading)}</h2>
-${paragraphsHtml(section.body, links, usedLinks)}${sourceNoteHtml}
+${bodyHtml(section.body, ctx)}${sourceNoteHtml}
     </section>${widgetsHtml}`;
     })
     .join('\n');
@@ -526,7 +626,7 @@ ${paragraphsHtml(section.body, links, usedLinks)}${sourceNoteHtml}
   const practicalHtml = input.practicalTakeaway
     ? `    <section id="what-to-do">
       <h2 class="section-head">What this means for you</h2>
-${paragraphsHtml(input.practicalTakeaway, links, usedLinks)}
+${bodyHtml(input.practicalTakeaway, ctx)}
     </section>\n`
     : '';
 
@@ -535,6 +635,14 @@ ${paragraphsHtml(input.practicalTakeaway, links, usedLinks)}
     : '';
 
   const scriptHtml = needsScript ? `\n<script>\n${INTERACTIVE_SCRIPT}\n</script>` : '';
+  const customClosing = input.conclusionHeading?.trim() ?? '';
+  const closingHeading = customClosing.length > 0 ? customClosing : 'Bottom line';
+  const faqBlock = input.faq && input.faq.length > 0 ? `\n${faqHtml(input.faq)}` : '';
+  if (faqBlock) components.push('faq');
+  const metaParts = [input.dateLabel, input.readTime ? `${input.readTime} read` : null, input.strapline].filter(
+    (m): m is string => typeof m === 'string' && m.trim().length > 0,
+  );
+  const metaHtml = metaParts.length > 0 ? `\n    <p class="meta">${metaParts.map((m) => `<span>${escapeHtml(m)}</span>`).join('')}</p>` : '';
 
   const html = `<!DOCTYPE html>
 <html lang="en">
@@ -545,24 +653,25 @@ ${paragraphsHtml(input.practicalTakeaway, links, usedLinks)}
 <meta name="description" content="${escapeHtml(input.metaDescription)}">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@500;600;700;800&family=Figtree:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Fragment+Mono&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=Outfit:wght@500;600;700;800&family=Figtree:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Fragment+Mono&display=swap" rel="stylesheet">
 <style>
 ${ARTICLE_CSS}
-</style>
+</style>${structuredDataHtml(input)}
 </head>
 <body>
+<header class="masthead">
+  <div class="kicker">${escapeHtml(input.category)}</div>
+  <h1>${titleHtml(input.title, input.titleAccent)}</h1>
+  <p class="dek">${escapeHtml(input.deck)}</p>${metaHtml}
+</header>
+<hr class="masthead-rule">
 <div class="page">
-  <header>
-    <div class="kicker">${escapeHtml(input.category)}</div>
-    <h1>${escapeHtml(input.title)}</h1>
-    <p class="dek">${escapeHtml(input.deck)}</p>
-  </header>
   <main class="essay">
 ${shortVersion}${sectionsHtml}
 ${practicalHtml}    <section id="conclusion">
-      <h2 class="section-head">Bottom line</h2>
-${paragraphsHtml(input.conclusion, links, usedLinks)}
-    </section>${disclaimerHtml}
+      <h2 class="section-head">${esc(closingHeading)}</h2>
+${bodyHtml(input.conclusion, ctx)}
+    </section>${disclaimerHtml}${faqBlock}
   </main>
   <footer class="footer">${sourcesFooterHtml(input)}
   </footer>

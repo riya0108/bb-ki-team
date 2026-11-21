@@ -7,6 +7,7 @@ import { ContentItemNotFoundError, getContentItem, requestPublish, requestSchedu
 import { z } from 'zod';
 
 import { reviseBlogArticle } from './editArticle.js';
+import type { BlogResearchOptions } from './headAgent.js';
 import { runBlogArticle } from './headAgent.js';
 import { runBlogArticleFromSource } from './repurpose.js';
 
@@ -17,6 +18,8 @@ export interface BlogChatDeps {
   logger: Logger;
   publishConnectors: Record<string, PublishConnector>;
   scheduleConnectors: Record<string, ScheduleConnector>;
+  // Claude Code research for new drafts (see headAgent.ts), when configured.
+  research?: BlogResearchOptions;
 }
 
 export interface BlogChatContext {
@@ -83,6 +86,7 @@ async function dispatch(
         topic: action.topic,
         articleType: action.articleType,
         userMessage: message,
+        ...deps.research,
         runId,
       });
       return { reply: `Wrote a blog article: "${pkg.title}". It's now in review.`, result: pkg };
@@ -96,6 +100,7 @@ async function dispatch(
         source: action.source,
         topic: action.topic,
         userMessage: message,
+        ...(deps.research ? { research: deps.research } : {}),
         runId,
       });
       return { reply: `Wrote a source-led blog article: "${pkg.title}". It's now in review.`, result: pkg };

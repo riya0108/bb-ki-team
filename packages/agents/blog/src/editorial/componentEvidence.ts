@@ -83,5 +83,7 @@ export function dropUnsupportedComponents(
   if (failing.has('comparisonStat')) next.comparisonStat = null;
   if (failing.has('poll')) next.poll = null;
   if (failing.has('pullQuote')) next.pullQuote = null;
+  if (failing.has('barChart')) next.barChart = null;
+  if (failing.has('faq')) next.faq = null;
   return { draft: next, dropped: [...failing] };
 }

@@ -32,6 +32,17 @@ const PRIMARY_DOMAINS = [
   // Official sports bodies (medal tables, results) are the primary record for sport.
   'olympics.com',
   'ocasia.org',
+  // Research papers are the primary source for their own findings.
+  'arxiv.org',
+  'aclanthology.org',
+  'openreview.net',
+  'nature.com',
+  'science.org',
+  'pnas.org',
+  'nejm.org',
+  'thelancet.com',
+  'bmj.com',
+  'jamanetwork.com',
 ];
 
 const SECONDARY_DOMAINS = [
@@ -57,6 +68,21 @@ const SECONDARY_DOMAINS = [
   'indianexpress.com',
   'hindustantimes.com',
   'cnbctv18.com',
+  'businesstoday.in',
+  'outlookmoney.com',
+  'outlookbusiness.com',
+  'zeebiz.com',
+  'deccanherald.com',
+  'newindianexpress.com',
+  'firstpost.com',
+  'tribuneindia.com',
+  'timesofindia.indiatimes.com',
+  'theprint.in',
+  'scroll.in',
+  'axios.com',
+  'washingtonpost.com',
+  'npr.org',
+  'theatlantic.com',
 ];
 
 const SPECIALIST_DOMAINS = [
@@ -78,6 +104,12 @@ const SPECIALIST_DOMAINS = [
   'nber.org',
   'ourworldindata.org',
   'pewresearch.org',
+  'wired.com',
+  'technologyreview.com',
+  'engadget.com',
+  '9to5mac.com',
+  'knightfrank.com',
+  'knightfrank.co.in',
 ];
 
 // Tier 4: useful to discover a claim, never to establish one — even when a registry

@@ -45,7 +45,7 @@ const CAUSAL_CONNECTOR = /\b(because(?: of)?|due to|caused|causes|causing|led to
 const ACCOUNTING_LOSS_IN_CLAIM = /\b(?:net |operating |quarterly |annual |reported (?:a |an )?)?loss(?:es)?\b/i;
 const CASH_FRAMING = /\b(in cash|cash (?:burn|loss|outflow)|burn(?:ed|t)? (?:through )?(?:\$|₹|rs))/i;
 
-const ATTRIBUTION_MARKERS = /\b(according to|said|says|told|reported|reports|reportedly|per |claim(?:s|ed)?|stated|states|announced|estimates?|estimated|cited|citing|noted|warned|data from|figures from|survey)\b/i;
+const ATTRIBUTION_MARKERS = /\b(according to|said|says|told|reported|reports|reportedly|per |claim(?:s|ed)?|stated|states|announced|estimates?|estimated|cited|citing|noted|warned|data from|figures from|survey|found|finds|showed|shows)\b/i;
 
 const PERIODS: { name: string; pattern: RegExp }[] = [
   { name: 'year-over-year', pattern: /\b(year[- ](?:on|over)[- ]year|yoy|y-o-y|from a year (?:ago|earlier)|annual(?:ly)?|than last year)\b/i },
@@ -129,7 +129,17 @@ function restatesClaim(sentenceStems: readonly string[], f: ClaimFeatures): bool
 
 // "Reserve Bank of India" is named by "RBI" too.
 function namesSource(sentence: string, source: string): boolean {
-  if (normalizeForMatch(sentence).includes(normalizeForMatch(source))) return true;
+  const normalizedSentence = normalizeForMatch(sentence);
+  if (normalizedSentence.includes(normalizeForMatch(source))) return true;
+  // "Franklin Templeton found" names "Franklin Templeton India Mutual Fund report":
+  // the leading proper-noun run (2+ capitalised words) is the source's name.
+  const lead: string[] = [];
+  for (const w of source.split(/\s+/)) {
+    if (!/^[A-Z]/.test(w)) break;
+    lead.push(w);
+    if (lead.length === 2) break;
+  }
+  if (lead.length === 2 && normalizedSentence.includes(normalizeForMatch(lead.join(' ')))) return true;
   const acronym = source
     .split(/\s+/)
     .filter((w) => /^[A-Z]/.test(w) && !/^(Of|The|And|For)$/.test(w))
@@ -189,11 +199,17 @@ function checkSentence(sentence: string, f: ClaimFeatures, causalSupportStems: r
     });
   }
 
-  if (f.isSettled && f.claim.type !== 'FORECAST' && sentenceMentionsEntity(sStems, f)) {
-    tokens.forEach((t, i) => {
+  // A claim with measured figures (%, ₹, units — not bare years) is only re-framed by
+  // a sentence that carries one of those figures; otherwise the hedge belongs to some other statement in the sentence
+  // ("a low FD rate might eventually increase flows" next to a settled MF share).
+  const claimHasFigures = extractQuantities(f.claim.text).some((q) => q.unit !== 'plain' && q.unit !== 'year');
+  if (f.isSettled && f.claim.type !== 'FORECAST' && sentenceMentionsEntity(sStems, f) && (!claimHasFigures || sharedNumbers)) {
+    // "May 2026" / "15 May" is the month, never the modal verb.
+    const modalTokens = tokenize(sentence.replace(/\bMay\b(?=\s+\d)|(?<=\d\s)May\b/g, 'month'));
+    modalTokens.forEach((t, i) => {
       if (!f.stems.includes(stem(t)) || f.entityStems.includes(stem(t))) return;
-      if (hasNearbyBefore(tokens, i, FUTURE_OR_POSSIBLE_WORDS, 2)) {
-        add('temporal', 'completed_to_possibility', `Claim "${f.claim.text}" already happened; the draft frames it as a future possibility ("${tokens.slice(Math.max(0, i - 2), i + 1).join(' ')}").`);
+      if (hasNearbyBefore(modalTokens, i, FUTURE_OR_POSSIBLE_WORDS, 2)) {
+        add('temporal', 'completed_to_possibility', `Claim "${f.claim.text}" already happened; the draft frames it as a future possibility ("${modalTokens.slice(Math.max(0, i - 2), i + 1).join(' ')}").`);
       }
     });
   }

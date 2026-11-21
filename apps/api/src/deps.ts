@@ -1,5 +1,7 @@
 import type { EmailConfig, Env, LlmClient, Logger } from '@bb/core';
-import { createFallbackLlmClient, createLogger, loadEnv } from '@bb/core';
+import { createBlogLlmClient, createFallbackLlmClient, createLogger, loadEnv } from '@bb/core';
+import type { ContextBudget, DiscoveryResearcher } from '@bb/editorial-intelligence';
+import { createClaudeCodeDiscoveryResearcher } from '@bb/editorial-intelligence';
 import type { Pool } from '@bb/db';
 import { createPool } from '@bb/db';
 import type { FetchTool, ImageGenTool, YoutubeTranscriptTool } from '@bb/mcp-client';
@@ -21,6 +23,10 @@ export interface AppDeps {
   env: Env;
   pool: Pool;
   llm: LlmClient;
+  // The Blog agent's own client and research: Claude Code first when CLAUDE_CODE_MODEL
+  // is set (the operator's Claude plan, local CLI), otherwise identical to `llm`.
+  // Optional so test fakes that predate it keep working.
+  blog?: { llm: LlmClient; discoveryResearcher?: DiscoveryResearcher | undefined; contextBudget?: ContextBudget | undefined };
   fetchTool: FetchTool;
   youtubeTranscriptTool: YoutubeTranscriptTool;
   imageGen: ImageGenTool;
@@ -48,6 +54,14 @@ export function createAppDeps(): AppDeps {
   const logger = createLogger({ module: 'api' });
   const pool = createPool(env.databaseUrl);
   const llm = createFallbackLlmClient(env, logger);
+  const blog = env.claudeCode
+    ? {
+        llm: createBlogLlmClient(env, logger),
+        discoveryResearcher: createClaudeCodeDiscoveryResearcher({ config: env.claudeCode, logger }),
+        contextBudget: 'large' as const,
+      }
+    : { llm };
+  if (env.claudeCode) logger.info({ model: env.claudeCode.model }, 'Blog agent: Claude Code research + writing enabled');
   const fetchTool = createLinkedinMcpClient(logger);
   const youtubeTranscriptTool = createYoutubeTranscriptMcpClient(logger);
   // Always constructed, same as fetchTool/youtubeTranscriptTool above — the client
@@ -84,6 +98,7 @@ export function createAppDeps(): AppDeps {
     env,
     pool,
     llm,
+    blog,
     fetchTool,
     youtubeTranscriptTool,
     imageGen,

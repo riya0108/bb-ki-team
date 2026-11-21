@@ -102,7 +102,10 @@ ${protectedClaims.map(line).join('\n')}`);
   }
 
   if (notUsable.length > 0) {
-    sections.push(`NOT VERIFIED — never state these as fact. Leave them out, or present them explicitly as unconfirmed:
+    sections.push(`NOT VERIFIED — never state these as fact. Leave them out, or present them explicitly as unconfirmed and
+attributed ("an analysis of RBI data by X put it at..., though other figures differ"). Exception: a DISPUTED or
+unverified claim about a NEWER period than the verified data, or one that cuts against the thesis, must not be
+silently dropped — name it as contested, attribute it, and say what it would mean if it holds:
 ${notUsable.map(line).join('\n')}`);
   }
 
