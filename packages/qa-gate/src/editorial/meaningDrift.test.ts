@@ -141,6 +141,21 @@ describe('detectMeaningDrift — semantic trap dataset (spec 41)', () => {
     expect(rules('The stock fell because of weak earnings guidance.', [c, cause])).not.toContain('unsupported_causality');
   });
 
+  it('does not read a "because" in advice as a causal claim about a loosely related figure', () => {
+    const shares = claim(
+      'shares',
+      "Term deposits' share of aggregate deposits at scheduled commercial banks rose from 55.2% in March 2022 to 61.6% in March 2026, while savings deposits' share fell from 34.6% to 28.7%.",
+    );
+    const sentence =
+      'Add up everything you hold with that bank, across branches, FDs and savings accounts, because interest counts inside the ₹5 lakh DICGC limit.';
+    expect(rules(sentence, [shares])).not.toContain('unsupported_causality');
+  });
+
+  it('still flags an invented cause for a claim figure ("led to" puts the effect second)', () => {
+    const shares = claim('shares', "Term deposits' share of aggregate deposits rose from 55.2% to 61.6%.");
+    expect(rules('Rising rates led to the term deposit share climbing to 61.6%.', [shares])).toContain('unsupported_causality');
+  });
+
   it('CASE G: first quarterly loss since 2020 is not "another quarterly loss"', () => {
     const c = claim('g', 'First quarterly loss since 2020.', { temporal: 'first_since' });
     expect(rules('Another quarterly loss for the company.', [c])).toContain('novelty_to_repetition');

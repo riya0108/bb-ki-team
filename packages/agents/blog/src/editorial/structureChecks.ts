@@ -4,7 +4,7 @@ import type { EditorialArchitecture, EditorialWarning } from '@bb/shared-types';
 import { bodyCitedClaimIds } from '../bodyMarkup.js';
 import type { DraftBlogArticleWriterOutput } from '../draftArticle.js';
 
-import { articleProse, presentComponentTypes, wordCount } from './articleText.js';
+import { articleProse, plainBody, presentComponentTypes, wordCount } from './articleText.js';
 
 // Spec 12/13/15/33/50 J: deterministic structure checks — does the article match the
 // depth it was planned at without padding, does the conclusion do more than repeat the
@@ -28,6 +28,25 @@ function engagesCounterArgument(draft: DraftBlogArticleWriterOutput, counterArgu
   const counterStems = contentStems(counterArgument);
   if (counterStems.length < 6) return false;
   return draft.sections.some((s) => sharedStemCount(contentStems(`${s.heading} ${s.body}`), counterStems) / counterStems.length >= 0.5);
+}
+
+const RESEARCH_METHOD_HEADING =
+  /\b(where (?:these|the|this|our) (?:numbers?|figures?|data|evidence|statistics) comes? from|how (?:we|i) (?:know|researched|checked|sourced)|methodology|method(?:s)? and sources|about (?:the|these) (?:data|numbers|sources|figures)|(?:reading|checking) the (?:data|numbers|sources)|a note on (?:the )?(?:data|sources|numbers))\b/i;
+
+export function hasResearchMethodSection(draft: DraftBlogArticleWriterOutput): boolean {
+  return draft.sections.some(
+    (s) => RESEARCH_METHOD_HEADING.test(s.heading) || s.body.split('\n').some((line) => line.startsWith('###') && RESEARCH_METHOD_HEADING.test(line)),
+  );
+}
+
+// A cold open sets a scene (a moment, a place, a person or a hypothetical) rather than
+// asserting a finding. Heuristic, so it only warns.
+const SCENE_MARKER =
+  /\b(picture|imagine|ask (?:a|an|any|your)|walk into|sit (?:in|at|down)|scroll|open (?:your|the)|on (?:a|an|the) (?:\w+ )?(?:morning|evening|afternoon|night|day|weekend)|one (?:morning|evening|afternoon|night|day)|(?:this|that|last) (?:week|month|morning|evening|diwali|summer|winter)|the (?:week|day|month|morning|evening|night) (?:a|an|the|your|after|before|when)|it is \d|it's \d|a \d{2}-year-old|the \d{2}-year-old|there is a moment|you are|you're (?:at|in|standing|sitting|holding|looking))\b/i;
+
+export function opensWithScene(firstParagraph: string): boolean {
+  const first = firstParagraph.split(/(?<=[.!?])\s+/).slice(0, 2).join(' ');
+  return SCENE_MARKER.test(first);
 }
 
 // Inline citations must point at claims the reader may be told as fact: citing an
@@ -79,6 +98,25 @@ export function checkStructure(draft: DraftBlogArticleWriterOutput, architecture
     if (unapproved.length > 0) {
       warnings.push({ code: 'unapproved_components', severity: 'warn', message: `Removed components the plan did not approve: ${unapproved.join(', ')}.` });
     }
+  }
+
+  // The essay standard: deep pieces explain where their numbers come from, and open
+  // on a scene rather than a thesis line.
+  const isDeep = architecture !== null && (architecture.articleDepth === 'deep_analysis' || architecture.articleDepth === 'investigation');
+  if (isDeep && !hasResearchMethodSection(draft)) {
+    warnings.push({
+      code: 'missing_research_method',
+      severity: 'block',
+      message: 'There is no "Where these numbers come from" section: add one (an H2, or an H3 in the first or second body section) naming the main sources, what each measures, its period and sample, who paid, and its limits.',
+    });
+  }
+  const firstParagraph = plainBody(draft.sections[0]?.body ?? '').split(/\n{2,}/)[0] ?? '';
+  if (isDeep && !opensWithScene(firstParagraph)) {
+    warnings.push({
+      code: 'opening_not_scene',
+      severity: 'warn',
+      message: 'The article opens with a statement, not a scene: start with a concrete moment that holds the problem in miniature, and move the thesis to the turn paragraph.',
+    });
   }
 
   // The conclusion should change understanding, not restate the opening (spec 15/33).

@@ -4,6 +4,40 @@ import { FetchErrorSchema, FetchResultSchema } from '@bb/shared-types';
 import { extractReadableTextFromHtml, extractTextFromPdf } from './extract.js';
 
 const MAX_BYTES = 2 * 1024 * 1024;
+// Official reports (SEBI's investor survey, RBI bulletins) are often 4-20 MB PDFs and are
+// the primary sources a story most needs, so PDFs from government and regulator hosts
+// get a larger cap. Everything else keeps the 2 MB limit.
+const OFFICIAL_PDF_MAX_BYTES = 25 * 1024 * 1024;
+const OFFICIAL_HOST_SUFFIXES = [
+  'gov.in',
+  'nic.in',
+  'rbi.org.in',
+  'npci.org.in',
+  'dicgc.org.in',
+  'gov',
+  'gov.uk',
+  'europa.eu',
+  'imf.org',
+  'worldbank.org',
+  'bis.org',
+  'oecd.org',
+  'un.org',
+  'who.int',
+];
+
+export function isOfficialHost(url: string): boolean {
+  let host: string;
+  try {
+    host = new URL(url).hostname.toLowerCase();
+  } catch {
+    return false;
+  }
+  return OFFICIAL_HOST_SUFFIXES.some((suffix) => host === suffix || host.endsWith(`.${suffix}`));
+}
+
+export function maxBytesFor(url: string, contentType: string): number {
+  return contentType.includes('application/pdf') && isOfficialHost(url) ? OFFICIAL_PDF_MAX_BYTES : MAX_BYTES;
+}
 const TIMEOUT_MS = 15_000;
 const MAX_TEXT_CHARS = 50_000;
 
@@ -37,13 +71,15 @@ export async function fetchAndExtract(url: string, fetchImpl: typeof fetch = fet
 
   const contentType = response.headers.get('content-type') ?? 'application/octet-stream';
   const contentLengthHeader = response.headers.get('content-length');
-  if (contentLengthHeader && Number(contentLengthHeader) > MAX_BYTES) {
-    return errorOutcome(url, 'too_large', `Content-Length ${contentLengthHeader} exceeds ${MAX_BYTES} bytes`);
+  // The final URL after redirects decides the cap, so a redirect can't borrow it.
+  const maxBytes = maxBytesFor(response.url || url, contentType);
+  if (contentLengthHeader && Number(contentLengthHeader) > maxBytes) {
+    return errorOutcome(url, 'too_large', `Content-Length ${contentLengthHeader} exceeds ${maxBytes} bytes`);
   }
 
   const arrayBuffer = await response.arrayBuffer();
-  if (arrayBuffer.byteLength > MAX_BYTES) {
-    return errorOutcome(url, 'too_large', `Body of ${arrayBuffer.byteLength} bytes exceeds ${MAX_BYTES} bytes`);
+  if (arrayBuffer.byteLength > maxBytes) {
+    return errorOutcome(url, 'too_large', `Body of ${arrayBuffer.byteLength} bytes exceeds ${maxBytes} bytes`);
   }
   const buffer = Buffer.from(arrayBuffer);
 

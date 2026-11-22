@@ -37,7 +37,7 @@ export const EDITORIAL_OBSERVATIONS: readonly string[] = [
 // More depth than X or LinkedIn, never more facts than the verified claim set.
 export const BLOG_EDITORIAL_RULES: readonly string[] = [
   'The title is built on the strongest verified angle from the brief.',
-  'The introduction immediately answers: what happened, why it is unusual or important, and why the reader should care.',
+  'The introduction is the cold-open scene, then the turn: within the first 4-6 paragraphs the reader knows what is happening, why it is unusual or important, and why they should care.',
   'No textbook filler openings: not "In today\'s fast-paced financial landscape", "The world of finance is constantly evolving", "In recent years".',
   'Go deeper than social posts (mechanism, context, what to watch), but every factual statement must come from the brief\'s verified claims; anything else is clearly labelled interpretation or opinion.',
   'Cite the brief\'s sources near the claims they support, and list them in "sources".',
@@ -49,7 +49,9 @@ export const BLOG_EDITORIAL_RULES: readonly string[] = [
 export const BLOG_CRAFT_RULES: readonly string[] = [
   'Voice: a smart friend who went down the rabbit hole and came back with the answer. Sharp, curious, sceptical, conversational, evidence-led, independent, slightly provocative, practical. Not an AI assistant summarising the internet.',
   "Don't tell the reader what to think. Show them what they are missing.",
-  'Open with tension, a contradiction, a surprising verified number, a specific event, an unexpected comparison or a sharp question. The first 2-4 paragraphs must make the reader understand why they should keep reading.',
+  'The very first sentence of the article is part of the cold-open scene (see the essay standard), never a thesis, a generalisation about a population or a statistic. Tension, a contradiction or a surprising verified number belongs inside the scene or in the turn paragraph right after it. The first 2-4 paragraphs must make the reader understand why they should keep reading.',
+  'The opening scene, the turn paragraph, the title and the deck claim no more than the narrowest verified claim behind them. If a survey found 63% know of at least one market product, do not write "most households know about mutual funds"; if a figure covers all bank deposits, do not call it the FD\'s share; if the data is what people say they prefer, do not say what they pick. The opening is where overstatement is most tempting and most damaging: write it last, against the claims.',
+  'Keep every attribution. A claim marked "attribute to X" (a fund house, a newspaper, a data site, a company) names X in the same sentence every time its figure is used: "Franklin Templeton\'s report counts...", "Livemint reported...", "according to Deccan Chronicle...". "The report" or "by one count" is not enough, and a link alone is not an attribution. Only claims with no "attribute to" may be stated plainly.',
   'Every section must earn its place. Cut paragraphs that only tell the reader what they already know. Never pad towards a word count.',
   'Numbers must have meaning: every major number answers "why does this matter?". Never dump statistics in a row.',
   'For any calculation show INPUT, ASSUMPTION, CALCULATION, RESULT and LIMITATION, and label hypothetical/illustrative calculations explicitly ("Assume...", "Illustratively..."). An illustration must never look like an official figure.',
@@ -79,6 +81,7 @@ export const ESSAY_STANDARD_RULES: readonly string[] = [
   `Cold open: 2-4 short paragraphs of a concrete, sensory scene or small human moment that contains the whole problem in miniature. A clearly hypothetical or composite scene ("Picture a dinner party...", "Ask a 24-year-old and a 55-year-old what they are saving for") is fine; never invent a named real person, a quote, or an event.`,
   `Then the turn: one paragraph that names the tension and states the thesis plainly, then one short paragraph that tells the reader what the piece will cover.`,
   `The first body section pins the facts down precisely, including methodology: who ran the survey or study, who paid for it, fieldwork dates, sample size and population, and what it measures (stated preferences vs actual behaviour). Name conflicts of interest calmly, without accusing anyone.`,
+  `Research method: every essay has a short section on where the numbers come from, either its own H2 or an H3 inside the first or second body section, headed "Where these numbers come from" (or "Where the numbers come from"). In 2-5 short paragraphs or a short list: the main sources and who produced each, what each measures and does not, the period it covers, sample and fieldwork where relevant, who paid or has an interest, and where sources disagree or data is missing. It is about the sources, never about our own research process ("we verified", "the brief", "claims").`,
   `Each H2 makes one move in the argument. Headings are short, concrete and specific to this piece (often a phrase from it), never generic ("Introduction", "Overview", "Key Takeaways").`,
   `Give every number its meaning straight away: compare it, invert it ("if 26% want a home, 74% want something else"), set it against a benchmark, or translate it into the reader's life. Worked examples use round inputs, show the arithmetic step by step, and say they are illustrative.`,
   `Steelman, then push back: present the popular explanation fairly, say what is right about it, then show where it breaks, with evidence.`,

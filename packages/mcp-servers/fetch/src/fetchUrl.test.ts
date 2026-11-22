@@ -4,7 +4,7 @@ import type { AddressInfo } from 'node:net';
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { fetchAndExtract } from './fetchUrl.js';
+import { fetchAndExtract, maxBytesFor } from './fetchUrl.js';
 
 const FIXTURE_HTML = `<!doctype html>
 <html>
@@ -110,5 +110,21 @@ describe('fetchAndExtract (against a local fixture HTTP server)', () => {
     expect(outcome.ok).toBe(false);
     if (outcome.ok) return;
     expect(outcome.error.reason).toBe('network_error');
+  });
+});
+
+describe('maxBytesFor', () => {
+  const MB = 1024 * 1024;
+  it('gives government and regulator PDFs a larger cap', () => {
+    expect(maxBytesFor('https://www.sebi.gov.in/reports/investor-survey.pdf', 'application/pdf')).toBe(25 * MB);
+    expect(maxBytesFor('https://rbi.org.in/Scripts/bulletin.pdf', 'application/pdf')).toBe(25 * MB);
+    expect(maxBytesFor('https://www.federalreserve.gov/x.pdf', 'application/pdf')).toBe(25 * MB);
+  });
+
+  it('keeps the 2 MB cap for other hosts, other content types and look-alike domains', () => {
+    expect(maxBytesFor('https://example.com/report.pdf', 'application/pdf')).toBe(2 * MB);
+    expect(maxBytesFor('https://www.sebi.gov.in/page.html', 'text/html')).toBe(2 * MB);
+    expect(maxBytesFor('https://notgov.in.evil.com/x.pdf', 'application/pdf')).toBe(2 * MB);
+    expect(maxBytesFor('https://fakegov.in/x.pdf', 'application/pdf')).toBe(2 * MB);
   });
 });

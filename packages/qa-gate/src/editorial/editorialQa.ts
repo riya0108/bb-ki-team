@@ -5,6 +5,7 @@ import { z } from 'zod';
 
 import { classifyHighRiskTopic } from '../deterministic/highRiskTopic.js';
 
+import { illustrativeQuantities } from './illustrations.js';
 import type { DriftIssue } from './meaningDrift.js';
 import { detectMeaningDrift } from './meaningDrift.js';
 import type { Quantity } from './quantities.js';
@@ -163,7 +164,11 @@ export async function runEditorialQa(input: RunEditorialQaInput): Promise<Editor
   const evidenceQuantities = claimQuantities(usableClaims);
   const draftQuantities = extractQuantities(draft).filter(isMaterialQuantity);
   const unitMismatches = draftQuantities.filter((q) => supportFor(q, evidenceQuantities) === 'unit_mismatch');
-  const unsupportedNumbers = draftQuantities.filter((q) => supportFor(q, evidenceQuantities) === 'unsupported');
+  const isSupported = (q: Quantity): boolean => supportFor(q, evidenceQuantities) === 'supported';
+  const worked = illustrativeQuantities(draft, draftQuantities, isSupported);
+  const unsupportedNumbers = draftQuantities.filter(
+    (q) => supportFor(q, evidenceQuantities) === 'unsupported' && !worked.has(q),
+  );
   const forbiddenHits = brief.thingsNotToSay.filter(
     (phrase) => phrase.split(/\s+/).length <= 6 && normalizeForMatch(draft).includes(normalizeForMatch(phrase)),
   );

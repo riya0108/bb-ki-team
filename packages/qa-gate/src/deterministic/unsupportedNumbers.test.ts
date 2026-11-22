@@ -25,4 +25,9 @@ describe('checkUnsupportedNumbers', () => {
     expect(r.status).toBe('FAIL');
     expect(r.evidence).toContain('41%');
   });
+
+  it('ignores a trailing list comma and matches a figure written another way in the source', () => {
+    const text = 'The DICGC insures each depositor up to ₹5,00,000, principal and interest combined.';
+    expect(checkUnsupportedNumbers(text, ['Deposits are insured up to Rs 5 lakh per depositor.'], true).status).toBe('PASS');
+  });
 });

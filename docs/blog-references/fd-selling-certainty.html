@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Your FD Isn&#39;t Selling Returns. It&#39;s Selling Certainty, and Your Bank Is Buying</title>
+<meta name="description" content="Deposits are shrinking as a share of Indian savings, yet FDs are gaining ground inside banks. What savers buy, what banks need, and what certainty costs.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=Outfit:wght@500;600;700;800&family=Figtree:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Fragment+Mono&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box;}
+  html{background:var(--color-canvas, #FFFFFF);}
+  body{
+    margin:0; background:var(--color-canvas, #FFFFFF); color:var(--color-body, #181818);
+    font-family:'Source Serif 4', Georgia, 'Times New Roman', serif;
+    line-height:1.7; font-size:19px;
+    -webkit-font-smoothing:antialiased;
+  }
+  .page{max-width:680px; margin:0 auto; padding:0 16px 90px;}
+  .masthead{max-width:980px; margin:0 auto; padding:clamp(40px,8vw,104px) 16px clamp(28px,5vw,52px);}
+  .masthead-rule{border:0; border-top:1px solid var(--color-hairline, #D9DCE3); max-width:980px; margin:0 auto 44px;}
+
+  h1,h2{font-family:'Space Grotesk', 'Outfit', system-ui, sans-serif; font-weight:700; color:var(--color-ink, #0D0D0D); margin:0;}
+
+  .kicker{
+    font-family:'Space Grotesk', system-ui, sans-serif; font-size:13px; font-weight:500;
+    letter-spacing:.14em; text-transform:uppercase; color:var(--color-mute, #5B6270);
+    margin:0 0 26px;
+  }
+  h1{font-size:clamp(38px, 7.4vw, 84px); line-height:1.02; letter-spacing:-.035em; margin:0; text-wrap:balance; max-width:18ch;}
+  h1 .accent{color:var(--color-primary, #2B44E8);}
+  .dek{font-family:'Source Serif 4', Georgia, serif; font-size:clamp(19px, 2.4vw, 23px); line-height:1.5; color:var(--color-ink-soft, #3A3F4A); margin:26px 0 0; max-width:46ch;}
+  .meta{margin:30px 0 0; font:500 14px/1.5 'Space Grotesk', system-ui, sans-serif; color:var(--color-mute, #5B6270); display:flex; gap:6px 22px; flex-wrap:wrap;}
+
+  .essay p{margin:0 0 1.15em; color:var(--color-body, #22252C);}
+  .essay > section:first-of-type > p:first-of-type{font-size:1.22em; line-height:1.55;}
+  .essay h3.sub-head{font-family:'Space Grotesk', system-ui, sans-serif; font-weight:700; font-size:21px; line-height:1.25; margin:1.8em 0 .5em; color:var(--color-primary, #2B44E8);}
+  .essay ul.body-list{padding-left:1.2em; margin:0 0 1.25em;}
+  .essay ul.body-list li{margin-bottom:.5em; color:var(--color-body, #22252C);}
+  .essay p.pull{font-family:'Space Grotesk', system-ui, sans-serif; font-weight:700; font-size:clamp(23px, 3.8vw, 32px); line-height:1.2; letter-spacing:-.02em; color:var(--color-ink, #14161C); margin:1.4em 0; padding:2px 0 2px 22px; border-left:4px solid var(--color-primary, #2B44E8); text-wrap:balance;}
+  .essay p:last-child{margin-bottom:0;}
+  .essay strong{color:var(--color-ink, #0D0D0D); font-weight:700;}
+  .essay em{color:var(--color-ink, #0D0D0D); font-style:italic;}
+  .essay .source-note{font-size:.85rem; color:var(--color-mute, #787878);}
+  .essay .disclaimer{font-size:.85rem; color:var(--color-mute, #787878);}
+
+  h2.section-head{font-size:clamp(26px, 4.2vw, 36px); line-height:1.12; letter-spacing:-.02em; margin:2.1em 0 .6em; text-wrap:balance;}
+
+  .gap-widget{background:var(--color-surface-dark, #181818); border-radius:16px; padding:30px 26px; margin:30px 0; color:var(--color-on-dark, #F2F0EC);}
+  .gap-label{font-family:'Fragment Mono', monospace; font-size:.68rem; letter-spacing:.1em; text-transform:uppercase; color:color-mix(in srgb, var(--color-on-dark, #F2F0EC) 65%, transparent); text-align:center; margin-bottom:20px;}
+  .gap-row{display:flex; align-items:center; justify-content:center; gap:18px; flex-wrap:wrap;}
+  .gap-col{text-align:center;}
+  .gap-num{font-family:'Outfit', sans-serif; font-weight:800; font-size:2.1rem; line-height:1;}
+  .gap-col.guess .gap-num{color:color-mix(in srgb, var(--color-on-dark, #F2F0EC) 80%, transparent);}
+  .gap-col.real .gap-num{color:var(--color-on-dark, #fff);}
+  .gap-sub{font-family:'Fragment Mono', monospace; font-size:.68rem; color:color-mix(in srgb, var(--color-on-dark, #F2F0EC) 55%, transparent); margin-top:8px;}
+  .gap-arrow{font-size:1.4rem; color:var(--color-primary, #D6952E); margin-top:-14px;}
+  .gap-foot{text-align:center; font-size:.86rem; color:color-mix(in srgb, var(--color-on-dark, #F2F0EC) 78%, transparent); margin-top:18px; max-width:42ch; margin-left:auto; margin-right:auto;}
+
+  blockquote{margin:36px 0; padding:2px 0 2px 24px; border-left:2.5px solid var(--color-primary, #5D3FD3);}
+  blockquote p{font-style:italic; font-size:1.15rem; line-height:1.5; color:var(--color-ink, #151515); margin:0;}
+
+  .reveal-wrap{margin:34px 0;}
+  .reveal-title{font-family:'Outfit', sans-serif; font-weight:700; font-size:1.02rem; text-align:center; margin-bottom:4px; color:var(--color-ink, #0D0D0D);}
+  .reveal-sub{font-family:'Fragment Mono', monospace; font-size:.7rem; color:var(--color-stone, #ABABA7); text-align:center; margin-bottom:22px;}
+  .flip-grid{display:grid; grid-template-columns:1fr 1fr; gap:14px;}
+  .flip-card{perspective:1200px; height:168px; cursor:pointer;}
+  .flip-inner{position:relative; width:100%; height:100%; transition:transform .55s cubic-bezier(.4,.2,.2,1); transform-style:preserve-3d;}
+  .flip-card.flipped .flip-inner{transform:rotateY(180deg);}
+  .flip-face{position:absolute; inset:0; backface-visibility:hidden; border-radius:12px; padding:16px 16px; display:flex; flex-direction:column;}
+  .flip-front{background:var(--color-surface-card, #FAF9F7); border:1px solid var(--color-hairline, #E9E8E5); align-items:center; justify-content:center; text-align:center;}
+  .flip-front .num{font-family:'Fragment Mono', monospace; font-size:.68rem; color:var(--color-primary, #5D3FD3); letter-spacing:.06em; text-transform:uppercase; margin-bottom:8px;}
+  .flip-front .icon{font-size:1.7rem; margin-bottom:8px;}
+  .flip-front .teaser{font-size:.84rem; color:var(--color-ink, #454545); font-weight:600;}
+  .flip-front .tap-hint{font-family:'Fragment Mono', monospace; font-size:.6rem; color:var(--color-mute, #ABABA7); margin-top:10px;}
+  .flip-back{background:var(--color-surface-dark, #5D3FD3); color:var(--color-on-dark, #fff); transform:rotateY(180deg); justify-content:center; overflow-y:auto;}
+  .flip-back .b-title{font-family:'Outfit', sans-serif; font-weight:700; font-size:.92rem; margin-bottom:6px; color:var(--color-on-dark, #fff);}
+  .flip-back .b-text{font-size:.76rem; line-height:1.5; color:color-mix(in srgb, var(--color-on-dark, #E6E1FA) 78%, transparent);}
+
+  .poll{background:var(--color-surface-card, #FAF9F7); border:1px solid var(--color-hairline, #E9E8E5); border-radius:14px; padding:26px 26px 24px; margin:34px 0; text-align:center;}
+  .poll-q{font-family:'Outfit', sans-serif; font-weight:700; font-size:1.05rem; color:var(--color-ink, #0D0D0D); margin-bottom:20px;}
+  .poll-actions{display:flex; gap:12px; justify-content:center; flex-wrap:wrap; margin-bottom:6px;}
+  .poll-btn{
+    font-family:'Outfit', sans-serif; font-weight:700; font-size:.86rem; color:var(--color-ink, #181818);
+    background:var(--color-canvas, #fff); border:1.5px solid var(--color-ink, #181818); border-radius:30px; padding:11px 20px; cursor:pointer;
+  }
+  .poll-btn:hover{background:var(--color-ink, #181818); color:var(--color-canvas, #fff);}
+  .poll-reveal{display:none; margin-top:18px; text-align:left; padding:16px 18px; background:var(--color-surface-card, #fff); border:1px solid var(--color-hairline, #E9E8E5); border-radius:10px; font-size:.92rem; color:var(--color-body, #454545); line-height:1.6;}
+  .poll-reveal.show{display:block;}
+
+  .footer{margin-top:54px; padding-top:22px; border-top:1px solid var(--color-hairline, #E9E8E5);}
+  .footer p{font-family:'Figtree', sans-serif; font-size:.8rem; line-height:1.7; color:var(--color-mute, #787878); margin:0 0 8px;}
+
+  .essay a, .footer a{color:var(--color-primary, #5D3FD3); text-decoration:underline; text-underline-offset:2px;}
+
+  .short-version{background:var(--color-surface-card, #FAF9F7); border:1px solid var(--color-hairline, #E9E8E5); border-radius:14px; padding:20px 22px; margin:0 0 34px;}
+  .sv-label{font-family:'Fragment Mono', monospace; font-size:.7rem; letter-spacing:.12em; text-transform:uppercase; color:var(--color-mute, #787878); margin-bottom:10px;}
+  .short-version ul{margin:0; padding-left:20px;}
+  .short-version li{margin:0 0 8px; color:var(--color-body, #454545); font-size:.98rem; line-height:1.55;}
+  .short-version li:last-child{margin-bottom:0;}
+
+  .widget-title{font-family:'Outfit', sans-serif; font-weight:700; font-size:1.02rem; color:var(--color-ink, #0D0D0D); margin-bottom:4px;}
+  .widget-sub{font-family:'Fragment Mono', monospace; font-size:.7rem; color:var(--color-mute, #787878); margin-bottom:16px;}
+
+  .table-figure{margin:34px 0;}
+  .table-figure figcaption{margin-bottom:12px;}
+  .table-sub{display:block; font-size:.88rem; color:var(--color-mute, #787878); margin-top:2px;}
+  .table-wrap{overflow-x:auto; -webkit-overflow-scrolling:touch; border:1px solid var(--color-hairline, #E9E8E5); border-radius:12px; max-width:100%;}
+  .data-table{border-collapse:collapse; width:100%; min-width:420px; font-size:.92rem; line-height:1.45;}
+  .data-table th, .data-table td{padding:11px 14px; text-align:left; vertical-align:top; border-bottom:1px solid var(--color-hairline, #E9E8E5); color:var(--color-body, #454545);}
+  .data-table thead th{font-family:'Outfit', sans-serif; font-weight:700; color:var(--color-ink, #0D0D0D); background:var(--color-surface-card, #FAF9F7); white-space:nowrap;}
+  .data-table tbody th{font-weight:600; color:var(--color-ink, #0D0D0D);}
+  .data-table tbody tr:last-child th, .data-table tbody tr:last-child td{border-bottom:none;}
+  .data-table .num{text-align:right; font-variant-numeric:tabular-nums;}
+  .table-source, .table-foot{font-size:.8rem; color:var(--color-mute, #787878); margin-top:8px;}
+
+  .quiz, .decision{background:var(--color-surface-card, #FAF9F7); border:1px solid var(--color-hairline, #E9E8E5); border-radius:14px; padding:24px 22px; margin:34px 0;}
+  .quiz-q{margin-top:18px;}
+  .quiz-q:first-of-type{margin-top:0;}
+  .quiz-question, .decision-q{font-family:'Outfit', sans-serif; font-weight:700; font-size:1rem; color:var(--color-ink, #0D0D0D); margin:0 0 12px;}
+  .quiz-options, .decision-actions{display:grid; gap:10px;}
+  .quiz-opt, .decision-btn{
+    font-family:'Figtree', sans-serif; font-size:.95rem; font-weight:600; text-align:left; color:var(--color-ink, #181818);
+    background:var(--color-canvas, #fff); border:1.5px solid var(--color-hairline, #D9D8D5); border-radius:10px;
+    padding:13px 16px; min-height:48px; cursor:pointer; width:100%;
+  }
+  .quiz-opt:hover, .decision-btn:hover{border-color:var(--color-ink, #181818);}
+  .quiz-opt.is-answer{border-color:var(--color-success, #2E7D4F); background:color-mix(in srgb, var(--color-success, #2E7D4F) 10%, var(--color-canvas, #fff));}
+  .quiz-opt.is-wrong{border-color:var(--color-danger, #B3261E); background:color-mix(in srgb, var(--color-danger, #B3261E) 8%, var(--color-canvas, #fff));}
+  .quiz-opt[aria-disabled="true"]{cursor:default;}
+  .decision-btn[aria-pressed="true"]{border-color:var(--color-primary, #5D3FD3); background:color-mix(in srgb, var(--color-primary, #5D3FD3) 8%, var(--color-canvas, #fff));}
+  .quiz-result, .decision-reveal{margin-top:12px; padding:14px 16px; background:var(--color-canvas, #fff); border:1px solid var(--color-hairline, #E9E8E5); border-radius:10px; font-size:.92rem; line-height:1.6; color:var(--color-body, #454545);}
+  .quiz-result strong, .dr-title{font-family:'Outfit', sans-serif; font-weight:700; color:var(--color-ink, #0D0D0D);}
+  .dr-title{margin-bottom:4px;}
+  .quiz-source, .dr-evidence{display:block; margin-top:6px; font-size:.8rem; color:var(--color-mute, #787878);}
+  .quiz-score{margin-top:16px; font-family:'Outfit', sans-serif; font-weight:700; color:var(--color-ink, #0D0D0D);}
+
+  .timeline-wrap{margin:34px 0;}
+  .timeline{list-style:none; margin:14px 0 0; padding:0 0 0 18px; border-left:2px solid var(--color-hairline, #E9E8E5);}
+  .timeline li{position:relative; margin:0 0 20px; padding-left:14px;}
+  .timeline li:last-child{margin-bottom:0;}
+  .timeline li::before{content:''; position:absolute; left:-25px; top:6px; width:10px; height:10px; border-radius:50%; background:var(--color-primary, #5D3FD3);}
+  .tl-date{font-family:'Fragment Mono', monospace; font-size:.72rem; letter-spacing:.06em; text-transform:uppercase; color:var(--color-primary, #5D3FD3);}
+  .tl-title{font-family:'Outfit', sans-serif; font-weight:700; color:var(--color-ink, #0D0D0D); margin:2px 0 4px;}
+  .tl-text{font-size:.94rem; line-height:1.6; color:var(--color-body, #454545);}
+  .tl-source{font-size:.78rem; color:var(--color-mute, #787878); margin-top:4px;}
+
+  .flip-front .big-num{font-family:'Outfit', sans-serif; font-weight:800; font-size:1.5rem; color:var(--color-ink, #0D0D0D); margin-bottom:6px;}
+  .flip-back .b-source{font-size:.66rem; margin-top:8px; color:color-mix(in srgb, var(--color-on-dark, #E6E1FA) 65%, transparent);}
+
+  .sources-title{font-family:'Fragment Mono', monospace; font-size:.7rem; letter-spacing:.12em; text-transform:uppercase; color:var(--color-mute, #787878); margin-bottom:10px;}
+  .sources-list{margin:0; padding-left:18px;}
+  .sources-list li{font-size:.8rem; line-height:1.7; color:var(--color-mute, #787878);}
+
+  .flip-card:focus-visible, .poll-btn:focus-visible, .quiz-opt:focus-visible, .decision-btn:focus-visible, .table-wrap:focus-visible, .essay a:focus-visible{
+    outline:3px solid var(--color-primary, #5D3FD3); outline-offset:3px;
+  }
+
+  .bar-chart{margin:2em 0; font-family:'Space Grotesk', system-ui, sans-serif;}
+  .bar-chart figcaption{display:flex; flex-direction:column; gap:2px; margin-bottom:14px; font-size:15px; color:var(--color-ink, #14161C);}
+  .bar-chart figcaption span{color:var(--color-mute, #5B6270); font-size:13px;}
+  .bar-row{display:grid; grid-template-columns:minmax(0,170px) 1fr 64px; gap:12px; align-items:center; padding:7px 0; font-size:14px; color:var(--color-body, #22252C);}
+  .bar-track{display:block; height:22px; background:var(--color-hairline, #E2E5EB); border-radius:2px; overflow:hidden;}
+  .bar-fill{display:block; height:100%; background:var(--color-primary, #2B44E8);}
+  .bar-row.g2 .bar-fill{background:var(--color-accent-2, #C98300);}
+  .bar-val{font-weight:700; font-variant-numeric:tabular-nums; text-align:right;}
+  .bar-source{font-size:13px; color:var(--color-mute, #5B6270); margin-top:10px;}
+
+  .faq{margin-top:3em;}
+  .faq details{border-top:1px solid var(--color-hairline, #D9DCE3); padding:18px 0;}
+  .faq details:last-of-type{border-bottom:1px solid var(--color-hairline, #D9DCE3);}
+  .faq summary{font:700 19px/1.35 'Space Grotesk', system-ui, sans-serif; color:var(--color-ink, #14161C); cursor:pointer; list-style:none; display:flex; justify-content:space-between; gap:16px;}
+  .faq summary::-webkit-details-marker{display:none;}
+  .faq summary::after{content:"+"; color:var(--color-primary, #2B44E8); font-size:24px; line-height:1;}
+  .faq details[open] summary::after{content:"–";}
+  .faq summary:focus-visible{outline:2px solid var(--color-primary, #2B44E8); outline-offset:4px;}
+  .faq details p{margin:12px 0 0; color:var(--color-mute, #5B6270); font-size:17px; line-height:1.6;}
+
+  @media (max-width:560px){
+    .bar-row{grid-template-columns:1fr 64px;}
+    .bar-row .bar-label{grid-column:1 / -1;}
+    body{font-size:18px;}
+    .page{padding:0 16px 70px;}
+    .flip-grid{grid-template-columns:1fr;}
+    .flip-card{height:150px;}
+    .gap-num{font-size:1.7rem;}
+    .quiz, .decision{padding:20px 16px;}
+    .data-table{font-size:.86rem;}
+    .data-table th, .data-table td{padding:9px 11px;}
+  }
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"Article","headline":"Your FD Isn't Selling Returns. It's Selling Certainty, and Your Bank Is Buying","description":"Deposits are shrinking as a share of Indian savings, yet FDs are gaining ground inside banks. What savers buy, what banks need, and what certainty costs.","inLanguage":"en-IN"},{"@type":"FAQPage","mainEntity":[{"@type":"Question","name":"Why do Indians still prefer fixed deposits over mutual funds?","acceptedAnswer":{"@type":"Answer","text":"The SEBI Investor Survey 2025 found that 80% of households prefer capital preservation over returns. The same survey found 63% of households are aware of at least one securities market product, but only 9.5% participate. Business Today's report on the survey says lack of trust, with fear of fraud and loss, dominates the reluctance, alongside product complexity. Moneycontrol attributes the FD's appeal to certainty: a known amount, rate and maturity value."}},{"@type":"Question","name":"Are FD rates going up after the RBI's October 2026 repo rate hike?","acceptedAnswer":{"@type":"Answer","text":"At its October 5-7, 2026 meeting, the RBI's Monetary Policy Committee voted to increase the repo rate by 25 basis points to 5.50%. In October and November, several banks, including HDFC Bank, Canara Bank, Indian Overseas Bank, Indian Bank and Bank of Baroda, increased FD rates on select maturities, not all tenures. Livemint names credit growing faster than deposits as one of the biggest reasons for higher FD rates."}},{"@type":"Question","name":"Do FD returns keep up with inflation right now?","acceptedAnswer":{"@type":"Answer","text":"The average rate on fresh term deposits was 5.61% in September 2026, just above September CPI inflation of 5.54%. Provisional October CPI then rose to 6.09%. All of these figures are before tax, and post-hike FD rates are not yet reflected in the average, so the comparison is not a final verdict."}},{"@type":"Question","name":"How much of my fixed deposit is insured in India?","acceptedAnswer":{"@type":"Answer","text":"The DICGC insures each depositor up to ₹5,00,000 per bank, for principal and interest combined. Deposits in different branches of the same bank are added together for this limit. Post office savings schemes are different: they are sovereign-guaranteed by the Government of India."}},{"@type":"Question","name":"Are bank deposits losing share of Indian household savings?","acceptedAnswer":{"@type":"Answer","text":"Over the long run, yes. A Franklin Templeton India Mutual Fund report shows bank deposits fell from 52% of gross household financial savings in FY71-80 to 33% by FY25, while mutual funds, shares and debentures reached 18% in FY25. Within banks, though, term deposits rose from 55.2% of aggregate deposits in March 2022 to 61.6% in March 2026."}}]}]}</script>
+</head>
+<body>
+<header class="masthead">
+  <div class="kicker">Personal Finance</div>
+  <h1>Your FD Isn&#39;t Selling Returns. It&#39;s <span class="accent">Selling Certainty</span>, and Your Bank Is Buying</h1>
+  <p class="dek">Most Indian households know about mutual funds and still pick the fixed deposit. The reasons sit on both sides of the bank counter, and this month the price of that choice is easier to see.</p>
+    <p class="meta"><span>November 2026</span><span>13 min read</span><span>Savings, trust and the bank on the other side of the rate card</span></p>
+</header>
+<hr class="masthead-rule">
+<div class="page">
+  <main class="essay">
+    <section id="losing-the-war-winning-the-bank">
+      <h2 class="section-head">Losing the war, winning the bank</h2>
+<p>Picture a family WhatsApp group in the week a bonus lands. The 26-year-old posts a screenshot of an SIP app. A few minutes later, a parent replies with a bank&#39;s FD rate card and a thumbs-up.</p>
+<p>Nobody in that chat is clueless. Both of them have heard of mutual funds. The argument is about something harder to settle: would you rather know exactly what you will have in a year, or hope for more?</p>
+<p>Scale that chat up to the whole country and it starts to look like a contradiction.</p>
+<p>A Franklin Templeton India Mutual Fund report shows bank deposits made up <a href="https://www.livemint.com/money/personal-finance/indias-100-household-savings-puzzle-33-goes-to-banks-while-39-flows-to-pension-funds-and-markets-11788696086703.html" rel="noopener" target="_blank">33% of gross household financial savings by FY25</a>, a far smaller slice than they once held. Inside the banks, money has moved the other way. RBI data shows <a href="https://www.rbi.org.in/scripts/BS_PressReleaseDisplay.aspx?prid=62830" rel="noopener" target="_blank">term deposits rose to 61.6% of aggregate deposits at scheduled commercial banks in March 2026</a>, from 55.2% in March 2022.</p>
+<p><strong>The FD is shrinking as a share of what you save, and growing as a share of what you keep in the bank.</strong></p>
+<p>The usual explanation is that Indians are cautious and stick with what they know. That covers half of it. The other half sits on the bank&#39;s side of the counter. A fixed deposit is a two-sided bargain: you buy certainty, and a bank that needs funding pays to hold your money for a fixed period. Right now both halves of that bargain are easier to see than usual, and so is its price.</p>
+<p>October is the reason. The RBI said <a href="https://www.rbi.org.in/scripts/BS_PressReleaseDisplay.aspx?prid=63742" rel="noopener" target="_blank">its Monetary Policy Committee voted unanimously at its October 5-7, 2026 meeting to increase the repo rate by 25 basis points to 5.50%</a>, and shifted its stance to calibrated tightening. In October and November, <a href="https://www.livemint.com/money/personal-finance/fd-interest-rates-rise-in-november-2026-why-banks-are-hiking-rates-and-should-you-invest-in-fixed-deposits-now-11794585678605.html" rel="noopener" target="_blank">HDFC Bank, Canara Bank, Indian Overseas Bank, Indian Bank and Bank of Baroda were among several banks that increased FD rates on select maturities</a>. Select maturities, at named banks. Your tenure at your bank may not have moved at all.</p>
+      <p class="source-note"><em>Source: Reserve Bank of India, October 7, 2026; Reserve Bank of India, May 29, 2026; livemint.com, November 13, 2026</em></p>
+    </section>
+    <section id="two-trends-that-refuse-to-cancel-out">
+      <h2 class="section-head">Two trends that refuse to cancel out</h2>
+<h3 class="sub-head">A smaller slice than it used to be</h3>
+<p>In the 1970s, the bank deposit took more than half of what households saved in financial form. The same Franklin Templeton report puts deposits at <a href="https://www.livemint.com/money/personal-finance/indias-100-household-savings-puzzle-33-goes-to-banks-while-39-flows-to-pension-funds-and-markets-11788696086703.html" rel="noopener" target="_blank">52% of gross household financial savings during FY71-80</a>. By FY25, the bank&#39;s share had shrunk to about a third.</p>
+<p>The deposit did not vanish. Other products crowded in around it. Franklin Templeton&#39;s figures show <a href="https://www.livemint.com/money/personal-finance/indias-100-household-savings-puzzle-33-goes-to-banks-while-39-flows-to-pension-funds-and-markets-11788696086703.html" rel="noopener" target="_blank">mutual funds, shares and debentures rising from 4% of household financial savings in FY21 to 11% in FY24 and 18% in FY25</a>, enough to overtake life insurance at 17%.</p>
+<p>Fold it into a single ₹100 note. By the report&#39;s count, <a href="https://www.livemint.com/money/personal-finance/indias-100-household-savings-puzzle-33-goes-to-banks-while-39-flows-to-pension-funds-and-markets-11788696086703.html" rel="noopener" target="_blank">₹33 of every ₹100 of household financial savings went to bank deposits</a> in FY25, while ₹39 went to provident and pension funds, mutual funds, shares and debentures combined. Group the long-term and market-linked buckets together, and the bank no longer holds the biggest one.</p>
+<p>Two things are worth keeping in mind. Franklin Templeton runs a mutual fund business, so it has an obvious interest in readers noticing a shift towards markets. That does not make the figures wrong. And the series stops at FY25, so it says nothing about what households have done since.</p>
+<h3 class="sub-head">A reshuffle inside the bank</h3>
+<p>Now look only at the money that stayed in banks. Between March 2022 and March 2026, while term deposits gained ground, savings deposits slid from 34.6% of aggregate deposits to 28.7%.</p>
+<p>The bank&#39;s deposit book has become more FD-shaped. Less of it sits in an account you can empty with a tap on your phone, and more of it is locked away at a fixed rate for a fixed period.</p>
+<p class="pull">The FD is losing the war for India&#39;s savings while winning the argument inside the bank.</p>
+      <p class="source-note"><em>Source: Reserve Bank of India, May 29, 2026; livemint.com, September 6, 2026</em></p>
+    </section>
+    <figure class="bar-chart" aria-label="Where household financial savings went">
+      <figcaption><b>Where household financial savings went</b><span>Share of gross household financial savings · Franklin Templeton India Mutual Fund report (industry source), 2026</span></figcaption>
+        <div class="bar-row"><span class="bar-label">Bank deposits, FY71-80</span><span class="bar-track" aria-hidden="true"><span class="bar-fill" style="width:92.6%"></span></span><span class="bar-val">52%</span></div>
+        <div class="bar-row"><span class="bar-label">Mutual funds, shares &amp; debentures, FY21</span><span class="bar-track" aria-hidden="true"><span class="bar-fill" style="width:7.1%"></span></span><span class="bar-val">4%</span></div>
+        <div class="bar-row g2"><span class="bar-label">Bank deposits, FY25</span><span class="bar-track" aria-hidden="true"><span class="bar-fill" style="width:58.8%"></span></span><span class="bar-val">33%</span></div>
+        <div class="bar-row g2"><span class="bar-label">Mutual funds, shares &amp; debentures, FY25</span><span class="bar-track" aria-hidden="true"><span class="bar-fill" style="width:32.1%"></span></span><span class="bar-val">18%</span></div>
+        <div class="bar-row g2"><span class="bar-label">Life insurance, FY25</span><span class="bar-track" aria-hidden="true"><span class="bar-fill" style="width:30.3%"></span></span><span class="bar-val">17%</span></div>
+      <div class="bar-source">Source: Franklin Templeton India Mutual Fund report, via Livemint, September 2026. Data runs to FY25.</div>
+    </figure>
+    <section id="the-savers-half-of-the-story">
+      <h2 class="section-head">The saver&#39;s half of the story</h2>
+<p>Start with the explanation most people already half-believe: Indians pick FDs because they are cautious. The evidence backs that, with one correction.</p>
+<p>The correction is about knowledge. The <a href="https://www.businesstoday.in/mutual-funds/story/sebi-finds-9-in-10-indians-skip-markets-despite-knowing-them-whats-holding-them-back-496430-2025-10-01" rel="noopener" target="_blank">SEBI Investor Survey 2025</a> found that 63% of Indian households, around 213 million, are aware of at least one securities market product, yet only 9.5% actually participate. Most households that know the market exists stay out of it.</p>
+<p>Staying out is a choice, and the survey hints at why. SEBI found that <a href="https://www.businesstoday.in/mutual-funds/story/sebi-finds-9-in-10-indians-skip-markets-despite-knowing-them-whats-holding-them-back-496430-2025-10-01" rel="noopener" target="_blank">80% of all households, and 79% of Gen Z households, prefer capital preservation over returns</a>. Younger households answer almost exactly like everyone else.</p>
+<p>What holds people back? Business Today&#39;s report on the survey says <a href="https://www.businesstoday.in/mutual-funds/story/sebi-finds-9-in-10-indians-skip-markets-despite-knowing-them-whats-holding-them-back-496430-2025-10-01" rel="noopener" target="_blank">lack of trust, with fear of fraud and loss, dominates investment reluctance</a>, alongside the sense that the products are complicated. If you have watched a relative lose money on a stock tip from a group chat, or tried to decode a fund factsheet over lunch, none of this will surprise you.</p>
+<p>One caution belongs here. The survey records what households say they prefer. It does not count who holds FDs. A family that values capital preservation might keep its money in PPF, a post office scheme or plain cash.</p>
+<p>Still, the saver&#39;s story hangs together. What it leaves out is the other party. A fixed deposit needs someone willing to pay you for your patience, and right now that someone has reasons of its own.</p>
+      <p class="source-note"><em>Source: Business Today, October 1, 2025</em></p>
+    </section>
+    <section id="banks-need-your-term-money-and-theyre-paying-for-it">
+      <h2 class="section-head">Banks need your term money, and they&#39;re paying for it</h2>
+<p>This is the part of the FD story that rarely reaches the family WhatsApp group.</p>
+<p>Banks are lending faster than they collect deposits. Livemint reports that <a href="https://www.livemint.com/money/personal-finance/fd-interest-rates-rise-in-november-2026-why-banks-are-hiking-rates-and-should-you-invest-in-fixed-deposits-now-11794585678605.html" rel="noopener" target="_blank">one of the biggest reasons behind higher FD rates is credit growth outpacing deposit growth</a>. As of 15 October 2026, bank credit was up 18.2% year-on-year, against 16.7% for aggregate deposits.</p>
+<p>The gap sounds small, and it is not a rupee shortfall in itself, since one growth rate applies to a loan book and the other to a deposit book. What it shows is direction. Loans, the thing a bank sells, are growing faster than deposits, the thing it mostly runs on.</p>
+<h3 class="sub-head">The kirana counter version</h3>
+<p>Think of a neighbourhood kirana owner whose udhaar book is growing faster than the cash crossing his counter. He can extend credit for a while. Eventually he needs money from somewhere, and the steadiest source is a regular customer willing to leave cash with him for a fixed period. He will pay that customer a little extra to say yes.</p>
+<p>A bank nudging up the rate on one FD tenure is doing something similar.</p>
+<p>Its cushion has thinned, too. <a href="https://www.livemint.com/money/personal-finance/fd-interest-rates-rise-in-november-2026-why-banks-are-hiking-rates-and-should-you-invest-in-fixed-deposits-now-11794585678605.html" rel="noopener" target="_blank">The banking system&#39;s durable liquidity surplus fell from around ₹10.14 lakh crore on 30 September to approximately ₹7.93 lakh crore on 15 October 2026</a>, a fall Livemint cites as adding to banks&#39; funding pressure. Within about two weeks, banks had noticeably less spare money in the system to lean on.</p>
+<p>None of this means savers have stopped handing money over. <a href="https://www.rbi.org.in/scripts/BS_PressReleaseDisplay.aspx?prid=62830" rel="noopener" target="_blank">Deposit growth at scheduled commercial banks accelerated to 11.5% year-on-year as of end-March 2026</a>, from 10.6% a year earlier. Deposits are growing. Loans have simply been growing faster.</p>
+<h3 class="sub-head">Why term money in particular</h3>
+<p>What follows is interpretation rather than data. A savings balance can leave tomorrow. A term deposit, by design, stays for a known period. A bank that has just watched its liquidity cushion shrink has a clear reason to prefer money it can count on, and to pay more for it than for money that might walk out.</p>
+<p><strong>Your FD is a product the bank sells you. It is also something the bank is buying from you.</strong></p>
+      <p class="source-note"><em>Source: Reserve Bank of India, May 29, 2026; livemint.com, November 13, 2026</em></p>
+    </section>
+    <section id="the-quiet-move-from-savings-account-to-fd">
+      <h2 class="section-head">The quiet move from savings account to FD</h2>
+<p>So where is the term money coming from? Part of the answer may be sitting in the bank&#39;s own deposit book.</p>
+<p>Over the four years to March 2026, the savings-account share fell by nearly as much as the term-deposit share rose. That looks less like a wave of new money and more like money changing rooms inside the same building.</p>
+<p>It is an inference, and its limits deserve plain words. The data shows shares, not flows. It cannot tell you whether the FD gains came from fresh household money, from balances leaving savings accounts, or from both.</p>
+<p>The motive for moving is no mystery, though. A savings account offers instant access at a lower yield. Moneycontrol attributes the FD&#39;s lasting appeal to something more specific: <a href="https://www.moneycontrol.com/news/business/personal-finance/fixed-deposits-in-2026-why-this-old-favourite-still-has-a-place-in-your-portfolio-13955888.html" rel="noopener" target="_blank">you know the amount invested, the interest rate and the maturity value, and you are insulated from market changes</a>.</p>
+<p>Shifting idle money into an FD needs no new app and no faith in the stock market. It may be the smallest available step towards earning more. This last point is speculation, but it fits both halves of the bargain at once: the saver wants a known number, and the bank wants a known deposit.</p>
+      <p class="source-note"><em>Source: Reserve Bank of India, May 29, 2026; moneycontrol.com, October 15, 2026</em></p>
+    </section>
+    <figure class="table-figure">
+      <figcaption><span class="widget-title">Inside the bank: the deposit book got more FD-shaped</span><span class="table-sub">Share of aggregate deposits at scheduled commercial banks, March 2022 vs March 2026</span></figcaption>
+      <div class="table-wrap" role="region" aria-label="Inside the bank: the deposit book got more FD-shaped (scrolls horizontally)" tabindex="0">
+        <table class="data-table"><thead><tr><th scope="col">Deposit type</th><th scope="col" class="num">March 2022</th><th scope="col" class="num">March 2026</th></tr></thead><tbody><tr><th scope="row">Term deposits</th><td class="num">55.2%</td><td class="num">61.6%</td></tr><tr><th scope="row">Savings deposits</th><td class="num">34.6%</td><td class="num">28.7%</td></tr></tbody></table>
+      </div>
+      <div class="table-source">Source: Reserve Bank of India deposit data, May 2026</div>
+      <div class="table-foot">Other deposit categories are not shown. The data shows shares, not flows, so it cannot say whether the term-deposit gain came from new money or from balances moved out of savings accounts.</div>
+    </figure>
+    <section id="what-certainty-costs-this-month">
+      <h2 class="section-head">What certainty costs this month</h2>
+<p>Certainty has a price, and you pay it in purchasing power.</p>
+<p>Begin with what banks pay on new money. RBI data shows the <a href="https://www.livemint.com/money/personal-finance/fd-interest-rates-rise-in-november-2026-why-banks-are-hiking-rates-and-should-you-invest-in-fixed-deposits-now-11794585678605.html" rel="noopener" target="_blank">weighted average rate on fresh rupee term deposits at scheduled commercial banks fell to 5.61% in September 2026</a>, from 5.67% in August. Deposits already on the books averaged 6.55%, down from 6.56%. In plain terms, banks were paying new money less than old money in the month before the October hike.</p>
+<p>Against that, <a href="https://www.pib.gov.in/PressReleseDetailm.aspx?PRID=2335416&amp;amp=&amp;lang=1&amp;amp=&amp;reg=3" rel="noopener" target="_blank">India&#39;s CPI inflation was 6.09% (provisional) in October 2026</a>, up from 5.54% in September, with food inflation at 8.94%.</p>
+<p>Matched month for month, September was almost level, with the fresh deposit rate just above inflation before tax. October is where it turns: prices jumped, while the post-hike FD increases had only just begun.</p>
+<h3 class="sub-head">An illustration, not a forecast</h3>
+<p>Assume you put ₹1,00,000 into a one-year FD at 5.61%, with simple annual interest. You earn ₹5,610, so the maturity value is ₹1,05,610.</p>
+<p>Now assume prices rise 6.09% over the same year. A basket that cost ₹1,00,000 at the start costs ₹1,06,090 at the end.</p>
+<p>Your money grew by ₹5,610. The basket grew by ₹6,090. Measured in what your savings can buy, you finish about ₹480 behind.</p>
+<p>Treat that result with care. The rate is from September and the inflation figure is a provisional October print, and one month&#39;s annual reading is not a forecast for your year. Both are before tax, and tax on your interest would widen the gap if you pay it. How far post-hike rates have moved across all tenures is not yet in the data. Nor can these figures say how long the squeeze has lasted: they cover September and October, nothing more.</p>
+<p>Moneycontrol puts the risk bluntly: <a href="https://www.moneycontrol.com/news/business/personal-finance/fixed-deposits-in-2026-why-this-old-favourite-still-has-a-place-in-your-portfolio-13955888.html" rel="noopener" target="_blank">FD returns may fail to keep pace with inflation</a>, which can leave the real value of savings barely increased.</p>
+<p class="pull">The FD tells you exactly what you will get back. It says nothing about what that money will buy.</p>
+      <p class="source-note"><em>Source: pib.gov.in; mospi.gov.in; livemint.com, November 13, 2026</em></p>
+    </section>
+    <section id="the-fine-print-on-safe">
+      <h2 class="section-head">The fine print on safe</h2>
+<p>Ask why someone chooses an FD and you will usually hear some version of safety. It helps to know exactly what that word covers.</p>
+<h3 class="sub-head">The ₹5 lakh line</h3>
+<p><a href="https://www.rbi.org.in/scripts/FS_FAQs.aspx?Id=64" rel="noopener" target="_blank">The DICGC insures each depositor in a bank up to ₹5,00,000</a>, principal and interest combined, and deposits in different branches of the same bank are added together.</p>
+<p>Assume you hold ₹4 lakh in an FD at one branch and ₹3 lakh in a savings account at another branch of the same bank. You have ₹7 lakh with that bank, but only ₹5 lakh falls under the cover. Split the same money across two different banks, and each portion sits under its own limit.</p>
+<p>For most young earners, the limit is a long way off. It can be much closer for a retiree who has just parked a provident fund payout in the one bank they have used for decades.</p>
+<h3 class="sub-head">What the government backs</h3>
+<p><a href="https://www.businesstoday.in/personal-finance/investment/story/choose-your-fd-scheme-fixed-deposits-vs-post-office-deposits-which-offers-better-returns-in-2026-534103-2026-05-31" rel="noopener" target="_blank">Post office savings schemes are backed by the Government of India</a> as sovereign-guaranteed instruments, a different promise from the capped insurance on a bank FD.</p>
+<p>Their rates have barely moved. At the last quarterly announcement, <a href="https://www.businesstoday.in/personal-finance/story/small-savings-scheme-interest-rates-unchanged-for-q3-fy27-check-ppf-scss-ssy-rates-558892-2026-09-30" rel="noopener" target="_blank">interest rates on most government small savings schemes had stayed unchanged since the January-March quarter of FY 2023-24</a>, the ninth consecutive quarter without a broad revision. The Senior Citizens Savings Scheme pays 8.2% and PPF pays 7.1%. Those rates are reset quarter by quarter and each scheme has its own rules, so a headline rate is a starting point for comparison, not a verdict.</p>
+<h3 class="sub-head">The senior premium</h3>
+<p><a href="https://www.businesstoday.in/personal-finance/investment/story/fd-rates-now-nbfc-fixed-deposits-outpace-banks-in-2026-with-returns-up-to-8-5-530410-2026-05-08" rel="noopener" target="_blank">Senior citizens typically get 0.25% to 0.75% more than standard FD rates</a> at most banks and NBFCs. Small on paper, it adds up on a large retirement corpus.</p>
+<p>None of this makes the FD unsafe. It makes the word more precise: protected from market swings, insured up to a limit, exposed to whatever inflation does next.</p>
+      <p class="source-note"><em>Source: Reserve Bank of India; Business Today, September 30, 2026; businesstoday.in, May 7, 2026</em></p>
+    </section>
+    <section id="maybe-this-isnt-love-at-all">
+      <h2 class="section-head">Maybe this isn&#39;t love at all</h2>
+<p>The strongest case against this argument deserves a fair hearing, because it has the long-run numbers on its side.</p>
+<p>It runs like this. Indians are not falling for FDs; they are slowly drifting away from them. Since the 1970s, deposits have gone from more than half of household financial savings to a third. Long-term and market-linked products already take more of each ₹100 than bank deposits do. On this reading, the rising term-deposit share is a story about bank pricing and money leaving savings accounts, not loyalty.</p>
+<p>Much of that is right, and I&#39;d concede it plainly. The affection is conditional, and banks that need funding are paying for part of it. If credit cools and rates ease, the conditions that made FDs look attractive in October and November could fade. That is a possibility, not a forecast.</p>
+<p>Access matters too. In the SEBI survey, <a href="https://www.businesstoday.in/mutual-funds/story/sebi-finds-9-in-10-indians-skip-markets-despite-knowing-them-whats-holding-them-back-496430-2025-10-01" rel="noopener" target="_blank">securities market participation was 15% in urban areas and 6% in rural areas</a>. A rural household that sticks with the bank may be responding less to preference than to what is nearby, familiar and explained in its own language. This part is observation rather than data.</p>
+<p>Where I&#39;d push back is on the idea that the two stories compete. A household can send its SIP money into markets and its emergency money into an FD in the same month. A smaller slice of savings can also mean more rupees: deposits kept growing even as other products grew faster. The FD&#39;s job has narrowed. It has not vanished.</p>
+      <p class="source-note"><em>Source: Reserve Bank of India, May 29, 2026; Business Today, October 1, 2025; livemint.com, September 6, 2026</em></p>
+    </section>
+    <section id="who-blinks-first-savers-banks-or-inflation">
+      <h2 class="section-head">Who blinks first: savers, banks or inflation</h2>
+<p>Put the pieces together and the FD looks less like a national habit than a negotiated deal. On one side are households that know about markets and still, by their own account, would rather not lose than win big. On the other are banks lending faster than they collect deposits, with a thinner liquidity cushion and a central bank that has just tightened. Between them sits a party neither side controls: inflation.</p>
+<p>Which way the bargain tilts should show up in a handful of numbers.</p>
+<p><strong>The post-hike deposit rate.</strong> September&#39;s reading came before the hike. The RBI&#39;s next figures on fresh term deposit rates will show whether increases on particular tenures added up to a broad rise.</p>
+<p><strong>Inflation against that rate.</strong> If CPI stays above the fresh deposit rate, the cost of certainty turns from a footnote into a monthly headline. If inflation eases, October may look like a blip.</p>
+<p><strong>Credit versus deposits.</strong> While loans outgrow deposits, banks have a reason to keep paying for term money. A narrowing gap would weaken that pull.</p>
+<p><strong>The next small savings decision.</strong> Government scheme rates have stayed put for nine quarters. Whether they move now that policy is tightening is unknown, and the answer shapes what an FD has to compete with.</p>
+<p><strong>FY26 savings data and the next SEBI survey.</strong> The household shares stop at FY25. Fresh data will show whether higher FD rates slowed the drift towards mutual funds and equities, and a new survey whether market products have narrowed the trust gap at all.</p>
+<p>If this continues, the likely pressure point is plain enough. A deal sold on certainty is hardest to defend when the one thing it is certain about, the number at maturity, visibly buys less.</p>
+      <p class="source-note"><em>Source: pib.gov.in; mospi.gov.in; Business Today, September 30, 2026</em></p>
+    </section>
+    <section id="what-to-do">
+      <h2 class="section-head">What this means for you</h2>
+<p><strong>If you are a young earner weighing an FD against an SIP</strong></p>
+<ul class="body-list">
+<li>Decide what the money is for before choosing where it goes. Money you need on a fixed date suits the FD&#39;s known maturity value; money you won&#39;t touch for years faces a different trade-off.</li>
+<li>Put the FD rate you are offered next to the latest CPI print. Both are before tax, and the gap tells you what certainty is costing you.</li>
+<li>If trust is what keeps you out of markets, treat it as something research can address, not a personal failing. Business Today&#39;s reading of the SEBI survey says lack of trust dominates households&#39; reluctance, alongside product complexity.</li>
+</ul>
+<p><strong>If you hold more than ₹5 lakh with one bank</strong></p>
+<ul class="body-list">
+<li>Add up everything you hold with that bank, across branches, FDs and savings accounts, because interest counts inside the ₹5 lakh DICGC limit.</li>
+<li>Consider whether spreading deposits across banks would bring more of your money under cover, since each bank carries its own limit.</li>
+<li>Compare post office schemes too. A sovereign guarantee is a different kind of protection, so check their current rates and rules.</li>
+</ul>
+<p><strong>If you are a senior citizen living on interest</strong></p>
+<ul class="body-list">
+<li>Ask for the senior rate, which most banks and NBFCs typically set 0.25% to 0.75% above standard rates.</li>
+<li>Compare it with SCSS and other small savings rates, which are reset quarterly, so check the latest announcement.</li>
+<li>At renewal, look up the current rate on the exact tenure you are rolling into, not the headline rate in an advert.</li>
+</ul>
+    </section>
+    <section id="conclusion">
+      <h2 class="section-head">Two numbers next to the rate card</h2>
+<p>Go back to that family WhatsApp group. The parent with the FD rate card and the 26-year-old with the SIP screenshot are not arguing about who knows more. Both know. They price certainty differently.</p>
+<p>What neither can see from the chat is the bank behind the rate card, lending faster than it collects deposits and willing to pay a little extra to keep your money still. Nor can they see the October inflation print, which ran ahead of what the average new FD paid in September.</p>
+<p>So the next time an FD rate card lands in your family group, put two numbers next to it: the latest inflation figure, and the total you already hold with that bank. If the first is higher than the rate, you are paying for certainty. If the second is above ₹5 lakh, you may have less certainty than you think.</p>
+    </section>
+    <p class="disclaimer"><em>This article is for information and education only. It is not investment, tax or financial advice. Interest rates, inflation figures and scheme rates change, and some figures cited are provisional or time-bound. Consider your own circumstances and consult a qualified adviser before making financial decisions.</em></p>
+    <section class="faq" id="faq">
+      <h2 class="section-head">Frequently asked questions</h2>
+      <details><summary>Why do Indians still prefer fixed deposits over mutual funds?</summary><p>The SEBI Investor Survey 2025 found that 80% of households prefer capital preservation over returns. The same survey found 63% of households are aware of at least one securities market product, but only 9.5% participate. Business Today&#39;s report on the survey says lack of trust, with fear of fraud and loss, dominates the reluctance, alongside product complexity. Moneycontrol attributes the FD&#39;s appeal to certainty: a known amount, rate and maturity value.</p></details>
+      <details><summary>Are FD rates going up after the RBI&#39;s October 2026 repo rate hike?</summary><p>At its October 5-7, 2026 meeting, the RBI&#39;s Monetary Policy Committee voted to increase the repo rate by 25 basis points to 5.50%. In October and November, several banks, including HDFC Bank, Canara Bank, Indian Overseas Bank, Indian Bank and Bank of Baroda, increased FD rates on select maturities, not all tenures. Livemint names credit growing faster than deposits as one of the biggest reasons for higher FD rates.</p></details>
+      <details><summary>Do FD returns keep up with inflation right now?</summary><p>The average rate on fresh term deposits was 5.61% in September 2026, just above September CPI inflation of 5.54%. Provisional October CPI then rose to 6.09%. All of these figures are before tax, and post-hike FD rates are not yet reflected in the average, so the comparison is not a final verdict.</p></details>
+      <details><summary>How much of my fixed deposit is insured in India?</summary><p>The DICGC insures each depositor up to ₹5,00,000 per bank, for principal and interest combined. Deposits in different branches of the same bank are added together for this limit. Post office savings schemes are different: they are sovereign-guaranteed by the Government of India.</p></details>
+      <details><summary>Are bank deposits losing share of Indian household savings?</summary><p>Over the long run, yes. A Franklin Templeton India Mutual Fund report shows bank deposits fell from 52% of gross household financial savings in FY71-80 to 33% by FY25, while mutual funds, shares and debentures reached 18% in FY25. Within banks, though, term deposits rose from 55.2% of aggregate deposits in March 2022 to 61.6% in March 2026.</p></details>
+    </section>
+  </main>
+  <footer class="footer">
+    <div class="sources-title">Sources</div>
+    <ol class="sources-list">
+      <li><a href="https://www.rbi.org.in/scripts/BS_PressReleaseDisplay.aspx?prid=63742" rel="nofollow noopener noreferrer" target="_blank">Reserve Bank of India: Official Website of Reserve Bank of India, October 7, 2026</a></li>
+      <li><a href="https://www.rbi.org.in/scripts/BS_PressReleaseDisplay.aspx?prid=62830" rel="nofollow noopener noreferrer" target="_blank">Reserve Bank of India: Official Website of Reserve Bank of India, May 29, 2026</a></li>
+      <li><a href="https://www.rbi.org.in/scripts/FS_FAQs.aspx?Id=64" rel="nofollow noopener noreferrer" target="_blank">Reserve Bank of India: Official Website of Reserve Bank of India</a></li>
+      <li><a href="https://www.pib.gov.in/PressReleseDetailm.aspx?PRID=2335416&amp;amp=&amp;lang=1&amp;amp=&amp;reg=3" rel="nofollow noopener noreferrer" target="_blank">pib.gov.in: PRESS RELEASE OF CONSUMER PRICE INDEX ON BASE 2024=100 FOR OCTOBER, 2026</a></li>
+      <li><a href="https://www.mospi.gov.in/uploads/latestreleasesfiles/1794480048335-Press%20Release%20of%20CPI%20for%20October%202026%20.pdf" rel="nofollow noopener noreferrer" target="_blank">mospi.gov.in</a></li>
+      <li><a href="https://www.businesstoday.in/mutual-funds/story/sebi-finds-9-in-10-indians-skip-markets-despite-knowing-them-whats-holding-them-back-496430-2025-10-01" rel="nofollow noopener noreferrer" target="_blank">Business Today, October 1, 2025</a></li>
+      <li><a href="https://www.businesstoday.in/personal-finance/story/small-savings-scheme-interest-rates-unchanged-for-q3-fy27-check-ppf-scss-ssy-rates-558892-2026-09-30" rel="nofollow noopener noreferrer" target="_blank">Business Today, September 30, 2026</a></li>
+      <li><a href="https://www.livemint.com/money/personal-finance/indias-100-household-savings-puzzle-33-goes-to-banks-while-39-flows-to-pension-funds-and-markets-11788696086703.html" rel="nofollow noopener noreferrer" target="_blank">livemint.com, September 6, 2026</a></li>
+      <li><a href="https://www.livemint.com/money/personal-finance/fd-interest-rates-rise-in-november-2026-why-banks-are-hiking-rates-and-should-you-invest-in-fixed-deposits-now-11794585678605.html" rel="nofollow noopener noreferrer" target="_blank">livemint.com, November 13, 2026</a></li>
+      <li><a href="https://www.businesstoday.in/personal-finance/investment/story/fd-rates-now-nbfc-fixed-deposits-outpace-banks-in-2026-with-returns-up-to-8-5-530410-2026-05-08" rel="nofollow noopener noreferrer" target="_blank">businesstoday.in, May 7, 2026</a></li>
+      <li><a href="https://www.moneycontrol.com/news/business/personal-finance/fixed-deposits-in-2026-why-this-old-favourite-still-has-a-place-in-your-portfolio-13955888.html" rel="nofollow noopener noreferrer" target="_blank">moneycontrol.com, October 15, 2026</a></li>
+      <li><a href="https://www.businesstoday.in/personal-finance/investment/story/choose-your-fd-scheme-fixed-deposits-vs-post-office-deposits-which-offers-better-returns-in-2026-534103-2026-05-31" rel="nofollow noopener noreferrer" target="_blank">businesstoday.in, May 30, 2026</a></li>
+    </ol>
+  </footer>
+</div>
+</body>
+</html>

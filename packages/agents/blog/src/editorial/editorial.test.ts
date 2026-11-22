@@ -11,6 +11,7 @@ import { checkAiSlop } from './slopFilter.js';
 import { checkCitations, checkStructure } from './structureChecks.js';
 import { classifyEnding, classifyOpening, computeStyleMetrics, shapeFromPlainText } from './styleMetrics.js';
 import { aggregateStyleProfile, renderStyleProfileForWriter } from './styleProfile.js';
+import { articlePlainText } from './articleText.js';
 import { brief, claim, MEDAL_CLAIMS, writerDraft } from './testFixtures.js';
 import { enforceAllowedComponents } from './writeArticle.js';
 
@@ -338,6 +339,33 @@ describe('structure checks', () => {
     expect(checkStructure(writerDraft(), architecture).some((w) => w.code === 'missing_counterargument')).toBe(false);
   });
 
+  it('blocks a deep piece with no research-method section and warns when it opens on a thesis line', () => {
+    const architecture = { ...fallbackArchitecture('t', medalBrief), counterArgument: null, articleDepth: 'deep_analysis' as const };
+    const thesisFirst = writerDraft({
+      sections: [
+        { heading: 'Facts', body: 'Most households know about mutual funds and still pick the fixed deposit.\n\nMore.', sourceNote: null, claimIds: [] },
+        { heading: 'Why', body: 'Pipelines.', sourceNote: null, claimIds: [] },
+        { heading: 'Next', body: 'Watch funding.', sourceNote: null, claimIds: [] },
+        { heading: 'Later', body: 'Watch rates.', sourceNote: null, claimIds: [] },
+      ],
+    });
+    const codes = checkStructure(thesisFirst, architecture).map((w) => `${w.code}:${w.severity}`);
+    expect(codes).toContain('missing_research_method:block');
+    expect(codes).toContain('opening_not_scene:warn');
+
+    const sceneFirst = writerDraft({
+      sections: [
+        { heading: 'Facts', body: 'Picture a family WhatsApp group in the week a bonus lands.\n\nMore.', sourceNote: null, claimIds: [] },
+        { heading: 'Why', body: 'Text.\n\n### Where these numbers come from\n\nSEBI ran the survey.', sourceNote: null, claimIds: [] },
+        { heading: 'Next', body: 'Watch funding.', sourceNote: null, claimIds: [] },
+        { heading: 'Later', body: 'Watch rates.', sourceNote: null, claimIds: [] },
+      ],
+    });
+    const ok = checkStructure(sceneFirst, architecture).map((w) => w.code);
+    expect(ok).not.toContain('missing_research_method');
+    expect(ok).not.toContain('opening_not_scene');
+  });
+
   it('warns when the conclusion repeats the introduction', () => {
     const draft = writerDraft({ conclusion: 'China won 383 medals in Hangzhou. India won 106, its best ever. That gap is the story.' });
     expect(checkStructure(draft, null).some((w) => w.code === 'conclusion_repeats_intro')).toBe(true);
@@ -440,5 +468,31 @@ describe('checkCitations', () => {
   it('passes citations to usable claims, and skips the check when there is no brief', () => {
     expect(checkCitations(cited('China won [383 medals](claim_001).'), new Set(['claim_001']))).toEqual([]);
     expect(checkCitations(cited('[x](claim_404)'), null)).toEqual([]);
+  });
+});
+
+describe('articlePlainText', () => {
+  it('keeps FAQ questions and chart titles, so QA never sees orphaned answers or values', () => {
+    const text = articlePlainText(
+      writerDraft({
+        faq: [
+          { question: 'Is an FD still worth it?', answer: 'For money needed on a fixed date, often yes.' },
+          { question: 'Is my FD insured?', answer: 'Up to the DICGC limit per bank.' },
+        ],
+        barChart: {
+          title: 'Where household savings went',
+          subtitle: null,
+          bars: [
+            { label: 'Bank deposits, FY71-80', value: 52, displayValue: '52%', group: null },
+            { label: 'Mutual funds, shares & debentures, FY21', value: 4, displayValue: '4%', group: null },
+          ],
+          sourceNote: 'Source: Franklin Templeton',
+          claimIds: [],
+          afterSectionIndex: 0,
+        },
+      }),
+    );
+    expect(text).toContain('Is an FD still worth it?\nFor money needed on a fixed date, often yes.');
+    expect(text).toContain('Chart: Where household savings went\nBank deposits, FY71-80: 52%');
   });
 });

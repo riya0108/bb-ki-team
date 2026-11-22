@@ -148,6 +148,27 @@ function namesSource(sentence: string, source: string): boolean {
   return acronym.length >= 2 && new RegExp(`\\b${acronym}\\b`).test(sentence);
 }
 
+// "X because Y" explains X by Y; "Y led to X" does the same the other way round.
+const CAUSE_FIRST = /^(caused|causes|causing|led to|leads to|resulted in|results in|therefore)$/i;
+
+function causalSides(sentence: string): { effect: string; cause: string } | null {
+  const match = CAUSAL_CONNECTOR.exec(sentence);
+  if (!match) return null;
+  const before = sentence.slice(0, match.index);
+  const after = sentence.slice(match.index + match[0].length);
+  return CAUSE_FIRST.test(match[0]) ? { effect: after, cause: before } : { effect: before, cause: after };
+}
+
+// The causal rule is about a claim the sentence is explaining: the effect side must
+// restate it (most of its own words, or one of its figures). A "because" in advice that
+// merely shares a few words with a claim ("FDs and savings accounts, because interest
+// counts...") is not a causal claim about that claim's figures.
+function explainsClaim(effect: string, f: ClaimFeatures): boolean {
+  const claimQuantities = extractQuantities(f.claim.text).filter((q) => q.unit !== 'year');
+  const sharesFigure = extractQuantities(effect).some((q) => claimQuantities.some((c) => quantitiesMatch(q, c)));
+  return sharesFigure || restatesClaim(contentStems(effect), f);
+}
+
 function hasNearbyBefore(tokens: string[], index: number, words: ReadonlySet<string>, window: number): boolean {
   return tokens.slice(Math.max(0, index - window), index).some((t) => words.has(t));
 }
@@ -222,8 +243,10 @@ function checkSentence(sentence: string, f: ClaimFeatures, causalSupportStems: r
     add('causality', 'association_to_causation', `Claim "${f.claim.text}" reports an association; the draft claims causation or proof.`);
   }
 
-  if (CAUSAL_CONNECTOR.test(sentence) && f.claim.type !== 'CAUSE' && f.claim.type !== 'EFFECT') {
-    const supported = causalSupportStems.some((stems) => isAnchored(sStems, stems));
+  const causal = causalSides(sentence);
+  if (causal && f.claim.type !== 'CAUSE' && f.claim.type !== 'EFFECT' && explainsClaim(causal.effect, f)) {
+    const causeStems = contentStems(causal.cause);
+    const supported = causalSupportStems.some((stems) => isAnchored(causeStems, stems) || isAnchored(sStems, stems));
     if (!supported) {
       add('causality', 'unsupported_causality', `Draft asserts a cause ("${CAUSAL_CONNECTOR.exec(sentence)?.[0] ?? ''}") for "${f.claim.text}" that no verified CAUSE/EFFECT claim supports.`);
     }

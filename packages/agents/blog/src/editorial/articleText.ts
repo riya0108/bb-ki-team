@@ -119,11 +119,30 @@ export function articleProse(d: DraftBlogArticleWriterOutput): string {
     .join('\n\n');
 }
 
+// A component as a reader sees it: the FAQ with its questions, the chart and table
+// with their titles and column labels. Without those, QA reads bare "55.2%\n61.6%"
+// lines and answers with no questions, and judges them orphaned. Quiz wrong options and
+// poll labels stay out: they are deliberately not claims.
+function readableComponent(d: DraftBlogArticleWriterOutput, c: ComponentText): string {
+  const lines = (xs: readonly (string | null | undefined)[]): string => xs.filter((x): x is string => !!x && x.length > 0).join('\n');
+  if (c.type === 'faq' && d.faq) {
+    return lines(['Frequently asked questions', ...d.faq.map((f) => `${f.question}\n${f.answer}`)]);
+  }
+  if (c.type === 'barChart' && d.barChart) {
+    return lines([`Chart: ${d.barChart.title}`, d.barChart.subtitle, ...c.factual, d.barChart.sourceNote]);
+  }
+  if (c.type === 'table' && d.table) {
+    const t = d.table;
+    return lines([`Table: ${t.title}`, t.subtitle, t.columns.map((col) => col.label).join(' | '), ...t.rows.map((r) => r.join(' | ')), t.footnote, t.sourceNote]);
+  }
+  return c.factual.join('\n');
+}
+
 // Everything a reader will see as text, for QA's fact/meaning checks.
 export function articlePlainText(d: DraftBlogArticleWriterOutput): string {
   const components = componentTexts(d)
     .filter((c) => c.type !== 'pullQuote')
-    .map((c) => c.factual.join('\n'))
+    .map((c) => readableComponent(d, c))
     .filter((t) => t.length > 0);
   return [articleProse(d), ...components].join('\n\n');
 }
