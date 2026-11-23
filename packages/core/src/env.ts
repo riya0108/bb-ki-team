@@ -54,6 +54,10 @@ const RawEnvSchema = z.object({
   ANTHROPIC_API_KEY: z.string().optional(),
   ANTHROPIC_BLOG_MODEL: z.string().optional(),
   ANTHROPIC_BLOG_EFFORT: z.enum(['low', 'medium', 'high', 'xhigh', 'max']).optional(),
+  // 'queue' (set on the deployed API): blog chat messages are queued in agent_jobs
+  // for the Blog worker on the operator's Mac (npm run blog:worker), which runs them
+  // with Claude Code. Unset/'inline': the API runs them itself, as before.
+  BLOG_CHAT_MODE: z.enum(['inline', 'queue']).optional(),
   X_API_KEY: z.string().optional(),
   X_API_SECRET: z.string().optional(),
   X_ACCESS_TOKEN: z.string().optional(),
@@ -172,6 +176,7 @@ export interface Env {
   // The Blog agent's Claude backends in the order they are tried: the local CLI
   // first (operator's plan, no per-use cost), then the Anthropic API.
   blogClaude?: ClaudeBackendConfig[] | undefined;
+  blogChatMode?: 'inline' | 'queue' | undefined;
   x?: XCredentials | undefined;
   buffer?: BufferCredentials | undefined;
   blogGit?: BlogGitConfig | undefined;
@@ -305,6 +310,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
     claudeCode,
     anthropicApi,
     blogClaude: [claudeCode, anthropicApi].filter((c): c is ClaudeBackendConfig => c !== undefined),
+    blogChatMode: raw.BLOG_CHAT_MODE ?? 'inline',
     x: xCredentialsConfig(raw),
     buffer: bufferCredentialsConfig(raw),
     blogGit: blogGitConfig(raw),

@@ -161,9 +161,19 @@ export async function handleBlogChatMessage(
   message: string,
   context: BlogChatContext,
   runId: string,
+  // Set by the queued path (apps/api's blogWorker.ts): the deployed API already
+  // recorded the user's message when it enqueued the job, so it isn't recorded twice
+  // and isn't counted as its own prior history.
+  options: { userMessageRecorded?: boolean } = {},
 ): Promise<BlogChatResult> {
-  const recentHistory = await loadRecentChatHistory(deps.pool, context.sessionId);
-  await recordUserChatMessage(deps.pool, context.sessionId, 'blog', message);
+  const history = await loadRecentChatHistory(deps.pool, context.sessionId);
+  let recentHistory = history;
+  if (options.userMessageRecorded) {
+    const last = history.at(-1);
+    if (last?.role === 'user' && last.content === message) recentHistory = history.slice(0, -1);
+  } else {
+    await recordUserChatMessage(deps.pool, context.sessionId, 'blog', message);
+  }
 
   const classified = await classifyChatIntent({
     llm: deps.llm,

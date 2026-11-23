@@ -1,4 +1,5 @@
 import type {
+  AgentJob,
   BlogStyleProfile,
   ChatMessage,
   EditorialMemory,
@@ -217,7 +218,9 @@ export interface ChatResponse {
 
 // Resolves to the platform's currently active session (auto-creating its very
 // first one) — call startNewChatSession to explicitly begin a fresh thread instead.
-export function listChatMessages(platform: Platform): Promise<{ sessionId: string; messages: ChatMessage[] }> {
+// pendingJob: a blog message still being written by the Blog worker on the
+// operator's Mac (deployed API only), so a reopened page can resume waiting for it.
+export function listChatMessages(platform: Platform): Promise<{ sessionId: string; messages: ChatMessage[]; pendingJob?: AgentJob | null }> {
   return request(`/${platform}/chat`);
 }
 
@@ -230,8 +233,24 @@ export function sendChatMessage(
   sessionId: string,
   message: string,
   openContentId: string | null,
-): Promise<ChatResponse> {
+): Promise<ChatResponse | QueuedChatResponse> {
   return post(`/${platform}/chat`, { message, sessionId, openContentId });
+}
+
+// The deployed API queues blog messages for the Blog worker on the operator's Mac
+// (it runs them with Claude Code) instead of answering inline.
+export interface QueuedChatResponse {
+  runId: string;
+  queued: true;
+  job: AgentJob;
+}
+
+export function isQueuedChatResponse(response: ChatResponse | QueuedChatResponse): response is QueuedChatResponse {
+  return 'queued' in response;
+}
+
+export function getBlogJob(id: string): Promise<{ job: AgentJob }> {
+  return request(`/blog/jobs/${id}`);
 }
 
 // --- BB Visual Agent (packages/agents/visual) ---

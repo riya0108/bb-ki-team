@@ -22,3 +22,4 @@ export * from './hook.js';
 export * from './editorialBrief.js';
 export * from './blogEditorial.js';
 export * from './xText.js';
+export * from './agentJob.js';

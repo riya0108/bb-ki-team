@@ -6,7 +6,7 @@ try {
 
 import type { Logger } from '@bb/core';
 import { createFakeLlmClient } from '@bb/core/testing';
-import { createChatSession, createPool, insertContentDna, listChatMessages } from '@bb/db';
+import { createChatSession, createPool, insertChatMessage, insertContentDna, listChatMessages } from '@bb/db';
 import type { Pool } from '@bb/db';
 import type { FetchTool } from '@bb/mcp-client';
 import type { FetchResult } from '@bb/shared-types';
@@ -121,6 +121,19 @@ describeIfDb('packages/agents/blog chat (integration, real Postgres)', () => {
     const history = await listChatMessages(pool, sessionId);
     expect(history).toHaveLength(2);
     expect(history[1]?.action?.name).toBe('draft');
+  });
+
+  it('does not record the user message again when the queued path already did', async () => {
+    const deps = buildDeps(buildLlm({ action: 'draft', topic: 'RBI UPI fee proposal', articleType: 'Explainer' }));
+    await insertChatMessage(pool, { sessionId, platform: 'blog', role: 'user', content: 'Write a blog on the RBI UPI fee proposal' });
+
+    const result = await handleBlogChatMessage(deps, 'Write a blog on the RBI UPI fee proposal', { sessionId }, 'test-run', {
+      userMessageRecorded: true,
+    });
+    contentIdsThisTest.push((result.result as { contentId: string }).contentId);
+
+    const history = await listChatMessages(pool, sessionId);
+    expect(history.map((m) => m.role)).toEqual(['user', 'assistant']);
   });
 
   it('shows the HTML file for the currently open draft', async () => {

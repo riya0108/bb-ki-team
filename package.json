@@ -21,6 +21,7 @@
     "buffer:verify": "tsx --env-file=.env packages/mcp-servers/buffer/src/verify.ts",
     "blog:draft": "tsx --env-file=.env apps/api/src/blogCli.ts draft",
     "blog:reference": "tsx --env-file=.env apps/api/src/blogCli.ts reference",
+    "blog:worker": "tsx --env-file=.env apps/api/src/blogWorker.ts",
     "api": "tsx watch --env-file=.env apps/api/src/server.ts",
     "worker": "tsx watch --env-file=.env apps/worker/src/index.ts",
     "dashboard": "npm run dev --workspace=@bb/dashboard",

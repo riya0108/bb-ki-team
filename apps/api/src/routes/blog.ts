@@ -13,14 +13,20 @@ import {
 import {
   createChatSession,
   deactivateStyleSample,
+  enqueueAgentJob,
+  getAgentJob,
   getOrCreateLatestChatSession,
+  getPendingAgentJobForSession,
+  insertChatMessage,
   listActiveStyleSamples,
   listChatMessages,
   listLiveEditorialMemories,
 } from '@bb/db';
+import type { ChatJobPayload } from '@bb/shared-types';
 import { Router } from 'express';
 import { z } from 'zod';
 
+import { blogAgentDeps } from '../blogDeps.js';
 import type { AppDeps } from '../deps.js';
 import { parseWith } from '../validation.js';
 
@@ -32,8 +38,8 @@ const BlogSourceSchema = z.union([
 export function createBlogRouter(appDeps: AppDeps): Router {
   const router = Router();
   // Every blog route uses the Blog agent's client (Claude Code when configured).
-  const research = { discoveryResearcher: appDeps.blog?.discoveryResearcher, contextBudget: appDeps.blog?.contextBudget };
-  const deps = { ...appDeps, llm: appDeps.blog?.llm ?? appDeps.llm, research };
+  const deps = blogAgentDeps(appDeps);
+  const { research } = deps;
 
   const DraftSchema = z.object({
     topic: z.string().min(1),
@@ -92,7 +98,9 @@ export function createBlogRouter(appDeps: AppDeps): Router {
   router.get('/chat', async (_req, res) => {
     const session = await getOrCreateLatestChatSession(deps.pool, 'blog');
     const messages = await listChatMessages(deps.pool, session.id);
-    res.status(200).json({ sessionId: session.id, messages });
+    // A queued/running job lets a reopened dashboard resume waiting for its reply.
+    const pendingJob = await getPendingAgentJobForSession(deps.pool, session.id);
+    res.status(200).json({ sessionId: session.id, messages, pendingJob });
   });
 
   router.post('/chat/new-session', async (_req, res) => {
@@ -111,6 +119,17 @@ export function createBlogRouter(appDeps: AppDeps): Router {
     const body = parseWith(ChatSchema, req.body);
     const runId = randomUUID();
     const sessionId = body.sessionId ?? (await getOrCreateLatestChatSession(deps.pool, 'blog')).id;
+    if (deps.env.blogChatMode === 'queue') {
+      // Deployed API: the Blog worker on the operator's Mac runs this message with
+      // Claude Code (apps/api/src/blogWorker.ts). Record the user's message now so
+      // it shows in the thread immediately, and hand the work to the queue.
+      await insertChatMessage(deps.pool, { sessionId, platform: 'blog', role: 'user', content: body.message });
+      const payload: ChatJobPayload = { message: body.message, openContentId: body.openContentId ?? null };
+      const job = await enqueueAgentJob(deps.pool, { platform: 'blog', kind: 'chat', sessionId, runId, payload });
+      deps.logger.info({ runId, jobId: job.id, sessionId }, 'Blog chat message queued for the Mac worker');
+      res.status(202).json({ runId, queued: true, job });
+      return;
+    }
     const chatResult = await handleBlogChatMessage(
       deps,
       body.message,
@@ -118,6 +137,17 @@ export function createBlogRouter(appDeps: AppDeps): Router {
       runId,
     );
     res.status(200).json({ runId, ...chatResult });
+  });
+
+  const JobParamsSchema = z.object({ id: z.string().uuid() });
+  router.get('/jobs/:id', async (req, res) => {
+    const { id } = parseWith(JobParamsSchema, req.params);
+    const job = await getAgentJob(deps.pool, id);
+    if (job?.platform !== 'blog') {
+      res.status(404).json({ error: 'job not found' });
+      return;
+    }
+    res.status(200).json({ job });
   });
 
   // --- Blog Editorial Memory (spec 8/9/45) ---------------------------------------

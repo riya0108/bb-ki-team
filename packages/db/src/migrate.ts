@@ -26,7 +26,8 @@ export async function runMigrations(databaseUrl: string): Promise<string[]> {
     await ensureMigrationsTable(pool);
     const alreadyApplied = await getAppliedMigrations(pool);
 
-    const files = (await readdir(MIGRATIONS_DIR)).filter((f) => f.endsWith('.sql')).sort();
+    // Skips macOS AppleDouble metadata files (._name.sql) the external drive creates.
+    const files = (await readdir(MIGRATIONS_DIR)).filter((f) => f.endsWith('.sql') && !f.startsWith('._')).sort();
 
     for (const file of files) {
       if (alreadyApplied.has(file)) continue;

@@ -1,8 +1,8 @@
-import type { ChatMessage } from '@bb/shared-types';
+import type { AgentJob, ChatMessage } from '@bb/shared-types';
 import { useEffect, useRef, useState } from 'react';
 
 import type { Platform } from '../api/client';
-import { ApiError, listChatMessages, sendChatMessage, startNewChatSession } from '../api/client';
+import { ApiError, getBlogJob, isQueuedChatResponse, listChatMessages, sendChatMessage, startNewChatSession } from '../api/client';
 import { NewChatIcon, PlusIcon, SendIcon } from './icons';
 
 interface LocalMessage {
@@ -26,6 +26,28 @@ interface ChatPaneProps {
 }
 
 const COMPOSER_MAX_HEIGHT_PX = 200;
+const JOB_POLL_MS = 5_000;
+
+// Status line shown in place of the reply while the Blog worker on the operator's
+// Mac has the message (deployed dashboard only — see apps/api/src/blogWorker.ts).
+function pendingJobText(job: Pick<AgentJob, 'status'>): string {
+  return job.status === 'running'
+    ? 'Writing on your Mac with Claude… a full article can take 15–30 minutes. You can close this page and come back.'
+    : 'Queued — it starts as soon as the Blog worker on your Mac is running (npm run blog:worker).';
+}
+
+function jobBubbleId(jobId: string): string {
+  return `job-${jobId}`;
+}
+
+// A finished job's stored result, checked before it's shown.
+function chatJobOutcome(job: AgentJob): { reply: string; action: string; result: unknown } | null {
+  const r = job.result;
+  if (typeof r !== 'object' || r === null) return null;
+  const { reply, action, result } = r as Record<string, unknown>;
+  if (typeof reply !== 'string' || typeof action !== 'string') return null;
+  return { reply, action, result };
+}
 
 // iOS WebKit (Safari and every other iOS browser, which all wrap it) renders
 // HEVC-alpha <video> as opaque instead of honoring its alpha channel — true
@@ -37,6 +59,9 @@ export function ChatPane({ platform, openContentId, onActionResult, onHeroChange
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
+  // A blog message the Mac worker is still writing; the composer stays disabled.
+  const [pendingJob, setPendingJob] = useState<AgentJob | null>(null);
+  const busy = sending || pendingJob !== null;
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -54,11 +79,16 @@ export function ChatPane({ platform, openContentId, onActionResult, onHeroChange
   useEffect(() => {
     let cancelled = false;
     setSessionId(null);
+    setPendingJob(null);
     listChatMessages(platform)
       .then((res) => {
         if (cancelled) return;
         setSessionId(res.sessionId);
-        setMessages(res.messages.map((m: ChatMessage) => ({ id: m.id, role: m.role, content: m.content })));
+        const loaded: LocalMessage[] = res.messages.map((m: ChatMessage) => ({ id: m.id, role: m.role, content: m.content }));
+        const pending = res.pendingJob ?? null;
+        if (pending) loaded.push({ id: jobBubbleId(pending.id), role: 'assistant', content: pendingJobText(pending) });
+        setMessages(loaded);
+        setPendingJob(pending);
       })
       .catch(() => {
         if (!cancelled) setMessages([]);
@@ -72,16 +102,70 @@ export function ChatPane({ platform, openContentId, onActionResult, onHeroChange
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [messages]);
 
+  // Poll the pending job until the Mac worker finishes it, then swap the status
+  // bubble for the real reply (or the error) and hand the result to App.tsx just
+  // like an inline reply.
+  const pendingJobId = pendingJob?.id ?? null;
+  // App.tsx passes a fresh callback every render; read it through a ref so polling
+  // isn't restarted by each re-render.
+  const onActionResultRef = useRef(onActionResult);
+  useEffect(() => {
+    onActionResultRef.current = onActionResult;
+  }, [onActionResult]);
+  useEffect(() => {
+    if (!pendingJobId) return;
+    let cancelled = false;
+    const bubbleId = jobBubbleId(pendingJobId);
+    const replaceBubble = (next: LocalMessage): void => {
+      setMessages((prev) => prev.map((m) => (m.id === bubbleId ? next : m)));
+    };
+    const poll = async (): Promise<void> => {
+      let job: AgentJob;
+      try {
+        ({ job } = await getBlogJob(pendingJobId));
+      } catch {
+        return; // network blip (phone asleep, etc.): try again next tick
+      }
+      if (cancelled) return;
+      if (job.status === 'done') {
+        const outcome = chatJobOutcome(job);
+        replaceBubble(
+          outcome
+            ? { id: job.runId, role: 'assistant', content: outcome.reply }
+            : { id: `error-${job.id}`, role: 'error', content: 'The Blog worker finished but returned no reply.' },
+        );
+        setPendingJob(null);
+        if (outcome) onActionResultRef.current(outcome.action, outcome.result);
+      } else if (job.status === 'failed') {
+        replaceBubble({ id: `error-${job.id}`, role: 'error', content: job.error ?? 'The Blog worker could not finish this message.' });
+        setPendingJob(null);
+      } else {
+        replaceBubble({ id: bubbleId, role: 'assistant', content: pendingJobText(job) });
+      }
+    };
+    void poll();
+    const timer = setInterval(() => void poll(), JOB_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [pendingJobId]);
+
   async function send() {
     const message = draft.trim();
-    if (!message || sending || !sessionId) return;
+    if (!message || busy || !sessionId) return;
     setDraft('');
     setMessages((prev) => [...prev, { id: `local-${Date.now()}`, role: 'user', content: message }]);
     setSending(true);
     try {
       const response = await sendChatMessage(platform, sessionId, message, openContentId);
-      setMessages((prev) => [...prev, { id: response.runId, role: 'assistant', content: response.reply }]);
-      onActionResult(response.action, response.result);
+      if (isQueuedChatResponse(response)) {
+        setMessages((prev) => [...prev, { id: jobBubbleId(response.job.id), role: 'assistant', content: pendingJobText(response.job) }]);
+        setPendingJob(response.job);
+      } else {
+        setMessages((prev) => [...prev, { id: response.runId, role: 'assistant', content: response.reply }]);
+        onActionResult(response.action, response.result);
+      }
     } catch (err) {
       const text = err instanceof ApiError ? err.message : err instanceof Error ? err.message : String(err);
       setMessages((prev) => [...prev, { id: `error-${Date.now()}`, role: 'error', content: text }]);
@@ -91,7 +175,7 @@ export function ChatPane({ platform, openContentId, onActionResult, onHeroChange
   }
 
   async function newChat() {
-    if (sending) return;
+    if (busy) return;
     const res = await startNewChatSession(platform);
     setSessionId(res.sessionId);
     setMessages([]);
@@ -120,9 +204,9 @@ export function ChatPane({ platform, openContentId, onActionResult, onHeroChange
             }
           }}
           placeholder={isHeroVariant ? 'Ask Teri' : 'Ask anything..'}
-          disabled={sending}
+          disabled={busy}
         />
-        <button type="button" className="send-button" onClick={() => void send()} disabled={sending || !draft.trim()} aria-label="Send">
+        <button type="button" className="send-button" onClick={() => void send()} disabled={busy || !draft.trim()} aria-label="Send">
           <SendIcon />
         </button>
       </div>
@@ -191,7 +275,7 @@ export function ChatPane({ platform, openContentId, onActionResult, onHeroChange
   return (
     <div className="chat-area">
       <div className="chat-area-header">
-        <button type="button" className="new-chat-button" onClick={() => void newChat()} disabled={sending}>
+        <button type="button" className="new-chat-button" onClick={() => void newChat()} disabled={busy}>
           <NewChatIcon />
           New chat
         </button>

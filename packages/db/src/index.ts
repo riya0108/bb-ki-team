@@ -10,6 +10,7 @@ export * from './repositories/interviewSessions.js';
 export * from './repositories/publishEvents.js';
 export * from './repositories/chatMessages.js';
 export * from './repositories/chatSessions.js';
+export * from './repositories/agentJobs.js';
 export * from './repositories/visualAssets.js';
 export * from './repositories/visualReferenceAssets.js';
 export * from './repositories/editorialMemories.js';
