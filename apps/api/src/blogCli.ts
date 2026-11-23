@@ -51,7 +51,9 @@ async function main(): Promise<void> {
     if (command === 'draft') {
       const topic = positionals.join(' ').trim();
       if (!topic) throw new Error('usage: blog:draft -- "<topic>" [--type <article type>] [--out <file.html>]');
-      if (!deps.env.claudeCode) deps.logger.warn('CLAUDE_CODE_MODEL is not set: drafting with the free-tier provider chain and feed research only');
+      if ((deps.env.blogClaude ?? []).length === 0) {
+        deps.logger.warn('Neither CLAUDE_CODE_MODEL nor ANTHROPIC_API_KEY is set: drafting with the free-tier provider chain and feed research only');
+      }
       const pkg = await runBlogArticle({
         pool: deps.pool,
         llm: deps.blog?.llm ?? deps.llm,

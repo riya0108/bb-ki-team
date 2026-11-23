@@ -97,31 +97,32 @@ describe('Blog LLM client with Claude Code', () => {
     visualAgentEnabled: false,
     gemini: { apiKey: 'g', model: 'gemini-model' },
     claudeCode: config,
+    blogClaude: [config],
   };
 
   it('tries Claude Code first and never touches HTTP providers when it succeeds', async () => {
     const fetchImpl = vi.fn();
-    const runClaudeCode = vi.fn().mockResolvedValue({ text: 'from claude', model: 'opus', costUsd: null, toolCalls: [] });
-    const client = createBlogLlmClient(env, logger, { fetchImpl, runClaudeCode });
+    const runClaude = vi.fn().mockResolvedValue({ text: 'from claude', model: 'opus', costUsd: null, toolCalls: [] });
+    const client = createBlogLlmClient(env, logger, { fetchImpl, runClaude });
     const result = await client.complete({ system: 'S', messages: [{ role: 'user', content: 'hi' }], runId: 'r', stepId: 's' });
     expect(result).toEqual({ text: 'from claude', provider: 'claude-code', model: 'opus' });
-    expect(runClaudeCode.mock.calls[0]?.[1]).toMatchObject({ system: 'S', prompt: 'hi', tools: [] });
+    expect(runClaude.mock.calls[0]?.[1]).toMatchObject({ system: 'S', prompt: 'hi', tools: [] });
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
   it('falls back to the free-tier chain when the CLI fails', async () => {
     const fetchImpl = vi.fn().mockResolvedValue(new Response(JSON.stringify({ choices: [{ message: { content: 'from gemini' } }] }), { status: 200 }));
-    const runClaudeCode = vi.fn().mockRejectedValue(new Error('not logged in'));
-    const client = createBlogLlmClient(env, logger, { fetchImpl, runClaudeCode });
+    const runClaude = vi.fn().mockRejectedValue(new Error('not logged in'));
+    const client = createBlogLlmClient(env, logger, { fetchImpl, runClaude });
     const result = await client.complete({ messages: [{ role: 'user', content: 'hi' }], runId: 'r', stepId: 's' });
     expect(result.provider).toBe('gemini');
   });
 
   it('is never used by the shared client the other agents get', async () => {
     const fetchImpl = vi.fn().mockResolvedValue(new Response('down', { status: 500 }));
-    const runClaudeCode = vi.fn();
-    const client = createFallbackLlmClient(env, logger, { fetchImpl, runClaudeCode });
+    const runClaude = vi.fn();
+    const client = createFallbackLlmClient(env, logger, { fetchImpl, runClaude });
     await expect(client.complete({ messages: [{ role: 'user', content: 'hi' }], runId: 'r', stepId: 's' })).rejects.toBeInstanceOf(AllProvidersFailedError);
-    expect(runClaudeCode).not.toHaveBeenCalled();
+    expect(runClaude).not.toHaveBeenCalled();
   });
 });

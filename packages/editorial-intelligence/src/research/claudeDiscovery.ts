@@ -1,5 +1,5 @@
-import type { ClaudeCodeConfig, ClaudeCodeToolCall, Logger } from '@bb/core';
-import { runClaudeCode } from '@bb/core';
+import type { ClaudeBackendConfig, ClaudeCodeToolCall, Logger } from '@bb/core';
+import { claudeBackendLabel, runClaude } from '@bb/core';
 import { z } from 'zod';
 
 import { tierForUrl } from './sourceTiers.js';
@@ -155,39 +155,61 @@ function describeToolInput(input: unknown): Record<string, unknown> {
 }
 
 export interface CreateClaudeDiscoveryOptions {
-  config: ClaudeCodeConfig;
+  // Tried in order (local Claude Code CLI, then the Anthropic API); the first that
+  // returns parseable leads wins.
+  config: ClaudeBackendConfig | readonly ClaudeBackendConfig[];
   logger: Logger;
   now?: () => Date;
-  run?: typeof runClaudeCode;
+  run?: typeof runClaude;
 }
 
 export function createClaudeCodeDiscoveryResearcher(options: CreateClaudeDiscoveryOptions): DiscoveryResearcher {
-  const run = options.run ?? runClaudeCode;
+  const run = options.run ?? runClaude;
   const now = options.now ?? (() => new Date());
+  const backends: readonly ClaudeBackendConfig[] = Array.isArray(options.config) ? options.config : [options.config as ClaudeBackendConfig];
   return async (request) => {
     const { logger } = options;
-    const result = await run(
-      options.config,
-      {
-        system: buildDiscoverySystemPrompt(now().toISOString().slice(0, 10)),
-        prompt: buildDiscoveryUserPrompt(request),
-        tools: ['WebSearch', 'WebFetch'],
-        runId: request.runId,
-        stepId: STEP_ID,
-        // CLAUDE.md: every external fetch is logged with the run's correlation IDs.
-        onToolCall: (call) => {
-          logger.info({ runId: request.runId, stepId: STEP_ID, tool: call.name, ...describeToolInput(call.input) }, 'Claude research tool call');
-        },
-      },
-      logger,
-    );
-    const listed = parseDiscoveryOutput(result.text);
-    const leads = withOpenedPrimaryDocuments(listed, result.toolCalls);
-    logger.info(
-      { runId: request.runId, stepId: STEP_ID, leads: leads.length, addedPrimary: leads.length - listed.length, toolCalls: result.toolCalls.length },
-      'Claude research discovery complete',
-    );
-    return leads;
+    let lastError: unknown = new Error('no Claude backend configured for research');
+    for (const backend of backends) {
+      try {
+        const result = await run(
+          backend,
+          {
+            system: buildDiscoverySystemPrompt(now().toISOString().slice(0, 10)),
+            prompt: buildDiscoveryUserPrompt(request),
+            tools: ['WebSearch', 'WebFetch'],
+            runId: request.runId,
+            stepId: STEP_ID,
+            // CLAUDE.md: every external fetch is logged with the run's correlation IDs.
+            onToolCall: (call) => {
+              logger.info({ runId: request.runId, stepId: STEP_ID, tool: call.name, ...describeToolInput(call.input) }, 'Claude research tool call');
+            },
+          },
+          logger,
+        );
+        const listed = parseDiscoveryOutput(result.text);
+        const leads = withOpenedPrimaryDocuments(listed, result.toolCalls);
+        logger.info(
+          {
+            runId: request.runId,
+            stepId: STEP_ID,
+            backend: claudeBackendLabel(backend),
+            leads: leads.length,
+            addedPrimary: leads.length - listed.length,
+            toolCalls: result.toolCalls.length,
+          },
+          'Claude research discovery complete',
+        );
+        return leads;
+      } catch (error) {
+        lastError = error;
+        logger.warn(
+          { runId: request.runId, stepId: STEP_ID, backend: claudeBackendLabel(backend), err: error instanceof Error ? error.message : String(error) },
+          'Claude research backend failed',
+        );
+      }
+    }
+    throw lastError;
   };
 }
 

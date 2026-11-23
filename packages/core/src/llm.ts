@@ -1,11 +1,12 @@
 import { z } from 'zod';
 
-import type { ClaudeCodeConfig } from './claudeCode.js';
-import { renderClaudeCodePrompt, runClaudeCode } from './claudeCode.js';
+import type { ClaudeBackendConfig } from './anthropicApi.js';
+import { isAnthropicApiConfig, runClaude } from './anthropicApi.js';
+import { renderClaudeCodePrompt } from './claudeCode.js';
 import type { Env, LlmProviderConfig } from './env.js';
 import type { Logger } from './logger.js';
 
-export type LlmProviderName = 'claude-code' | 'gemini' | 'groq' | 'openrouter' | 'mistral' | 'nvidia' | 'ollama';
+export type LlmProviderName = 'claude-code' | 'anthropic-api' | 'gemini' | 'groq' | 'openrouter' | 'mistral' | 'nvidia' | 'ollama';
 
 export interface LlmMessage {
   role: 'user' | 'assistant';
@@ -50,13 +51,14 @@ export class LlmOutputValidationError extends Error {
 }
 
 interface ProviderSpec {
-  name: Exclude<LlmProviderName, 'claude-code'>;
+  name: Exclude<LlmProviderName, 'claude-code' | 'anthropic-api'>;
   baseUrl: string;
   config: LlmProviderConfig;
 }
 
-// HTTP providers only; 'claude-code' is a local CLI, see claudeCode.ts.
-export const LLM_PROVIDER_ENDPOINTS: Record<Exclude<LlmProviderName, 'claude-code'>, string> = {
+// OpenAI-compatible HTTP providers only; the Claude backends (local CLI and the
+// Anthropic API) are in claudeCode.ts / anthropicApi.ts.
+export const LLM_PROVIDER_ENDPOINTS: Record<Exclude<LlmProviderName, 'claude-code' | 'anthropic-api'>, string> = {
   gemini: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
   groq: 'https://api.groq.com/openai/v1/chat/completions',
   openrouter: 'https://openrouter.ai/api/v1/chat/completions',
@@ -207,12 +209,13 @@ function stripJsonFences(text: string): string {
 export interface CreateFallbackLlmClientOptions {
   fetchImpl?: typeof fetch;
   sleep?: (ms: number) => Promise<void>;
-  // When set, the local Claude Code CLI (the operator's own Claude plan, see
-  // claudeCode.ts) is tried FIRST, ahead of every HTTP provider. Opt-in per client:
-  // createBlogLlmClient below uses it; the other agents keep the free-tier chain.
-  claudeCode?: ClaudeCodeConfig | undefined;
+  // Claude backends tried FIRST, in order, ahead of every free-tier HTTP provider:
+  // the local Claude Code CLI (operator's Claude plan) and/or the Anthropic API.
+  // Opt-in per client: createBlogLlmClient below uses it; the other agents keep the
+  // free-tier chain.
+  claude?: readonly ClaudeBackendConfig[] | undefined;
   // Injectable for tests.
-  runClaudeCode?: typeof runClaudeCode;
+  runClaude?: typeof runClaude;
 }
 
 function defaultSleep(ms: number): Promise<void> {
@@ -249,23 +252,24 @@ export function createFallbackLlmClient(
     }
   }
 
-  const claudeCode = options.claudeCode;
-  const runClaude = options.runClaudeCode ?? runClaudeCode;
+  const claudeBackends = options.claude ?? [];
+  const runClaudeBackend = options.runClaude ?? runClaude;
 
   async function complete(input: LlmCompletionInput): Promise<LlmCompletionResult> {
     const attempts: { provider: LlmProviderName; error: string }[] = [];
-    if (claudeCode) {
+    for (const backend of claudeBackends) {
+      const provider: LlmProviderName = isAnthropicApiConfig(backend) ? 'anthropic-api' : 'claude-code';
       try {
-        const result = await runClaude(
-          claudeCode,
+        const result = await runClaudeBackend(
+          backend,
           { system: input.system ?? '', prompt: renderClaudeCodePrompt(input.messages), tools: [], runId: input.runId, stepId: input.stepId },
           logger,
         );
-        return { text: result.text, provider: 'claude-code', model: result.model };
+        return { text: result.text, provider, model: result.model };
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        logger.warn({ provider: 'claude-code', runId: input.runId, stepId: input.stepId, err: message }, 'Claude Code call failed, trying next provider');
-        attempts.push({ provider: 'claude-code', error: message });
+        logger.warn({ provider, runId: input.runId, stepId: input.stepId, err: message }, 'Claude backend call failed, trying next provider');
+        attempts.push({ provider, error: message });
       }
     }
     for (const spec of providers) {
@@ -334,8 +338,9 @@ export function createFallbackLlmClient(
   return { complete, completeStructured };
 }
 
-// The Blog agent's client: Claude Code first when configured (CLAUDE_CODE_MODEL),
-// then the same free-tier chain as every other agent.
-export function createBlogLlmClient(env: Env, logger: Logger, options: Omit<CreateFallbackLlmClientOptions, 'claudeCode'> = {}): LlmClient {
-  return createFallbackLlmClient(env, logger, { ...options, claudeCode: env.claudeCode });
+// The Blog agent's client: its Claude backends first (env.blogClaude — Claude Code
+// CLI when CLAUDE_CODE_MODEL is set, then the Anthropic API when ANTHROPIC_API_KEY
+// is set), then the same free-tier chain as every other agent.
+export function createBlogLlmClient(env: Env, logger: Logger, options: Omit<CreateFallbackLlmClientOptions, 'claude'> = {}): LlmClient {
+  return createFallbackLlmClient(env, logger, { ...options, claude: env.blogClaude ?? [] });
 }

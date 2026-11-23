@@ -1,3 +1,5 @@
+import type { AnthropicApiConfig, ClaudeBackendConfig } from './anthropicApi.js';
+import { ANTHROPIC_API_DEFAULT_MODEL } from './anthropicApi.js';
 import type { ClaudeCodeConfig } from './claudeCode.js';
 import { z } from 'zod';
 
@@ -46,6 +48,12 @@ const RawEnvSchema = z.object({
   CLAUDE_CODE_BIN: z.string().optional(),
   CLAUDE_CODE_TIMEOUT_MS: z.coerce.number().int().positive().optional(),
   CLAUDE_CODE_EFFORT: z.enum(['low', 'medium', 'high', 'xhigh', 'max']).optional(),
+  // Anthropic API (paid, per use) for the Blog agent — see packages/core/src/anthropicApi.ts.
+  // Works wherever apps/api runs (Render included), unlike the local Claude Code CLI.
+  // Setting ANTHROPIC_API_KEY enables it; used after the CLI when both are set.
+  ANTHROPIC_API_KEY: z.string().optional(),
+  ANTHROPIC_BLOG_MODEL: z.string().optional(),
+  ANTHROPIC_BLOG_EFFORT: z.enum(['low', 'medium', 'high', 'xhigh', 'max']).optional(),
   X_API_KEY: z.string().optional(),
   X_API_SECRET: z.string().optional(),
   X_ACCESS_TOKEN: z.string().optional(),
@@ -160,6 +168,10 @@ export interface Env {
   nvidia?: LlmProviderConfig | undefined;
   ollama?: LlmProviderConfig | undefined;
   claudeCode?: ClaudeCodeConfig | undefined;
+  anthropicApi?: AnthropicApiConfig | undefined;
+  // The Blog agent's Claude backends in the order they are tried: the local CLI
+  // first (operator's plan, no per-use cost), then the Anthropic API.
+  blogClaude?: ClaudeBackendConfig[] | undefined;
   x?: XCredentials | undefined;
   buffer?: BufferCredentials | undefined;
   blogGit?: BlogGitConfig | undefined;
@@ -261,6 +273,23 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
     ]);
   }
 
+  const claudeCode: ClaudeCodeConfig | undefined = raw.CLAUDE_CODE_MODEL
+    ? {
+        model: raw.CLAUDE_CODE_MODEL,
+        ...(raw.CLAUDE_CODE_BIN ? { bin: raw.CLAUDE_CODE_BIN } : {}),
+        ...(raw.CLAUDE_CODE_TIMEOUT_MS ? { timeoutMs: raw.CLAUDE_CODE_TIMEOUT_MS } : {}),
+        ...(raw.CLAUDE_CODE_EFFORT ? { effort: raw.CLAUDE_CODE_EFFORT } : {}),
+      }
+    : undefined;
+  const anthropicApi: AnthropicApiConfig | undefined = raw.ANTHROPIC_API_KEY
+    ? {
+        kind: 'anthropic-api',
+        apiKey: raw.ANTHROPIC_API_KEY,
+        model: raw.ANTHROPIC_BLOG_MODEL ?? ANTHROPIC_API_DEFAULT_MODEL,
+        ...(raw.ANTHROPIC_BLOG_EFFORT ? { effort: raw.ANTHROPIC_BLOG_EFFORT } : {}),
+      }
+    : undefined;
+
   return {
     databaseUrl: raw.DATABASE_URL,
     apiPort: raw.API_PORT,
@@ -273,14 +302,9 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
     mistral,
     nvidia,
     ollama,
-    claudeCode: raw.CLAUDE_CODE_MODEL
-      ? {
-          model: raw.CLAUDE_CODE_MODEL,
-          ...(raw.CLAUDE_CODE_BIN ? { bin: raw.CLAUDE_CODE_BIN } : {}),
-          ...(raw.CLAUDE_CODE_TIMEOUT_MS ? { timeoutMs: raw.CLAUDE_CODE_TIMEOUT_MS } : {}),
-          ...(raw.CLAUDE_CODE_EFFORT ? { effort: raw.CLAUDE_CODE_EFFORT } : {}),
-        }
-      : undefined,
+    claudeCode,
+    anthropicApi,
+    blogClaude: [claudeCode, anthropicApi].filter((c): c is ClaudeBackendConfig => c !== undefined),
     x: xCredentialsConfig(raw),
     buffer: bufferCredentialsConfig(raw),
     blogGit: blogGitConfig(raw),

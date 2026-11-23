@@ -1,5 +1,5 @@
 import type { EmailConfig, Env, LlmClient, Logger } from '@bb/core';
-import { createBlogLlmClient, createFallbackLlmClient, createLogger, loadEnv } from '@bb/core';
+import { claudeBackendLabel, createBlogLlmClient, createFallbackLlmClient, createLogger, loadEnv } from '@bb/core';
 import type { ContextBudget, DiscoveryResearcher } from '@bb/editorial-intelligence';
 import { createClaudeCodeDiscoveryResearcher } from '@bb/editorial-intelligence';
 import type { Pool } from '@bb/db';
@@ -54,14 +54,22 @@ export function createAppDeps(): AppDeps {
   const logger = createLogger({ module: 'api' });
   const pool = createPool(env.databaseUrl);
   const llm = createFallbackLlmClient(env, logger);
-  const blog = env.claudeCode
-    ? {
-        llm: createBlogLlmClient(env, logger),
-        discoveryResearcher: createClaudeCodeDiscoveryResearcher({ config: env.claudeCode, logger }),
-        contextBudget: 'large' as const,
-      }
-    : { llm };
-  if (env.claudeCode) logger.info({ model: env.claudeCode.model }, 'Blog agent: Claude Code research + writing enabled');
+  // Blog agent's Claude backends, in order: local Claude Code CLI (CLAUDE_CODE_MODEL,
+  // Mac only), then the Anthropic API (ANTHROPIC_API_KEY, works on Render too).
+  const blogClaude = env.blogClaude ?? [];
+  const blog =
+    blogClaude.length > 0
+      ? {
+          llm: createBlogLlmClient(env, logger),
+          discoveryResearcher: createClaudeCodeDiscoveryResearcher({ config: blogClaude, logger }),
+          contextBudget: 'large' as const,
+        }
+      : { llm };
+  if (blogClaude.length > 0) {
+    logger.info({ backends: blogClaude.map(claudeBackendLabel) }, 'Blog agent: Claude research + writing enabled');
+  } else {
+    logger.warn('Blog agent: no Claude backend configured (CLAUDE_CODE_MODEL or ANTHROPIC_API_KEY): using the free-tier chain and feed research only');
+  }
   const fetchTool = createLinkedinMcpClient(logger);
   const youtubeTranscriptTool = createYoutubeTranscriptMcpClient(logger);
   // Always constructed, same as fetchTool/youtubeTranscriptTool above — the client
