@@ -25,6 +25,9 @@ export interface ProcessBlogJobDeps {
   // Injectable for tests.
   runChat?: typeof handleBlogChatMessage;
   heartbeatMs?: number;
+  // Called when a job starts; the returned function is called when it ends. The
+  // Mac worker uses it to keep the machine awake only while an article is written.
+  onJobStart?: () => () => void;
 }
 
 function describeError(error: unknown): string {
@@ -57,6 +60,7 @@ export async function processNextBlogJob(deps: ProcessBlogJobDeps): Promise<bool
   }
 
   logger.info(log, 'Blog worker: job started');
+  const jobEnded = deps.onJobStart?.();
   const heartbeat = setInterval(() => {
     heartbeatAgentJob(pool, job.id, workerId).catch((error: unknown) => {
       logger.warn({ ...log, err: describeError(error) }, 'Blog worker: heartbeat failed');
@@ -81,6 +85,7 @@ export async function processNextBlogJob(deps: ProcessBlogJobDeps): Promise<bool
     logger.error({ ...log, err: message }, 'Blog worker: job failed');
   } finally {
     clearInterval(heartbeat);
+    jobEnded?.();
   }
   return true;
 }

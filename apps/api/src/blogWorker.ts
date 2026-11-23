@@ -5,10 +5,13 @@
 // It only makes outbound connections (the database, Claude, source fetches) —
 // nothing on this machine is exposed to the internet.
 //
-//   CLAUDE_CODE_MODEL=opus caffeinate -i npm run blog:worker
+//   npm run blog:worker        (CLAUDE_CODE_MODEL set in .env)
 //
-// While it is not running, blog messages from the dashboard simply wait in the
-// queue and start as soon as it is back.
+// It is normally started at login by a LaunchAgent (scripts/blog-worker/). While
+// it is not running, blog messages from the dashboard simply wait in the queue and
+// start as soon as it is back. It keeps the Mac awake only while a job is running
+// (caffeinate), so an idle worker never stops the Mac from sleeping.
+import { spawn } from 'node:child_process';
 import { hostname } from 'node:os';
 
 import { blogAgentDeps } from './blogDeps.js';
@@ -16,6 +19,17 @@ import { processNextBlogJob } from './blogJobs.js';
 import { closeAppDeps, createAppDeps } from './deps.js';
 
 const IDLE_POLL_MS = 5_000;
+
+// macOS: hold an idle-sleep assertion for the length of one job. `-w` ties it to
+// this process, so it is released even if the worker is killed mid-job.
+function keepAwakeDuringJob(): () => void {
+  if (process.platform !== 'darwin') return () => undefined;
+  const child = spawn('/usr/bin/caffeinate', ['-i', '-w', String(process.pid)], { stdio: 'ignore' });
+  child.on('error', () => undefined);
+  return () => {
+    child.kill();
+  };
+}
 
 async function main(): Promise<void> {
   const appDeps = createAppDeps();
@@ -41,7 +55,7 @@ async function main(): Promise<void> {
   while (!state.stopping) {
     let worked = false;
     try {
-      worked = await processNextBlogJob({ pool: appDeps.pool, logger, agentDeps, workerId });
+      worked = await processNextBlogJob({ pool: appDeps.pool, logger, agentDeps, workerId, onJobStart: keepAwakeDuringJob });
     } catch (error) {
       // Database unreachable etc.: log and keep polling rather than exiting.
       logger.error({ err: error instanceof Error ? error.message : String(error) }, 'Blog worker: polling failed');
